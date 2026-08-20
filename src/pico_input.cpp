@@ -28,6 +28,13 @@ static const int JOY_THRESHOLD = 900;   /* ~22% of 12-bit range */
 static int joy_center_x = 2048;
 static int joy_center_y = 2048;
 
+#ifdef PICO_GALAGINO_LANDSCAPE
+/* Runtime landscape flag from pico_config.cpp. C linkage matches its
+ * definition. Declared at file scope so buttons_get can reference it
+ * (C++ won't accept a linkage-spec inside a function body). */
+extern "C" volatile int g_landscape_mode;
+#endif
+
 extern "C" void pico_input_init(void) {
     Serial.println("[input] pico_input_init");
     pinMode(PIN_SELECT, INPUT_PULLUP);
@@ -105,9 +112,23 @@ extern "C" unsigned char buttons_get(void) {
        every I2C read, causing phantom fires. Would need proper JoyCon
        protocol code (see GameAdapterRGBPico) to use those buttons. */
 
-    /* JoyCon analog stick → digital directions. */
+    /* JoyCon analog stick → digital directions.
+     *
+     * The PCA9539 joystick above is NOT rotated — an external plugged-in
+     * stick's orientation is up to how the user connected it. The JoyCon
+     * is soldered/mounted to the PCB, aligned for LANDSCAPE orientation.
+     * In PORTRAIT mode the same physical push hits the game 90° off, so
+     * rotate its axes 90° in portrait only. */
     int jx = analogRead(PIN_JOY_X) - joy_center_x;
     int jy = analogRead(PIN_JOY_Y) - joy_center_y;
+#ifdef PICO_GALAGINO_LANDSCAPE
+    if (!g_landscape_mode) {
+        int rjx =  jy;
+        int rjy = -jx;
+        jx = rjx;
+        jy = rjy;
+    }
+#endif
     if (jx < -JOY_THRESHOLD) state |= BUTTON_LEFT;
     if (jx >  JOY_THRESHOLD) state |= BUTTON_RIGHT;
     if (jy < -JOY_THRESHOLD) state |= BUTTON_UP;
