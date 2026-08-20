@@ -28,15 +28,21 @@ static const int GAME_H = 288;
  * each horizontal side stays black. */
 #ifdef PICO_GALAGINO_LANDSCAPE
 static const int LANDSCAPE_H = 240;
-/* Optional horizontal 6:5 drop — restores the original 224/288 aspect
- * ratio (~0.78). 224 columns → 186 columns (37 full 6→5 groups + 1 tail
- * col; last src col dropped). Compile-time toggle for now. */
 #ifdef PICO_GALAGINO_LANDSCAPE_HSCALE
 static const int LANDSCAPE_W = 186;
 #else
 static const int LANDSCAPE_W = GAME_W;
 #endif
 static uint16_t scaled_buf[LANDSCAPE_W * LANDSCAPE_H];
+
+/* Runtime landscape flag, defined in pico_config.cpp, loaded from SD
+ * before Video::begin() runs. Video::begin() reads it ONCE and caches
+ * into is_landscape_locked so the per-frame push has no volatile read
+ * and no runtime tft.width()/height() calls — matches the hot-path
+ * cost of the earlier compile-time-only landscape build. */
+extern "C" volatile int g_landscape_mode;
+static int is_landscape_locked = 0;
+static int push_x_off = 0;
 #endif
 
 static int cur_row = 0;
@@ -160,9 +166,21 @@ void Video::begin(void) {
   Serial.println("[video] tft.init()");
   tft.init();
 #ifdef PICO_GALAGINO_LANDSCAPE
-  tft.setRotation(3);   /* landscape 320x240 — 270° CW so image is right-way-up */
+  /* Latch the mode + centering offset ONCE at boot — Video::write can
+   * then hot-path both branches with no volatile reads and no per-frame
+   * TFT_eSPI api calls. */
+  is_landscape_locked = g_landscape_mode ? 1 : 0;
+  if (is_landscape_locked) {
+    tft.setRotation(3);   /* landscape 320x240, 270° CW */
+    push_x_off = (320 - LANDSCAPE_W) / 2;
+    Serial.printf("[video] landscape mode ON (image %dx%d at x=%d)\n",
+                  LANDSCAPE_W, LANDSCAPE_H, push_x_off);
+  } else {
+    tft.setRotation(0);   /* portrait 240x320 */
+    Serial.println("[video] portrait mode");
+  }
 #else
-  tft.setRotation(0);   /* portrait 240x320 */
+  tft.setRotation(0);
 #endif
   tft.setSwapBytes(false);
   tft.fillScreen(TFT_BLACK);
@@ -189,12 +207,13 @@ void Video::write(uint16_t *colors, uint32_t len) {
   cur_row += rows;
   if (cur_row >= GAME_H) {
 #ifdef PICO_GALAGINO_LANDSCAPE
-    /* 6:5 vertical downscale then push into the centre of a 320x240
-     * landscape screen. */
-    downscale_288_to_240(frame_buf, scaled_buf);
-    tft.pushImage((320 - LANDSCAPE_W) / 2, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
+    if (is_landscape_locked) {
+      downscale_288_to_240(frame_buf, scaled_buf);
+      tft.pushImage(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
+    } else {
+      tft.pushImage(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
+    }
 #else
-    /* Single-buffer blocking push — waits for the SPI transfer. */
     tft.pushImage(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
 #endif
     cur_row = 0;

@@ -18,6 +18,11 @@
 
 #include "tileaddr.h"
 
+#ifdef PICO_CUSTOM_INPUT
+extern "C" bool pico_sd_init(void);
+extern "C" void pico_config_load(void);
+#endif
+
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 4, 5)
 // See https://github.com/espressif/arduino-esp32/issues/8467
 #define WORKAROUND_I2S_APLL_PROBLEM
@@ -865,10 +870,16 @@ void setup() {
       &emulationtask,  /* Task handle. */
       0); /* Core where the task should run */
 
+#ifdef PICO_CUSTOM_INPUT
+  /* SD + config must be up BEFORE Video::begin so it can pick rotation
+   * based on the runtime g_landscape_mode. */
+  pico_sd_init();
+  pico_config_load();
+#endif
+
   tft.begin();
 
 #ifdef PICO_CUSTOM_INPUT
-  pico_sd_init();
   pico_menu_pick_and_load();
 #endif
 }
