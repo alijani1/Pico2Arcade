@@ -21,12 +21,125 @@ static TFT_eSPI tft;
 static const int GAME_W = 224;
 static const int GAME_H = 288;
 
+/* Landscape mode — set on the build command line via -DPICO_GALAGINO_LANDSCAPE
+ * (or in config.h). Rotates the panel to 320x240 and downscales the 288-row
+ * game framebuffer to 240 rows with a 6:5 fixed-point bilinear filter so the
+ * game fills the shorter dimension of the landscape display. Extra 48px on
+ * each horizontal side stays black. */
+#ifdef PICO_GALAGINO_LANDSCAPE
+static const int LANDSCAPE_H = 240;
+/* Optional horizontal 6:5 drop — restores the original 224/288 aspect
+ * ratio (~0.78). 224 columns → 186 columns (37 full 6→5 groups + 1 tail
+ * col; last src col dropped). Compile-time toggle for now. */
+#ifdef PICO_GALAGINO_LANDSCAPE_HSCALE
+static const int LANDSCAPE_W = 186;
+#else
+static const int LANDSCAPE_W = GAME_W;
+#endif
+static uint16_t scaled_buf[LANDSCAPE_W * LANDSCAPE_H];
+#endif
+
 static int cur_row = 0;
 
 /* Single buffer (double-buffer variant kept as commented-out reference).
  * At 200 MHz sys / 100 MHz SPI, blocking pushImage may be fast enough to
  * still hit real speed with half the RAM footprint. */
 static uint16_t frame_buf[GAME_W * GAME_H];
+
+#ifdef PICO_GALAGINO_LANDSCAPE
+/* 6:5 vertical downscale — 6 source rows → 5 destination rows.
+ *
+ * Two modes selected by PICO_GALAGINO_LANDSCAPE_NEAREST:
+ *   - Bilinear (default): fixed-point 8-bit weights, blends 2 rows per output.
+ *     ~5 ms/frame at 200 MHz — quality: smooth, slightly blurry.
+ *   - Nearest-neighbour (define =1): pick 5 of every 6 rows (memcpy only).
+ *     ~0.5 ms/frame — quality: sharp but slight jitter on horizontal lines.
+ *
+ * Framebuffer stores byte-swapped RGB565 (setSwapBytes(false) + palette
+ * pre-swap). Bilinear blend bswaps into RGB565 order, blends R+B and G
+ * separately using non-overlapping bit fields, then bswaps back. */
+
+#pragma GCC push_options
+#pragma GCC optimize("O3")
+
+static const uint16_t VERT_W0[5] = { 256, 205, 154, 102,  51 };
+static const uint16_t VERT_W1[5] = {   0,  51, 102, 154, 205 };
+
+#ifdef PICO_GALAGINO_LANDSCAPE_NEAREST
+/* Row copy — with or without horizontal 6:5 drop. */
+#ifdef PICO_GALAGINO_LANDSCAPE_HSCALE
+/* Drop-1-of-6 horizontally: for a group of 6 src pixels write 5 dst,
+ * skipping src[3]. 224 → 186 output columns (37 full groups + 1 tail). */
+static inline void copy_row565(const uint16_t *src, uint16_t *dst, int /*width*/) {
+    for (int g = 0; g < 37; g++) {
+        const uint16_t *s = src + g * 6;
+        uint16_t *d = dst + g * 5;
+        d[0] = s[0];
+        d[1] = s[1];
+        d[2] = s[2];
+        d[3] = s[4];   /* skip s[3] */
+        d[4] = s[5];
+    }
+    dst[185] = src[222];   /* tail: 1 extra pixel from the 2 leftover src cols */
+}
+#else
+static inline void copy_row565(const uint16_t *src, uint16_t *dst, int width) {
+    memcpy(dst, src, (size_t)width * 2);
+}
+#endif
+#else
+static inline void blend_rows565(const uint16_t *s0, const uint16_t *s1,
+                                 uint16_t *dst, int width,
+                                 uint16_t w0, uint16_t w1) {
+    if (w0 == 256) {
+        memcpy(dst, s0, (size_t)width * 2);
+        return;
+    }
+    for (int x = 0; x < width; x++) {
+        uint32_t p0 = (uint32_t)__builtin_bswap16(s0[x]);
+        uint32_t p1 = (uint32_t)__builtin_bswap16(s1[x]);
+        uint32_t rb0 = p0 & 0xF81F;
+        uint32_t rb1 = p1 & 0xF81F;
+        uint32_t g0  = p0 & 0x07E0;
+        uint32_t g1  = p1 & 0x07E0;
+        uint32_t rb  = ((rb0 * w0 + rb1 * w1) >> 8) & 0xF81F;
+        uint32_t g   = ((g0  * w0 + g1  * w1) >> 8) & 0x07E0;
+        dst[x] = __builtin_bswap16((uint16_t)(rb | g));
+    }
+}
+#endif
+
+static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
+    /* 48 blocks × 6 src rows → 5 dst rows = 288 → 240 exactly. */
+    for (int j = 0; j < LANDSCAPE_H; j += 5) {
+        int base = (j / 5) * 6;
+        const uint16_t *r0 = src + (size_t)(base + 0) * GAME_W;
+        const uint16_t *r1 = src + (size_t)(base + 1) * GAME_W;
+        const uint16_t *r2 = src + (size_t)(base + 2) * GAME_W;
+        const uint16_t *r3 = src + (size_t)(base + 3) * GAME_W;
+        const uint16_t *r4 = src + (size_t)(base + 4) * GAME_W;
+#ifdef PICO_GALAGINO_LANDSCAPE_NEAREST
+        /* Nearest-neighbour: for a 6:5 mapping the closest sources for
+         * dst rows 0..4 in a block are src rows 0, 1, 2, 4, 5 (skip 3). */
+        const uint16_t *r5 = src + (size_t)(base + 5) * GAME_W;
+        copy_row565(r0, dst + (size_t)(j + 0) * LANDSCAPE_W, GAME_W);
+        copy_row565(r1, dst + (size_t)(j + 1) * LANDSCAPE_W, GAME_W);
+        copy_row565(r2, dst + (size_t)(j + 2) * LANDSCAPE_W, GAME_W);
+        copy_row565(r4, dst + (size_t)(j + 3) * LANDSCAPE_W, GAME_W);
+        copy_row565(r5, dst + (size_t)(j + 4) * LANDSCAPE_W, GAME_W);
+#else
+        const uint16_t *r5 = src + (size_t)(base + 5) * GAME_W;
+        blend_rows565(r0, r1, dst + (size_t)(j + 0) * GAME_W, GAME_W, VERT_W0[0], VERT_W1[0]);
+        blend_rows565(r1, r2, dst + (size_t)(j + 1) * GAME_W, GAME_W, VERT_W0[1], VERT_W1[1]);
+        blend_rows565(r2, r3, dst + (size_t)(j + 2) * GAME_W, GAME_W, VERT_W0[2], VERT_W1[2]);
+        blend_rows565(r3, r4, dst + (size_t)(j + 3) * GAME_W, GAME_W, VERT_W0[3], VERT_W1[3]);
+        blend_rows565(r4, r5, dst + (size_t)(j + 4) * GAME_W, GAME_W, VERT_W0[4], VERT_W1[4]);
+#endif
+    }
+}
+
+#pragma GCC pop_options
+#endif  /* PICO_GALAGINO_LANDSCAPE */
 
 Video::Video() {}
 
@@ -46,9 +159,14 @@ void Video::begin(void) {
 
   Serial.println("[video] tft.init()");
   tft.init();
-  tft.setRotation(0);
+#ifdef PICO_GALAGINO_LANDSCAPE
+  tft.setRotation(3);   /* landscape 320x240 — 270° CW so image is right-way-up */
+#else
+  tft.setRotation(0);   /* portrait 240x320 */
+#endif
   tft.setSwapBytes(false);
   tft.fillScreen(TFT_BLACK);
+
 
   if (!tft.initDMA()) {
     Serial.println("[video] initDMA FAILED — falling back to blocking pushImage");
@@ -70,10 +188,15 @@ void Video::write(uint16_t *colors, uint32_t len) {
 
   cur_row += rows;
   if (cur_row >= GAME_H) {
-    /* Single-buffer blocking push — this call waits for the SPI transfer
-     * to complete. Simpler than the double-buffered DMA path and uses
-     * half the RAM. */
+#ifdef PICO_GALAGINO_LANDSCAPE
+    /* 6:5 vertical downscale then push into the centre of a 320x240
+     * landscape screen. */
+    downscale_288_to_240(frame_buf, scaled_buf);
+    tft.pushImage((320 - LANDSCAPE_W) / 2, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
+#else
+    /* Single-buffer blocking push — waits for the SPI transfer. */
     tft.pushImage(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
+#endif
     cur_row = 0;
 
     static uint32_t frame = 0;
