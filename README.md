@@ -119,6 +119,62 @@ A `g_menu_done` flag holds core 1 in `setup1()` until the user has picked
 a game and the runtime ROM pointers are populated — so Galagino's own
 attract-mode menu never runs.
 
+### Hitting 60 Hz on the RP2350
+
+Real arcade hardware runs at 60 Hz. Getting Galagino there on the RP2350B
+took a chain of specific choices; if any one drops, the emulator halves
+its speed and everything drags.
+
+**System / peripheral clocks.** The `board_build.f_cpu = 200000000L` in
+[`platformio.ini`](platformio.ini) runs the CPU at 200 MHz (2× default).
+SPI runs at 100 MHz (`-DSPI_FREQUENCY=100000000`). Galaga is the tightest
+of the six games — its three-Z80 frame takes close to 13 ms of the 16.6
+ms budget, so the CPU headroom matters. Ms. Pac-Man's F2 fetch adds a
+small per-opcode branch on top of that.
+
+**ST7789 init overlay.** TFT_eSPI's stock ST7789 init sequence is wrong
+for the GMT024-01 panel we use — colours invert and gamma is off. The
+override lives in `PicoCartReader/tft_espi_override/` (from the sister
+project) and must be dropped into
+`.pio/libdeps/pico2/TFT_eSPI/TFT_Drivers/ST7789_Init.h` before the first
+build. Without it every frame looks bad regardless of speed.
+
+**One `pushImage` per frame.** The render task in
+[`src/video.cpp`](src/video.cpp) builds the whole 224×288 game framebuffer
+in RAM and hands it to TFT_eSPI as a single `pushImage` per screen
+refresh — no per-row DMA restarts, no per-tile flushes. At 100 MHz SPI,
+that transfer costs about `224*288*2*8 / 100e6 = 10.3 ms`, leaving ~6 ms
+for the render pass. Splitting the transfer smaller was tried and
+consistently missed the vblank budget.
+
+**Half-rate display, double-rate emulation.** Config leaves `TFT_SPICLK`
+undefined, which selects Galagino's `VIDEO_HALF_RATE` mode: the render
+loop calls `xTaskNotifyGive` **twice per screen refresh** and the display
+runs at 30 fps while the emulator gets **two vblank pulses per refresh**
+and ticks at 60 Hz. Trying a 1:1 sync pinned the emulator to display
+rate (~30 fps) and everything felt sluggish; the double-pulse fix keeps
+game clocks honest.
+
+**vblank counter must decrement, not clear-all.** Real FreeRTOS's
+`ulTaskNotifyTake(pdTRUE, …)` clears the count and returns the old
+value. That semantic is wrong for `VIDEO_HALF_RATE`: if two pulses arrive
+between `emulate_frame()` calls and we clear, the second pulse is lost
+and the emulator drops to half speed. Our stub in
+[`src/pico_freertos_stubs.c`](src/pico_freertos_stubs.c) always
+decrements by one instead — every pulse is accounted for regardless of
+the caller's `clearOnExit` argument.
+
+**Core split.** Core 0 owns the video task (100 MHz SPI + TFT_eSPI is
+already close to full-duty on the peripheral side). Core 1 runs
+`emulation_task()` — 60 Hz Z80/i8048 stepping plus the audio-render
+loop. `pico_serial_log` writes are buffered so debug prints don't stall
+either core.
+
+**Result.** Consistent 60 fps emu / 30 fps display across all six games,
+verified via the `[emu] 60 takes in ~1000 ms = 60 fps` and `[video]
+60 frames in ~2000 ms = 30 fps` counters in the serial log. Galaga is
+the closest to the edge but sits comfortably at 59–60 fps in gameplay.
+
 ### SD → memory pipeline
 
 Each game has a `*_runtime.cpp` file with a `runtime_load_<game>()`
