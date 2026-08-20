@@ -35,6 +35,8 @@ size_t pico_audio_push(const void *data, size_t bytes);
 
 /* Volume scaler 0..16 (0 = mute, 16 = unity). */
 void    pico_audio_set_volume(uint8_t vol);
+void    pico_audio_amp_on(void);
+void    pico_audio_amp_off(void);
 uint8_t pico_audio_get_volume(void);
 
 #ifdef __cplusplus

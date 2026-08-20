@@ -13,6 +13,7 @@
 #include "emulation.h"     /* machine variable + MCH_* constants */
 
 extern "C" void audio_dkong_bitrate(char is_dkong);
+extern "C" void pico_audio_amp_on(void);
 
 extern "C" bool runtime_load_pacman(void);
 extern "C" bool runtime_load_mspacman(void);
@@ -162,6 +163,7 @@ extern "C" void pico_menu_pick_and_load(void) {
 #ifdef ENABLE_DKONG
         audio_dkong_bitrate(games[0].mch == MCH_DKONG);
 #endif
+        pico_audio_amp_on();
         __dmb();
         g_menu_done = 1;
         return;
@@ -222,6 +224,10 @@ extern "C" void pico_menu_pick_and_load(void) {
     audio_dkong_bitrate(games[sel].mch == MCH_DKONG);
 #endif
     tft.fillScreen(TFT_BLACK);
+    /* Turn the PAM8302 amp ON now — during boot + menu the amp stays
+     * disabled so the user doesn't hear DMA idle-buzz through the
+     * speaker. */
+    pico_audio_amp_on();
     /* Release the core-1 gate now that machine is set and the ROM
      * pointers are populated. */
     __dmb();          /* ensure machine + rom pointer writes are visible */

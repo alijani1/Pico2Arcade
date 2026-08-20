@@ -26,7 +26,7 @@ extern "C" void pico_audio_init(int sample_rate) {
         g_audio.setBuffers(4, 256);
         g_audio.begin(sample_rate);
         pinMode(AMP_EN_PIN, OUTPUT);
-        digitalWrite(AMP_EN_PIN, HIGH);   // amp on
+        digitalWrite(AMP_EN_PIN, LOW);    // amp OFF until game starts
         g_started = true;
     } else {
         // Sample-rate switch mid-session (game change).
@@ -70,4 +70,11 @@ extern "C" void pico_audio_set_volume(uint8_t vol) {
 
 extern "C" uint8_t pico_audio_get_volume(void) {
     return g_volume;
+}
+
+extern "C" void pico_audio_amp_on(void) {
+    digitalWrite(AMP_EN_PIN, HIGH);
+}
+extern "C" void pico_audio_amp_off(void) {
+    digitalWrite(AMP_EN_PIN, LOW);
 }
