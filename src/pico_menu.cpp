@@ -99,6 +99,14 @@ static const GameEntry games[] = {
 };
 static const int NUM_GAMES = sizeof(games) / sizeof(games[0]);
 
+#ifdef PICO_GALAGINO_LANDSCAPE
+extern "C" volatile int g_landscape_mode;
+extern "C" void pico_config_save_landscape(int on);
+static const int MENU_TOTAL = NUM_GAMES + 1;
+#else
+static const int MENU_TOTAL = NUM_GAMES;
+#endif
+
 /* Draw the menu list, highlighting the selected row. Uses the same
  * TFT_eSPI instance the video code owns — we don't have a reference to
  * it here, so we make our own; TFT_eSPI's setup is idempotent. */
@@ -115,7 +123,7 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
 
     tft.setTextSize(2);
     int y = 60;
-    for (int i = 0; i < NUM_GAMES; i++) {
+    for (int i = 0; i < MENU_TOTAL; i++) {
         if (i == sel) {
             tft.fillRect(4, y - 2, 230, 20, TFT_BLUE);
             tft.setTextColor(TFT_WHITE, TFT_BLUE);
@@ -123,7 +131,14 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
             tft.setTextColor(TFT_WHITE, TFT_BLACK);
         }
         tft.setCursor(14, y);
-        tft.print(games[i].label);
+        if (i < NUM_GAMES) {
+            tft.print(games[i].label);
+        }
+#ifdef PICO_GALAGINO_LANDSCAPE
+        else {
+            tft.printf("Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
+        }
+#endif
         y += 24;
     }
 
@@ -162,14 +177,22 @@ extern "C" void pico_menu_pick_and_load(void) {
         unsigned char m = buttons_get();
         /* Edge-detect direction/fire — react on press, not on hold. */
         if ((m & BUTTON_UP) && !(prev_mask & BUTTON_UP)) {
-            if (--sel < 0) sel = NUM_GAMES - 1;
+            if (--sel < 0) sel = MENU_TOTAL - 1;
             draw_menu(tft, sel);
         }
         if ((m & BUTTON_DOWN) && !(prev_mask & BUTTON_DOWN)) {
-            if (++sel >= NUM_GAMES) sel = 0;
+            if (++sel >= MENU_TOTAL) sel = 0;
             draw_menu(tft, sel);
         }
         if ((m & (BUTTON_FIRE | BUTTON_START)) && !(prev_mask & (BUTTON_FIRE | BUTTON_START))) {
+#ifdef PICO_GALAGINO_LANDSCAPE
+            if (sel >= NUM_GAMES) {
+                int new_mode = g_landscape_mode ? 0 : 1;
+                pico_config_save_landscape(new_mode);
+                delay(300);
+                rp2040.reboot();
+            }
+#endif
             break;
         }
         prev_mask = m;
