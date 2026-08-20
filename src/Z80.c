@@ -683,7 +683,14 @@ word RunZ80(Z80 *R)
 }
 #endif /* !EXECZ80 */
 
-void StepZ80(Z80 *R)
+/* Also RAM-resident — every game's Z80 hits this many times per frame.
+ * Keeping both StepZ80 and digdug_StepZ80 out of flash eliminates all
+ * XIP-cache pressure on the emulator's inner loop. */
+#include "pico.h"
+#ifndef __not_in_flash_func
+#define __not_in_flash_func(name) __attribute__((section(".time_critical." #name))) name
+#endif
+void __not_in_flash_func(StepZ80)(Z80 *R)
 {
   register byte I;
   register pair J;
@@ -708,15 +715,22 @@ void StepZ80(Z80 *R)
 // it's own main instruction with direct rom access helps keeping
 // the performance up
 extern char current_cpu;
-/* Runtime pointers — populated by runtime_load_digdug(). Static const
- * initializers would need compile-time addresses; use lazy init. Address
- * masks bound each CPU's rom access to what we actually alloc'd (16K/8K/4K)
- * so a runaway PC can't reach past the buffer. */
 extern unsigned char *digdug_rom_cpu1;
 extern unsigned char *digdug_rom_cpu2;
 extern unsigned char *digdug_rom_cpu3;
 
-void digdug_StepZ80(Z80 *R)
+/* Force digdug_StepZ80 into SRAM, not flash XIP. The function body is
+ * ~8 KB (Codes.h switch) and is called ~11k times per Dig Dug frame. In
+ * flash it competes with the rest of the hot code for the 16 KB XIP
+ * cache — every miss stalls the fetch. Putting it in RAM makes every
+ * instruction fetch a fixed-latency SRAM read. Costs ~8 KB of RAM but
+ * we have ~200 KB free. */
+#include "pico.h"
+#ifndef __not_in_flash_func
+#define __not_in_flash_func(name) __attribute__((section(".time_critical." #name))) name
+#endif
+
+void __not_in_flash_func(digdug_StepZ80)(Z80 *R)
 {
   static unsigned char *rom_table[3] = { 0, 0, 0 };
   static const unsigned int mask_table[3] = { 0x3FFFu, 0x1FFFu, 0x0FFFu };
