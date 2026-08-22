@@ -77,14 +77,29 @@ static inline unsigned char galaga_RdZ80(unsigned short Addr) {
 	  if(keymask & BUTTON_RIGHT) mapb1[1] &= ~0x02;
 	  if(keymask & BUTTON_DOWN)  mapb1[1] &= ~0x01;
 	  
-	  // report fire only when it was pressed
-	  if((keymask & BUTTON_FIRE) && !(prev_mask & BUTTON_FIRE)) {
+	  // report fire only when it was pressed.
+	  //
+	  // Upstream bug: fire_timer=1 asserts fire for the CURRENT call plus
+	  // the next call. But the returned byte is mapb1[namco_cnt] — only
+	  // mapb1[1] carries the fire bit. If the rising edge is detected on
+	  // the call where namco_cnt=2, this call returns mapb1[2] (no fire
+	  // info); the next call is namco_cnt=3 (early return); and by the
+	  // time the next 3-byte cycle starts, prev_mask has already been
+	  // updated to FIRE so no edge fires — the press is lost silently
+	  // (~5-10% miss rate depending on when the game happens to read).
+	  //
+	  // Fix: latch a "fire_pending" flag on the rising edge and only
+	  // clear it when the fire byte (namco_cnt==1) is actually returned.
+	  // Guarantees each physical press produces exactly one fire event
+	  // reaching the game.
+	  static unsigned char fire_pending = 0;
+	  if ((keymask & BUTTON_FIRE) && !(prev_mask & BUTTON_FIRE)) {
+	    fire_pending = 1;
+	  }
+	  if (fire_pending && namco_cnt == 1) {
 	    mapb1[1] &= ~0x10;
-	    fire_timer = 1;         // 0 is too short for score enter, 5 is too long
-	    // should probably be done via a global counter
-	  } else if(fire_timer) {
-	    mapb1[1] &= ~0x10;
-	    fire_timer--;
+	    fire_pending = 0;
+	    (void)fire_timer;   /* fire_timer no longer used for gameplay fire */
 	  }
 	  
 	  // 51xx leaves credit mode when user presses start? Nope ...

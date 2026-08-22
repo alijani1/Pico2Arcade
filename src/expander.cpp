@@ -84,11 +84,8 @@ bool expander_isPresent(void) {
 
 uint16_t expander_readAll(void) {
     if (!present) return 0xFFFF;
-    // Two separate transactions — safer than relying on auto-increment,
-    // which the PCA9539 doesn't reliably do on reads.
     uint8_t p0 = readReg(REG_INPUT0);
     uint8_t p1 = readReg(REG_INPUT1);
-    // Reading the input registers clears INT on the chip
     intFlag = false;
     return (uint16_t)p0 | ((uint16_t)p1 << 8);
 }

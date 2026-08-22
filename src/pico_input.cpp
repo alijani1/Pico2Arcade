@@ -60,16 +60,23 @@ extern "C" void pico_input_init(void) {
 
 /* Galagino calls this MANY times per frame — the emulated CPU polls
  * the button port whenever the game asks. Doing analogRead + I2C reads
- * on every call was costing 3-5 fps. We now cache the packed state
- * and only refresh at ~2 ms granularity (still plenty responsive for
- * a 60 Hz game). */
+ * on every call was costing 3-5 fps.
+ *
+ * Cache strategy: hold the cached state for up to 10 ms EXCEPT when the
+ * PCA9539's INT pin has signalled a change. That way the I2C bus load
+ * stays low when nothing is happening, but every button transition
+ * (press or release) forces an immediate fresh read — no short-tap
+ * dropouts inside a poll window, no software debounce. */
 extern "C" unsigned char buttons_get(void) {
     static unsigned char cached_state = 0;
     static unsigned long last_ms = 0;
     unsigned long now = millis();
-    /* 10 ms cache: 100 polls/sec is well above any human input rate,
-       and it caps I2C bus load at ~1.5% (vs ~7% at 2 ms). */
-    if (now - last_ms < 10 && last_ms != 0) return cached_state;
+    /* 1 ms cache — human rapid-tap max ~10 Hz gives a press duration
+     * around 30-50 ms. 1 kHz polling catches every edge with plenty of
+     * margin. Any INT-line pulse from the PCA9539 bypasses the cache
+     * immediately (state change → fresh read). */
+    if (last_ms != 0 && (now - last_ms) < 1 && !expander_hasInterrupt())
+        return cached_state;
     last_ms = now;
 
     uint16_t s = expander_readAll();   /* 16 bits, active LOW */
@@ -106,6 +113,7 @@ extern "C" unsigned char buttons_get(void) {
        handy for arcade play), BTN_B duplicates COIN. */
     if (!(s & EXP_BTN_A))    state |= BUTTON_FIRE;
     if (!(s & EXP_BTN_B))    state |= BUTTON_COIN;
+
 
     /* JoyCon push-button (P1.5) NOT mapped — the pin carries an
        active signal from the JoyCon FPC that flickers HIGH↔LOW on

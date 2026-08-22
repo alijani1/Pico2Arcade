@@ -128,7 +128,7 @@ unsigned char namco_read_dd(unsigned short Addr) {
   else {
     unsigned char keymask = buttons_get();
 
-    static unsigned char keymask_d[] = { 0x00, 0x00, 0x00};	
+    static unsigned char keymask_d[] = { 0x00, 0x00, 0x00};
     keymask_d[2] = keymask_d[1];
     keymask_d[1] = keymask_d[0];
     keymask_d[0] = keymask;
