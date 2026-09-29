@@ -10,7 +10,7 @@
 // PicoGalagino patches — all behind Z80_ZAZU_GALAGINO; with it undefined this
 // file behaves like upstream. Upstream: https://github.com/superzazu/z80
 // @ d64fe10a (MIT, see LICENSE; files renamed z80.* -> zazu_z80.* to avoid a
-// case-insensitive clash with the old Z80.h on Windows).
+// case-insensitive clash with a Z80.h on Windows).
 //  1. Memory/IO call Galagino's RdZ80/WrZ80/InZ80/OutZ80 directly instead of
 //     going through per-byte function pointers; ports are passed as 16-bit
 //     values (A<<8|n for IN/OUT (n), BC for (C) forms) like the previous core.

@@ -217,7 +217,7 @@ extern unsigned char buttons_get(void);
 }
 #endif
 
-/* ------------------ the following is used inside Z80.c ----------------- */
+/* -------- the following is used by the Z80 core's opcode fetch -------- */
 extern char current_cpu;
 #ifdef ENABLE_PACMAN
 /* Runtime pointer — matches the extern "C" definition in pacman_runtime.cpp. */

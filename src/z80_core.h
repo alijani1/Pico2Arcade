@@ -1,20 +1,18 @@
-/* z80_core.h — selects the Z80 CPU core at build time.
+/* z80_core.h — the Z80 CPU core used by the emulator.
  *
- *   -DZ80_CORE_ZAZU  superzazu/z80 (MIT) via z80_zazu/z80_galagino.h
- *   (default)        previous core (Z80.h) — NOT licensed for commercial
- *                    use; kept only until the replacement is validated.
+ * superzazu/z80 (MIT) with PicoGalagino patches, via the adapter in
+ * z80_zazu/z80_galagino.h (Z80 type, StepZ80/IntZ80/ResetZ80, INT_*).
+ * Built with -DZ80_CORE_ZAZU -DZ80_ZAZU_GALAGINO (platformio.ini).
  *
- * Game code must use the core-neutral accessors below instead of
- * touching core-specific register fields. */
+ * Game code must use the core-neutral accessors (Z80_IFF1, Z80_PC)
+ * instead of touching core-specific register fields. */
 #ifndef Z80_CORE_H
 #define Z80_CORE_H
 
-#ifdef Z80_CORE_ZAZU
-#include "z80_zazu/z80_galagino.h"
-#else
-#include "Z80.h"
-#define Z80_IFF1(R) ((R)->IFF & IFF_1)
-#define Z80_PC(R)   ((R)->PC.W)
+#ifndef Z80_CORE_ZAZU
+#error "Build with -DZ80_CORE_ZAZU -DZ80_ZAZU_GALAGINO (see platformio.ini)"
 #endif
+
+#include "z80_zazu/z80_galagino.h"
 
 #endif

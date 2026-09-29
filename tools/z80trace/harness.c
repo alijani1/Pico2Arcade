@@ -1,8 +1,9 @@
-/* z80trace harness — runs Galagino's Galaga machine on the PC with either
- * Z80 core and writes a per-instruction trace, so two cores can be diffed
- * to find the first instruction that behaves differently.
+/* z80trace harness — runs Galagino's Galaga machine on the PC with the Z80
+ * core and writes a per-instruction trace, so two builds (e.g. before and
+ * after a core change) can be diffed to find the first instruction that
+ * behaves differently.
  *
- *   trace_<core>.exe rom_dir frames out.bin
+ *   trace_zazu rom_dir frames out.bin
  *
  * Each record (little-endian, 20 bytes): cpu, kind (0=instr 1=int 2=nmi),
  * pc_before, then state AFTER: AF (F & 0xD7, undocumented bits masked),
@@ -35,17 +36,11 @@ typedef struct {
 #pragma pack(pop)
 
 static void snap(Z80 *R, Rec *r) {
-#ifdef Z80_CORE_ZAZU
   uint8_t f = (R->sf << 7) | (R->zf << 6) | (R->hf << 4) | (R->pf << 2) |
               (R->nf << 1) | (R->cf);
   r->af = (uint16_t)((R->a << 8) | f);
   r->bc = (R->b << 8) | R->c; r->de = (R->d << 8) | R->e; r->hl = (R->h << 8) | R->l;
   r->sp = R->sp; r->ix = R->ix; r->iy = R->iy; r->iff1 = R->iff1;
-#else
-  r->af = R->AF.W & 0xFFD7;
-  r->bc = R->BC.W; r->de = R->DE.W; r->hl = R->HL.W;
-  r->sp = R->SP.W; r->ix = R->IX.W; r->iy = R->IY.W; r->iff1 = (R->IFF & IFF_1) ? 1 : 0;
-#endif
 }
 
 static uint16_t pc_of(Z80 *R) { return Z80_PC(R); }
@@ -86,7 +81,6 @@ uint32_t ulTaskNotifyTake(int a, unsigned long b) { (void)a; (void)b; return 1; 
 void vTaskDelay(unsigned long t) { (void)t; }
 uint32_t esp_random(void) { return 0; }
 void galaga_trigger_sound_explosion(void) {}
-word LoopZ80(Z80 *R) { (void)R; return INT_NONE; }   /* old core's RunZ80 only */
 
 static unsigned char *load(const char *dir, const char *name, size_t sz) {
   char path[512];

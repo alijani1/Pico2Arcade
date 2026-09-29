@@ -1,7 +1,7 @@
 /* pacman.h */
 
 /* PicoGalagino runtime-loaded pointers. Definitions in pacman_runtime.cpp
- * use extern "C" so both C (Z80.c) and C++ (galagino.cpp) callers get
+ * use extern "C" so both C (the Z80 core) and C++ (galagino.cpp) callers get
  * the unmangled symbol. Declarations here mirror that. */
 #ifdef __cplusplus
 extern "C" {

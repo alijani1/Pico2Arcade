@@ -7,11 +7,7 @@
 #include "pico_bench.h"
 #include "pico_handoff.h"
 
-#ifdef Z80_CORE_ZAZU
 static const char *CORE = "zazu";
-#else
-static const char *CORE = "marat";
-#endif
 
 extern "C" unsigned char *memory;   /* game RAM, emulation.c */
 static const unsigned BENCH_HASH_BYTES = 8192;

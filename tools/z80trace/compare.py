@@ -1,6 +1,6 @@
 """Find and show the first differing record between two z80trace files.
 
-    python compare.py t_marat.bin t_zazu.bin [context] [--no-flags]
+    python compare.py before.bin after.bin [context] [--no-flags]
 
 --no-flags ignores the F register, to separate flag-only differences
 (e.g. a core computing P/V or N differently) from real divergence in

@@ -195,7 +195,7 @@ entrypoint. When the menu picks a game, that function:
 
 Since Galagino was written to reference these as `const` flash arrays,
 we replaced the header `#include`s in `pacman.h`/`galaga.h`/etc. with
-`extern` pointer declarations, then patched `Z80.c`'s optimized
+`extern` pointer declarations, then patched the Z80 core's optimized
 `digdug_StepZ80` and `emulation.h`'s `OpZ80_INL` to fetch through the
 pointers with per-CPU address masks (bounds-checking against the actual
 malloc'd buffer size).
@@ -244,7 +244,8 @@ src/
   <game>_runtime.cpp     per-game SD loader + runtime pointer definitions
   <game>_logo.h          per-game splash image data (upstream)
   mame_rom_loader.cpp    ZIP-to-Galagino-format converters (all 5, in C)
-  Z80.[ch] Codes*.h      Marat Fayzullin's Z80 emulator (upstream)
+  z80_core.h             selects the Z80 CPU core
+  z80_zazu/              superzazu/z80 (MIT) + Galagino patches/adapter
   i8048.[ch]             Intel 8048 emulator for DKong sound (upstream)
   pacman.h ... digdug.h  per-machine memory maps + render logic (upstream)
   pico_audio.[ch]        PWMAudio wrapper (our port)
@@ -266,7 +267,9 @@ src/
   upstream ESP32 emulator this port is based on.
 - **VirtualClaudioBoy** — [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus)
   Ms. Pac-Man F2 aux-board decoder and the two gfx patch tables.
-- **Marat Fayzullin** — the Z80 emulator core.
+- **Nicolas Allemand (superzazu)** — [z80](https://github.com/superzazu/z80),
+  the Z80 CPU core (MIT, see `src/z80_zazu/LICENSE`). It replaced upstream
+  Galagino's Z80 core, which is not licensed for commercial use.
 - **MAME team** — for documenting the arcade hardware so exhaustively.
 
 ## License

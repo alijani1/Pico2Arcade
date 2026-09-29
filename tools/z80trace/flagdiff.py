@@ -2,7 +2,7 @@
 z80trace files: how many records differ only in F, grouped by the PC of
 the instruction, with the first example of each.
 
-    python flagdiff.py t_marat.bin t_zazu.bin
+    python flagdiff.py before.bin after.bin
 """
 import struct
 import sys

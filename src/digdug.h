@@ -2,7 +2,7 @@
 
 /* Runtime-loaded ROMs — see digdug_runtime.cpp. Pre-baked flash arrays
  * (digdug_rom1/2/3.h and the tile/sprite/cmap headers) have been removed;
- * digdug_StepZ80 in Z80.c and OpZ80_INL in emulation.h both read via
+ * digdug_StepZ80 (z80_zazu/zazu_z80.c) and OpZ80_INL in emulation.h both read via
  * these pointers. Not wrapped in extern "C" — emulation.h declares
  * digdug_rom_cpu* the same way, plain-C linkage in both TUs. */
 extern unsigned char  *digdug_rom_cpu1;
