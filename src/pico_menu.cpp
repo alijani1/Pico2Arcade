@@ -162,7 +162,7 @@ static void exit_arcade(void) {
 static void draw_volume(TFT_eSPI &tft) {
     int v = pico_audio_get_volume_pct();
     uint16_t col = (v <= 0) ? TFT_YELLOW : TFT_LIGHTGREY;
-    int x = 186, y = 12;
+    int x = tft.width() - 54, y = 12;
     tft.fillRect(x, y - 1, 50, 10, TFT_BLACK);
     tft.fillRect(x, y + 2, 3, 4, col);
     tft.fillTriangle(x + 3, y + 4, x + 7, y, x + 7, y + 8, col);
@@ -173,10 +173,20 @@ static void draw_volume(TFT_eSPI &tft) {
     else        tft.printf("%d%%", v);
 }
 
-/* Draw the menu list, highlighting the selected row. Uses the same
- * TFT_eSPI instance the video code owns — we don't have a reference to
- * it here, so we make our own; TFT_eSPI's setup is idempotent. */
+/* Draw the menu list, highlighting the selected row. Layout comes from
+ * the panel's real size (240x320 portrait or 320x240 landscape): drawing
+ * past the bottom of a landscape panel wraps onto its top rows. */
 static void draw_menu(TFT_eSPI &tft, int sel) {
+    const int W = tft.width(), H = tft.height();
+    const int HINT_H = 22;                     /* two hint lines at the bottom */
+    int top = 60;
+    int step = (H - HINT_H - top) / menu_rows();
+    if (step < 20) {                           /* tight (landscape): pull the list up */
+        top = 46;
+        step = (H - HINT_H - top) / menu_rows();
+    }
+    if (step > 24) step = 24;
+
     tft.fillScreen(TFT_BLACK);
     tft.setTextSize(2);
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
@@ -196,10 +206,10 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     }
 
     tft.setTextSize(2);
-    int y = 60;
+    int y = top;
     for (int i = 0; i < menu_rows(); i++) {
         if (i == sel) {
-            tft.fillRect(4, y - 2, 230, 20, TFT_BLUE);
+            tft.fillRect(4, y - 1, W - 8, step - 1, TFT_BLUE);
             tft.setTextColor(TFT_WHITE, TFT_BLUE);
         } else {
             tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -217,15 +227,16 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
             break;
           default: tft.print("Exit"); break;
         }
-        y += 24;
+        y += step;
     }
 
+    /* Hint lines kept <= 37 chars (222 px) so they fit portrait width. */
     tft.setTextSize(1);
     tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    tft.setCursor(10, 300);
-    tft.print("UP/DOWN: pick  FIRE/START: select  MENU: exit");
-    tft.setCursor(10, 310);
-    tft.print("MENU+UP/DN: volume  In game: hold START+SELECT");
+    tft.setCursor(6, H - HINT_H + 2);
+    tft.print("UP/DN pick  FIRE select  MENU exit");
+    tft.setCursor(6, H - HINT_H + 12);
+    tft.print("MENU+UP/DN vol  hold START+SEL: quit");
     draw_volume(tft);
 }
 
@@ -258,7 +269,12 @@ extern "C" void pico_menu_pick_and_load(void) {
                   hv >= 0 ? "from CartReader" : "default");
 
     TFT_eSPI tft;
-    /* tft.init() already ran in Video::begin — safe to skip re-init. */
+    /* tft.init() already ran in Video::begin — safe to skip re-init. This
+     * object starts out assuming 240x320; match the rotation Video::begin
+     * gave the panel so width()/height() (and the layout) are right. */
+#ifdef PICO_GALAGINO_LANDSCAPE
+    tft.setRotation(g_landscape_mode ? 3 : 0);
+#endif
     int sel = 0;
     int g = -1;   /* chosen index into games[] */
 
