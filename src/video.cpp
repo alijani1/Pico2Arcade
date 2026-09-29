@@ -217,16 +217,80 @@ void Video::write(uint16_t *colors, uint32_t len) {
     tft.pushImage(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
 #endif
     cur_row = 0;
+    fps_stats_tick();
+  }
+}
 
-    static uint32_t frame = 0;
-    static uint32_t lastMs = 0;
-    frame++;
-    if (frame % 60 == 0) {
-      uint32_t now = millis();
-      uint32_t dt = now - lastMs;
-      lastMs = now;
-      Serial.printf("[video] frame=%u  60 frames in %u ms = %.1f fps\n",
-                    (unsigned)frame, (unsigned)dt, dt ? 60000.0f / dt : 0.0f);
-    }
+/* ---- FPS / CPU stats ------------------------------------------------------
+ * Once a second: screen FPS (frames pushed here), emulation FPS and the
+ * average CPU-emulation time per frame (published by emulation.c on core 1),
+ * printed to serial and — when enabled in the menu (g_show_fps) — drawn in
+ * the black border beside/below the game image so it never covers it. */
+extern "C" volatile int g_show_fps;
+extern "C" volatile unsigned long g_emu_frames;
+extern "C" volatile unsigned long g_emu_us_sum;
+
+static const float FRAME_BUDGET_MS = 1000.0f / 60.0f;
+
+static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
+  float load = emu_ms / FRAME_BUDGET_MS * 100.0f;
+  uint16_t col = (load < 80.0f) ? TFT_GREEN : (load < 95.0f) ? TFT_YELLOW : TFT_RED;
+  tft.setTextSize(1);
+#ifdef PICO_GALAGINO_LANDSCAPE
+  if (is_landscape_locked) {
+    /* Left border: push_x_off px wide (67 px with the 186 px image). */
+    int x = 2, w = push_x_off - 3;
+    tft.fillRect(0, 0, w + 2, 58, TFT_BLACK);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(x, 2);   tft.printf("SCR %4.1f", scr_fps);
+    tft.setCursor(x, 12);  tft.printf("EMU %4.1f", emu_fps);
+    tft.setTextColor(col, TFT_BLACK);
+    tft.setCursor(x, 26);  tft.printf("CPU");
+    tft.setCursor(x, 36);  tft.printf("%5.1fms", emu_ms);
+    tft.setCursor(x, 46);  tft.printf("%4.0f%%", load);
+    return;
+  }
+#endif
+  /* Portrait: 16 px strip below the 288-row image. */
+  int y = TFT_Y_OFFSET + GAME_H + 4;
+  tft.fillRect(0, y - 2, 240, 12, TFT_BLACK);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.setCursor(4, y);
+  tft.printf("SCR %4.1f EMU %4.1f ", scr_fps, emu_fps);
+  tft.setTextColor(col, TFT_BLACK);
+  tft.printf("CPU %4.1fms %3.0f%%", emu_ms, load);
+}
+
+void Video::fps_stats_tick(void) {
+  static uint32_t frames = 0, last_ms = 0, last_frames = 0;
+  static unsigned long last_emu_frames = 0, last_emu_us = 0;
+  static int shown = 0;
+  frames++;
+  uint32_t now = millis();
+  if (last_ms == 0) { last_ms = now; return; }
+  uint32_t dt = now - last_ms;
+  if (dt < 1000) return;
+
+  unsigned long ef = g_emu_frames, eus = g_emu_us_sum;
+  unsigned long d_ef = ef - last_emu_frames, d_eus = eus - last_emu_us;
+  float scr_fps = (frames - last_frames) * 1000.0f / dt;
+  float emu_fps = d_ef * 1000.0f / dt;
+  float emu_ms  = d_ef ? (d_eus / 1000.0f) / d_ef : 0.0f;
+  last_ms = now; last_frames = frames;
+  last_emu_frames = ef; last_emu_us = eus;
+
+  Serial.printf("[video] screen %.1f fps  emu %.1f fps  cpu %.2f ms/frame (%.0f%%)\n",
+                scr_fps, emu_fps, emu_ms, emu_ms / FRAME_BUDGET_MS * 100.0f);
+  if (g_show_fps) {
+    draw_fps_overlay(scr_fps, emu_fps, emu_ms);
+    shown = 1;
+  } else if (shown) {
+    /* Turned off: clear what we drew. */
+#ifdef PICO_GALAGINO_LANDSCAPE
+    if (is_landscape_locked) tft.fillRect(0, 0, push_x_off - 1, 58, TFT_BLACK);
+    else
+#endif
+    tft.fillRect(0, TFT_Y_OFFSET + GAME_H + 2, 240, 12, TFT_BLACK);
+    shown = 0;
   }
 }

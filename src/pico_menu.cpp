@@ -19,6 +19,7 @@ extern "C" void pico_audio_set_volume_pct(int pct);
 extern "C" int  pico_audio_get_volume_pct(void);
 extern "C" bool pico_input_menu_tapped(void);
 #include "pico_handoff.h"
+#include "pico_bench.h"
 
 extern "C" bool runtime_load_pacman(void);
 extern "C" bool runtime_load_mspacman(void);
@@ -110,6 +111,8 @@ static const int NUM_GAMES = sizeof(games) / sizeof(games[0]);
 extern "C" volatile int g_landscape_mode;
 extern "C" void pico_config_save_landscape(int on);
 #endif
+extern "C" volatile int g_show_fps;
+extern "C" void pico_config_save_show_fps(int on);
 
 /* Games whose ROM zip is actually on the SD card (indices into games[]).
  * Scanned once when the menu opens. */
@@ -127,20 +130,25 @@ static void scan_roms(void) {
 }
 
 /* Menu rows: available games, then (landscape builds) the display
- * toggle, then Exit. Row kinds are derived from the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_EXIT };
-static int menu_rows(void) {
+ * toggle, the FPS-overlay toggle, then Exit. Row kinds are derived from
+ * the row index. */
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_EXIT };
 #ifdef PICO_GALAGINO_LANDSCAPE
-    return nAvail + 2;
+static const int SETTING_ROWS = 2;   /* Display, Show FPS */
 #else
-    return nAvail + 1;
+static const int SETTING_ROWS = 1;   /* Show FPS */
 #endif
+static int menu_rows(void) {
+    return nAvail + SETTING_ROWS + 1;  /* + Exit */
 }
 static RowKind row_kind(int row) {
     if (row < nAvail) return ROW_GAME;
+    row -= nAvail;
 #ifdef PICO_GALAGINO_LANDSCAPE
-    if (row == nAvail) return ROW_DISPLAY;
+    if (row == 0) return ROW_DISPLAY;
+    row--;
 #endif
+    if (row == 0) return ROW_FPS;
     return ROW_EXIT;
 }
 
@@ -204,6 +212,9 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
             tft.printf("Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
             break;
 #endif
+          case ROW_FPS:
+            tft.printf("Show FPS: %s", g_show_fps ? "On" : "Off");
+            break;
           default: tft.print("Exit"); break;
         }
         y += 24;
@@ -251,6 +262,46 @@ extern "C" void pico_menu_pick_and_load(void) {
     int sel = 0;
     int g = -1;   /* chosen index into games[] */
 
+#ifdef Z80_BENCH
+    /* Benchmark: no menu — run the next installed game in the suite. */
+    {
+        int bi = bench_game_index();
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+        tft.setCursor(10, 100);
+#ifdef BENCH_GAME
+        /* Single named game: run it once, then done. */
+        int cand = -1;
+        for (int i = 0; i < nAvail; i++)
+            if (strstr(games[avail[i]].zip, BENCH_STR(BENCH_GAME))) cand = avail[i];
+        if (bi >= 1 || cand < 0) {
+            if (cand < 0) {
+                tft.print("BENCH: " BENCH_STR(BENCH_GAME) " not on SD");
+                Serial.println("[BENCH] " BENCH_STR(BENCH_GAME) " zip not on SD");
+            } else {
+                tft.print("BENCH DONE");
+            }
+            bench_all_done();
+        }
+#else
+        if (bi >= nAvail || bi >= BENCH_MAX_GAMES) {
+            tft.print("BENCH DONE");
+            bench_all_done();
+        }
+        int cand = avail[bi];
+#endif
+        tft.printf("BENCH %s", games[cand].label);
+        if (!games[cand].loader()) {
+            Serial.printf("[BENCH] load failed: %s\n", games[cand].label);
+            bench_begin(games[cand].label, bi);   /* keeps index bookkeeping */
+            bench_all_done();
+        }
+        bench_begin(games[cand].label, bi);
+        g = cand;
+    }
+#endif
+
     while (g < 0) {
         unsigned char prev_mask = buttons_get();
         draw_menu(tft, sel);
@@ -283,9 +334,14 @@ extern "C" void pico_menu_pick_and_load(void) {
           case ROW_DISPLAY:
             pico_config_save_landscape(g_landscape_mode ? 0 : 1);
             delay(300);
-            rp2040.reboot();
+            /* Relaunch (not a plain reboot) so that under the CartReader
+             * we come back to this menu instead of the CartReader. */
+            handoff_relaunch_arcade();
             break;
 #endif
+          case ROW_FPS:
+            pico_config_save_show_fps(!g_show_fps);
+            break;             /* loop redraws the menu with the new value */
           case ROW_EXIT:
             exit_arcade();
             break;

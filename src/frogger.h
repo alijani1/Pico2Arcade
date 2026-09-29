@@ -207,7 +207,7 @@ static inline void frogger_run_frame(void) {
     current_cpu=1; StepZ80(&cpu[1]); frogger_snd_icnt++; StepZ80(&cpu[1]); frogger_snd_icnt++;
 
     // "latch" interrupt until CPU has them enabled
-    if(frogger_snd_irq_state & 2 && cpu[1].IFF & IFF_1) {
+    if(frogger_snd_irq_state & 2 && Z80_IFF1(&cpu[1])) {
       IntZ80(&cpu[1], INT_RST38);
       frogger_snd_irq_state &= ~2;  // clear flag
     }

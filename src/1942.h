@@ -123,7 +123,7 @@ static inline void _1942_WrZ80(unsigned short Addr, unsigned char Value) {
     
     // 2k fgvram
     if((Addr & 0xf800) == 0xd000) {
-      // printf("#%d@%04x fgvram write %04x = %02x\n", current_cpu, cpu[current_cpu].PC.W, Addr, Value);
+      // printf("#%d@%04x fgvram write %04x = %02x\n", current_cpu, Z80_PC(&cpu[current_cpu]), Addr, Value);
       memory[Addr - 0xd000 + 0x1000] = Value;
       return;
     }

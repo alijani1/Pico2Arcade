@@ -1,3 +1,8 @@
+/* PicoGalagino: RdZ80/WrZ80 and the per-game memory handlers are called
+ * for nearly every emulated memory access; compile this file for speed
+ * (the project default is -Os). */
+#pragma GCC optimize("O2")
+
 /*
  * emulation.c
  *
@@ -12,7 +17,8 @@
 #include <stdio.h>    // for printf
 #include <string.h>   // for memcpy
 
-#include "Z80.h"
+#include "z80_core.h"
+#include "pico.h"     // __not_in_flash_func
 #include "config.h"
 
 #define CPU_EMULATION
@@ -27,6 +33,11 @@
 extern void StepZ80(Z80 *R);
 extern void digdug_StepZ80(Z80 *R);
 Z80 cpu[3];    // up to three z80 supported
+
+// Emulation stats for the FPS overlay (video.cpp): frames emulated and the
+// summed CPU-emulation time of those frames, written by core 1.
+volatile unsigned long g_emu_frames = 0;
+volatile unsigned long g_emu_us_sum = 0;
 
 unsigned char *memory;
 
@@ -256,8 +267,10 @@ unsigned char InZ80(unsigned short Port) {
  return 0; 
 }
 
-// Memory write -- write the Value to memory location Addr
-void WrZ80(unsigned short Addr, unsigned char Value) {
+// Memory write -- write the Value to memory location Addr.
+// RAM-resident (like the CPU cores): every emulated memory access lands
+// here, and from flash each call is a veneer + possible XIP cache miss.
+void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
 #if 0
   // jump table
   const void (*wrz80[])(unsigned short, unsigned char) = {
@@ -370,7 +383,7 @@ void WrZ80(unsigned short Addr, unsigned char Value) {
 #endif
 }
 
-unsigned char RdZ80(unsigned short Addr) {
+unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
 #if 0
   // jump table
   const unsigned char (*rdz80[])(unsigned short) = {
@@ -678,6 +691,11 @@ _1942_END
 #endif  
 
   sof = micros() - sof;
+  g_emu_frames++;
+  g_emu_us_sum += sof;
+#ifdef Z80_BENCH
+  { extern void bench_frame(unsigned long emu_us); bench_frame(sof); }
+#endif
 
   // It may happen that the emulation runs too slow. It will then miss the
   // vblank notification and in turn will miss a frame and significantly

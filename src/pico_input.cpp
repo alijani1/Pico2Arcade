@@ -185,5 +185,8 @@ extern "C" unsigned char buttons_get(void) {
     }
 
     cached_state = state;
+#ifdef Z80_BENCH
+    return 0;      /* benchmark: no input, so every run is identical */
+#endif
     return state;
 }

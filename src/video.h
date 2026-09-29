@@ -20,6 +20,10 @@ public:
   // Push `len` RGB565 pixels into the current draw window (row-major).
   // The game blits full frames or narrow strips using this.
   void write(uint16_t *colors, uint32_t len);
+
+private:
+  /* Once a second: FPS/CPU stats to serial + optional on-screen overlay. */
+  void fps_stats_tick(void);
 };
 
 #endif // VIDEO_H
