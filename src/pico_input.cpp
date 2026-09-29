@@ -42,6 +42,8 @@ static const int VOLUME_CHORD_STEP = 10;
 
 /* Hold START+SELECT this long during a game to return to the list. */
 static const unsigned long EXIT_HOLD_MS = 500;
+/* Hold MENU alone (no volume chord) this long during a game → game list. */
+static const unsigned long MENU_EXIT_HOLD_MS = 1000;
 
 /* Set by pico_menu once a game is armed (defined in pico_core1.cpp). */
 extern volatile int g_menu_done;
@@ -207,16 +209,18 @@ extern "C" unsigned char buttons_get(void) {
 
     /* MENU chord — same behaviour as PicoCartReader's emu_GetPad():
      * MENU + UP/DOWN steps the volume (directions hidden from the game
-     * while MENU is held); a plain MENU tap is reported on release. */
+     * while MENU is held); a plain MENU tap is reported on release.
+     * During a game, holding MENU alone returns to the game list. */
     {
         static bool menu_down = false, chorded = false;
         static int  last_dir  = 0;
+        static unsigned long menu_since = 0;
 #ifdef PICO_BOARD_TABLE
         if (pin_low(PIN_MENU)) {
 #else
         if (digitalRead(PIN_MENU) == LOW) {
 #endif
-            if (!menu_down) { menu_down = true; chorded = false; last_dir = 0; }
+            if (!menu_down) { menu_down = true; chorded = false; last_dir = 0; menu_since = now; }
             int dir = (state & BUTTON_UP) ? +1 : (state & BUTTON_DOWN) ? -1 : 0;
             if (dir && dir != last_dir) {
                 int v = pico_audio_get_volume_pct() + dir * VOLUME_CHORD_STEP;
@@ -228,6 +232,8 @@ extern "C" unsigned char buttons_get(void) {
             }
             last_dir = dir;
             state &= ~(BUTTON_UP | BUTTON_DOWN | BUTTON_LEFT | BUTTON_RIGHT);
+            if (g_menu_done && !chorded && now - menu_since >= MENU_EXIT_HOLD_MS)
+                handoff_relaunch_arcade();
         } else if (menu_down) {
             menu_down = false;
             if (!chorded) g_menu_tapped = true;

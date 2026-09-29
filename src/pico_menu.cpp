@@ -272,11 +272,11 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.print("UP/DN pick  FIRE select  MENU exit");
     tft.setCursor(6, H - HINT_H + 12);
 #ifdef PICO_QUAD
-    tft.print("MENU+UP/DN vol  hold WHITE+BLACK: list");
+    tft.print("MENU+UP/DN vol  hold MENU: game list");
 #elif defined(PICO_STANDALONE)
-    tft.print("MENU+UP/DN vol  hold START+COIN: list");
+    tft.print("MENU+UP/DN vol  hold MENU: game list");
 #else
-    tft.print("MENU+UP/DN vol  hold START+SEL: quit");
+    tft.print("MENU+UP/DN vol  hold MENU: game list");
 #endif
     draw_volume(tft);
 }
