@@ -1,0 +1,269 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 860" width="1120" height="860" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="1120" height="860" fill="#ffffff"/>
+<text x="40" y="44" font-size="22" text-anchor="start" fill="#111827" font-weight="700">PicoGalagino — standalone Raspberry Pi Pico 2 wiring</text>
+<text x="40" y="68" font-size="13" text-anchor="start" fill="#4b5563" font-weight="400">Default pins (buttons and audio can be changed in ARCADE.INI on the ROM drive; display pins are fixed)</text>
+<rect x="480" y="120" width="160" height="612" rx="10" fill="#1f6f43" stroke="#14532d" stroke-width="2"/>
+<rect x="532" y="104" width="56" height="26" rx="4" fill="#9ca3af" stroke="#4b5563"/>
+<text x="560" y="98" font-size="11" text-anchor="middle" fill="#4b5563" font-weight="400">USB</text>
+<rect x="530" y="380" width="60" height="60" rx="4" fill="#111827"/>
+<text x="560" y="414" font-size="11" text-anchor="middle" fill="#e5e7eb" font-weight="600">RP2350</text>
+<text x="560" y="464" font-size="16" text-anchor="middle" fill="#ffffff" font-weight="700">Pico 2</text>
+<text x="560" y="482" font-size="11" text-anchor="middle" fill="#d1fae5" font-weight="400">(top view)</text>
+<circle cx="480" cy="160" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="164" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GP0</text>
+<text x="471" y="153" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">1</text>
+<circle cx="480" cy="188" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="192" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GP1</text>
+<text x="471" y="181" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">2</text>
+<circle cx="480" cy="216" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="220" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GND</text>
+<text x="471" y="209" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">3</text>
+<circle cx="480" cy="244" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="248" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GP2</text>
+<text x="471" y="237" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">4</text>
+<circle cx="480" cy="272" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="276" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GP3</text>
+<text x="471" y="265" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">5</text>
+<circle cx="480" cy="300" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="304" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GP4</text>
+<text x="471" y="293" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">6</text>
+<circle cx="480" cy="328" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="332" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP5</text>
+<text x="471" y="321" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">7</text>
+<circle cx="480" cy="356" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="360" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GND</text>
+<text x="471" y="349" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">8</text>
+<circle cx="480" cy="384" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="388" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP6</text>
+<text x="471" y="377" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">9</text>
+<circle cx="480" cy="412" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="416" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP7</text>
+<text x="471" y="405" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">10</text>
+<circle cx="480" cy="440" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="444" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP8</text>
+<text x="471" y="433" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">11</text>
+<circle cx="480" cy="468" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="472" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP9</text>
+<text x="471" y="461" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">12</text>
+<circle cx="480" cy="496" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="500" font-size="11" text-anchor="start" fill="#a7f3d0" font-weight="400">GND</text>
+<text x="471" y="489" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">13</text>
+<circle cx="480" cy="524" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="528" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP10</text>
+<text x="471" y="517" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">14</text>
+<circle cx="480" cy="552" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="556" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP11</text>
+<text x="471" y="545" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">15</text>
+<circle cx="480" cy="580" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="584" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP12</text>
+<text x="471" y="573" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">16</text>
+<circle cx="480" cy="608" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="612" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP13</text>
+<text x="471" y="601" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">17</text>
+<circle cx="480" cy="636" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="640" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GND</text>
+<text x="471" y="629" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">18</text>
+<circle cx="480" cy="664" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="668" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP14</text>
+<text x="471" y="657" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">19</text>
+<circle cx="480" cy="692" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="492" y="696" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GP15</text>
+<text x="471" y="685" font-size="9" text-anchor="end" fill="#6b7280" font-weight="400">20</text>
+<circle cx="640" cy="160" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="164" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">VBUS</text>
+<text x="649" y="153" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">40</text>
+<circle cx="640" cy="188" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="192" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">VSYS</text>
+<text x="649" y="181" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">39</text>
+<circle cx="640" cy="216" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="220" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">GND</text>
+<text x="649" y="209" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">38</text>
+<circle cx="640" cy="244" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="248" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">3V3_EN</text>
+<text x="649" y="237" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">37</text>
+<circle cx="640" cy="272" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="276" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">3V3</text>
+<text x="649" y="265" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">36</text>
+<circle cx="640" cy="300" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="304" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">ADC_VREF</text>
+<text x="649" y="293" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">35</text>
+<circle cx="640" cy="328" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="332" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP28</text>
+<text x="649" y="321" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">34</text>
+<circle cx="640" cy="356" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="360" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">AGND</text>
+<text x="649" y="349" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">33</text>
+<circle cx="640" cy="384" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="388" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP27</text>
+<text x="649" y="377" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">32</text>
+<circle cx="640" cy="412" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="416" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP26</text>
+<text x="649" y="405" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">31</text>
+<circle cx="640" cy="440" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="444" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">RUN</text>
+<text x="649" y="433" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">30</text>
+<circle cx="640" cy="468" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="472" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">GP22</text>
+<text x="649" y="461" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">29</text>
+<circle cx="640" cy="496" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="500" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GND</text>
+<text x="649" y="489" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">28</text>
+<circle cx="640" cy="524" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="528" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP21</text>
+<text x="649" y="517" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">27</text>
+<circle cx="640" cy="552" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="556" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP20</text>
+<text x="649" y="545" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">26</text>
+<circle cx="640" cy="580" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="584" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP19</text>
+<text x="649" y="573" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">25</text>
+<circle cx="640" cy="608" r="6" fill="#d1d5db" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="612" font-size="11" text-anchor="end" fill="#a7f3d0" font-weight="400">GP18</text>
+<text x="649" y="601" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">24</text>
+<circle cx="640" cy="636" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="640" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">GND</text>
+<text x="649" y="629" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">23</text>
+<circle cx="640" cy="664" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="668" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">GP17</text>
+<text x="649" y="657" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">22</text>
+<circle cx="640" cy="692" r="6" fill="#fbbf24" stroke="#78350f" stroke-width="1"/>
+<text x="628" y="696" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">GP16</text>
+<text x="649" y="685" font-size="9" text-anchor="start" fill="#6b7280" font-weight="400">21</text>
+<rect x="60" y="150" width="190" height="250" rx="8" fill="#1e3a8a" stroke="#1e40af" stroke-width="2"/>
+<rect x="78" y="170" width="118" height="160" rx="3" fill="#0b1020" stroke="#93c5fd"/>
+<text x="137" y="245" font-size="13" text-anchor="middle" fill="#bfdbfe" font-weight="700">ST7789</text>
+<text x="137" y="263" font-size="11" text-anchor="middle" fill="#bfdbfe" font-weight="400">240×320 SPI</text>
+<text x="137" y="380" font-size="15" text-anchor="middle" fill="#ffffff" font-weight="700">Display</text>
+<circle cx="250" cy="190" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="194" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">BL</text>
+<polyline points="250,190 284,190" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="284" y="180" width="118" height="20" rx="10" fill="#fee2e2" stroke="#dc2626"/>
+<text x="343" y="194" font-size="10.5" text-anchor="middle" fill="#991b1b" font-weight="600">3V3 (Pico pin 36)</text>
+<circle cx="250" cy="214" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="218" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">VCC</text>
+<polyline points="250,214 284,214" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="284" y="204" width="118" height="20" rx="10" fill="#fee2e2" stroke="#dc2626"/>
+<text x="343" y="218" font-size="10.5" text-anchor="middle" fill="#991b1b" font-weight="600">3V3 (Pico pin 36)</text>
+<circle cx="250" cy="238" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="242" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">GND</text>
+<polyline points="250,238 450,238 450,216 480,216" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="250" cy="262" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="266" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">CS</text>
+<polyline points="250,262 420,262 420,328 480,328" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="250" cy="286" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="290" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">SCL</text>
+<polyline points="250,286 400,286 400,384 480,384" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="250" cy="310" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="314" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">SDA</text>
+<polyline points="250,310 380,310 380,412 480,412" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="250" cy="334" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="338" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">DC</text>
+<polyline points="250,334 360,334 360,440 480,440" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="250" cy="358" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="240" y="362" font-size="11" text-anchor="end" fill="#ffffff" font-weight="600">RES</text>
+<polyline points="250,358 340,358 340,468 480,468" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="60" y="424" font-size="11" text-anchor="start" fill="#4b5563" font-weight="400">SCL = SCLK, SDA = MOSI, RES = RST.</text>
+<text x="60" y="440" font-size="11" text-anchor="start" fill="#4b5563" font-weight="400">Pin order differs between modules —</text>
+<text x="60" y="456" font-size="11" text-anchor="start" fill="#4b5563" font-weight="400">follow the labels, not the positions.</text>
+<polyline points="640,272 672,272" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="672" y="262" width="134" height="20" rx="10" fill="#fee2e2" stroke="#dc2626"/>
+<text x="739" y="276" font-size="10.5" text-anchor="middle" fill="#991b1b" font-weight="600">3V3 → display VCC, BL</text>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="310" cy="524" r="3.5"/><circle cx="350" cy="524" r="3.5"/><line x1="307" y1="515" x2="353" y2="515"/><line x1="330" y1="515" x2="330" y2="508"/></g>
+<text x="260" y="528" font-size="12" text-anchor="end" fill="#065f46" font-weight="600">UP</text>
+<polyline points="270,524 306.5,524" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="353.5,524 480,524" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="310" cy="552" r="3.5"/><circle cx="350" cy="552" r="3.5"/><line x1="307" y1="543" x2="353" y2="543"/><line x1="330" y1="543" x2="330" y2="536"/></g>
+<text x="260" y="556" font-size="12" text-anchor="end" fill="#065f46" font-weight="600">DOWN</text>
+<polyline points="270,552 306.5,552" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="353.5,552 480,552" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="310" cy="580" r="3.5"/><circle cx="350" cy="580" r="3.5"/><line x1="307" y1="571" x2="353" y2="571"/><line x1="330" y1="571" x2="330" y2="564"/></g>
+<text x="260" y="584" font-size="12" text-anchor="end" fill="#065f46" font-weight="600">LEFT</text>
+<polyline points="270,580 306.5,580" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="353.5,580 480,580" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="310" cy="608" r="3.5"/><circle cx="350" cy="608" r="3.5"/><line x1="307" y1="599" x2="353" y2="599"/><line x1="330" y1="599" x2="330" y2="592"/></g>
+<text x="260" y="612" font-size="12" text-anchor="end" fill="#065f46" font-weight="600">RIGHT</text>
+<polyline points="270,608 306.5,608" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="353.5,608 480,608" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="310" cy="664" r="3.5"/><circle cx="350" cy="664" r="3.5"/><line x1="307" y1="655" x2="353" y2="655"/><line x1="330" y1="655" x2="330" y2="648"/></g>
+<text x="260" y="668" font-size="12" text-anchor="end" fill="#065f46" font-weight="600">FIRE</text>
+<polyline points="270,664 306.5,664" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="353.5,664 480,664" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="310" cy="692" r="3.5"/><circle cx="350" cy="692" r="3.5"/><line x1="307" y1="683" x2="353" y2="683"/><line x1="330" y1="683" x2="330" y2="676"/></g>
+<text x="260" y="696" font-size="12" text-anchor="end" fill="#065f46" font-weight="600">START</text>
+<polyline points="270,692 306.5,692" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="353.5,692 480,692" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="270,524 270,692" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="270,636 480,636" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="270" cy="524" r="3.6" fill="#374151"/>
+<circle cx="270" cy="552" r="3.6" fill="#374151"/>
+<circle cx="270" cy="580" r="3.6" fill="#374151"/>
+<circle cx="270" cy="608" r="3.6" fill="#374151"/>
+<circle cx="270" cy="664" r="3.6" fill="#374151"/>
+<circle cx="270" cy="692" r="3.6" fill="#374151"/>
+<circle cx="270" cy="636" r="3.6" fill="#374151"/>
+<rect x="196" y="498" width="190" height="128" rx="8" fill="none" stroke="#9ca3af" stroke-dasharray="5,4"/>
+<text x="202" y="492" font-size="11" text-anchor="start" fill="#4b5563" font-weight="600">Joystick (4 switches)</text>
+<polyline points="640,664 746.5,664" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="750" cy="664" r="3.5"/><circle cx="790" cy="664" r="3.5"/><line x1="747" y1="655" x2="793" y2="655"/><line x1="770" y1="655" x2="770" y2="648"/></g>
+<text x="842" y="668" font-size="12" text-anchor="start" fill="#065f46" font-weight="600">MENU</text>
+<polyline points="793.5,664 830,664" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="830" cy="664" r="3.6" fill="#374151"/>
+<polyline points="640,692 746.5,692" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#16a34a" stroke-width="2" fill="#fff"><circle cx="750" cy="692" r="3.5"/><circle cx="790" cy="692" r="3.5"/><line x1="747" y1="683" x2="793" y2="683"/><line x1="770" y1="683" x2="770" y2="676"/></g>
+<text x="842" y="696" font-size="12" text-anchor="start" fill="#065f46" font-weight="600">COIN</text>
+<polyline points="793.5,692 830,692" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="830" cy="692" r="3.6" fill="#374151"/>
+<polyline points="830,636 830,692" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="640,636 830,636" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="830" cy="636" r="3.6" fill="#374151"/>
+<rect x="870" y="150" width="120" height="150" rx="8" fill="#7c2d12" stroke="#431407" stroke-width="2"/>
+<text x="930" y="278" font-size="12" text-anchor="middle" fill="#ffffff" font-weight="700">PAM8302A</text>
+<text x="930" y="293" font-size="10" text-anchor="middle" fill="#fed7aa" font-weight="400">class-D amp</text>
+<circle cx="870" cy="175" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="880" y="179" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">VIN</text>
+<circle cx="870" cy="203" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="880" y="207" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">GND</text>
+<circle cx="870" cy="231" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="880" y="235" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">A+</text>
+<circle cx="870" cy="259" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="880" y="263" font-size="11" text-anchor="start" fill="#ffffff" font-weight="600">A−</text>
+<polyline points="640,160 700,160 700,175 870,175" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linejoin="round"/>
+<text x="708" y="170" font-size="10.5" text-anchor="start" fill="#991b1b" font-weight="600">VBUS 5 V</text>
+<polyline points="640,216 720,216 720,203 870,203" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="870,259 852,259 852,272" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#374151" stroke-width="2"><line x1="852" y1="272" x2="852" y2="282"/><line x1="843" y1="282" x2="861" y2="282"/><line x1="846" y1="286" x2="858" y2="286"/><line x1="849" y1="290" x2="855" y2="290"/></g>
+<polyline points="640,468 700,468" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round"/>
+<rect x="700" y="461" width="44" height="14" fill="#fff" stroke="#ea580c" stroke-width="2"/>
+<text x="722" y="456" font-size="10.5" text-anchor="middle" fill="#9a3412" font-weight="600">1 kΩ</text>
+<polyline points="744,468 840,468 840,231 870,231" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round"/>
+<circle cx="790" cy="468" r="3.6" fill="#ea580c"/>
+<polyline points="790,468 790,486" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#ea580c" stroke-width="3"><line x1="778" y1="486" x2="802" y2="486"/><line x1="778" y1="493" x2="802" y2="493"/></g>
+<text x="808" y="494" font-size="10.5" text-anchor="start" fill="#9a3412" font-weight="600">10 nF</text>
+<polyline points="790,493 790,504" fill="none" stroke="#374151" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#374151" stroke-width="2"><line x1="790" y1="504" x2="790" y2="514"/><line x1="781" y1="514" x2="799" y2="514"/><line x1="784" y1="518" x2="796" y2="518"/><line x1="787" y1="522" x2="793" y2="522"/></g>
+<text x="700" y="542" font-size="10.5" text-anchor="start" fill="#4b5563" font-weight="400">RC low-pass smooths the PWM</text>
+<circle cx="990" cy="190" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="980" y="194" font-size="12" text-anchor="end" fill="#ffffff" font-weight="700">+</text>
+<circle cx="990" cy="230" r="5" fill="#fbbf24" stroke="#78350f"/>
+<text x="980" y="234" font-size="12" text-anchor="end" fill="#ffffff" font-weight="700">−</text>
+<polyline points="990,190 1040,190 1040,196" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round"/>
+<polyline points="990,230 1040,230 1040,224" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round"/>
+<g stroke="#111827" stroke-width="2" fill="#e5e7eb"><rect x="1030" y="196" width="20" height="28"/><polygon points="1050,196 1074,180 1074,240 1050,224"/></g>
+<text x="1052" y="262" font-size="12" text-anchor="middle" fill="#111827" font-weight="600">Speaker</text>
+<text x="1052" y="277" font-size="10.5" text-anchor="middle" fill="#4b5563" font-weight="400">4–8 Ω</text>
+<line x1="40" y1="746" x2="1080" y2="746" stroke="#e5e7eb"/>
+<text x="40" y="772" font-size="12" text-anchor="start" fill="#374151" font-weight="400">• Every button is a switch between its GPIO and GND — no resistors needed (the Pico’s internal pull-ups are used).</text>
+<text x="40" y="792" font-size="12" text-anchor="start" fill="#374151" font-weight="400">• Hold MENU while powering on for the USB ROM drive (the first boot opens it automatically). The amp’s optional SD (shutdown) pin can stay unconnected.</text>
+<text x="40" y="812" font-size="12" text-anchor="start" fill="#374151" font-weight="400">• Not usable for buttons: GPIO 5–9 (display), 23–25 and 29 (Pico 2 internals). Optional in ARCADE.INI: fire2, fire3, nav_up/down, analog stick, amp enable, backlight.</text>
+<line x1="40" y1="838" x2="66" y2="838" stroke="#2563eb" stroke-width="3"/>
+<text x="72" y="842" font-size="12" text-anchor="start" fill="#374151" font-weight="400">display</text>
+<line x1="150" y1="838" x2="176" y2="838" stroke="#16a34a" stroke-width="3"/>
+<text x="182" y="842" font-size="12" text-anchor="start" fill="#374151" font-weight="400">buttons</text>
+<line x1="260" y1="838" x2="286" y2="838" stroke="#ea580c" stroke-width="3"/>
+<text x="292" y="842" font-size="12" text-anchor="start" fill="#374151" font-weight="400">audio</text>
+<line x1="370" y1="838" x2="396" y2="838" stroke="#dc2626" stroke-width="3"/>
+<text x="402" y="842" font-size="12" text-anchor="start" fill="#374151" font-weight="400">power</text>
+<line x1="480" y1="838" x2="506" y2="838" stroke="#374151" stroke-width="3"/>
+<text x="512" y="842" font-size="12" text-anchor="start" fill="#374151" font-weight="400">ground</text>
+</svg>

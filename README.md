@@ -48,6 +48,8 @@ We do **not** distribute ROMs. Use ROM sets you are entitled to.
 The display pins are fixed. Everything else is the default and can be changed
 in `ARCADE.INI` (step 4).
 
+![Pico 2 wiring: display, buttons, amplifier and speaker](docs/wiring_pico2.svg)
+
 | Function | GPIO | | Function | GPIO |
 |---|---|---|---|---|
 | Display SCLK | 6 | | Joystick UP | 10 |
@@ -405,6 +407,13 @@ src/
 
 ## License
 
-Port glue in `src/pico_*.cpp`, `src/*_runtime.cpp`, and `src/mame_rom_loader.cpp`
-is under the same terms as upstream Galagino. Upstream Galagino sources
-retain their original licenses. See the individual files for details.
+PicoGalagino is licensed under the **GNU General Public License v3.0** (see
+[`LICENSE`](LICENSE)), the same terms as upstream Galagino ("Published under
+GPLv3"). That covers the port glue in `src/pico_*.cpp`, `src/*_runtime.cpp`,
+and `src/mame_rom_loader.cpp`. Upstream Galagino sources retain their
+original licenses, and bundled third-party code keeps its own: the Z80 core
+in `src/z80_zazu/` is MIT (`src/z80_zazu/LICENSE`), and `src/uzlib/` (Jibz,
+Paul Sokolovsky) is under the zlib license (see its file headers). See the
+individual files for details.
+
+ROMs are not included and are not covered by this license.
