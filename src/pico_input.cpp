@@ -15,19 +15,17 @@
 #include "emulation.h"    /* BUTTON_LEFT/RIGHT/UP/DOWN/FIRE/START/COIN/EXTRA */
 #include "pico_audio.h"
 #include "pico_handoff.h"
+#include "pico_board.h"
 
-#ifdef PICO_QUAD
-/* Quad Ultimate CX (all active LOW, pull-up): no PCA9539 — player 1 is the
- * port 1 DB9 joystick, read directly, plus the device buttons. Pins match
- * GameAdapterRGBPico data/quad.json (port 1 = the P1 nets 28-31, fire 12). */
-static const int PIN_START  = 20;   /* White -> START (the Quad's Start, USB button 9) */
-static const int PIN_SELECT = 19;   /* Black -> COIN  (the Quad's Select, USB button 8) */
-static const int PIN_MENU   = 18;   /* Gray Menu: MENU+UP/DOWN = volume, tap = back */
-static const int PIN_P1_UP = 28, PIN_P1_DOWN = 29, PIN_P1_LEFT = 30, PIN_P1_RIGHT = 31;
-static const int PIN_P1_FIRE   = 12;
-static const int PIN_FIRE_RED  = 14;   /* thumb fire on the device */
-static const int PIN_FIRE_BLUE = 16;
-static const int PIN_JOY_CLICK = 21;   /* Joy-Con click (direct GPIO here, no flicker) */
+#ifdef PICO_BOARD_TABLE
+/* Quad Ultimate CX / standalone Pico 2 (all active LOW, pull-up): no PCA9539 —
+ * every control is a direct GPIO from the runtime pin table (pico_board.h;
+ * Quad profile: port 1 DB9 28-31 fire 12, Red/Blue/Joy-Con click = fire,
+ * White = START, Black = COIN, gray Menu). -1 = not connected. */
+#define PIN_START  g_pins.start
+#define PIN_SELECT g_pins.coin
+#define PIN_MENU   g_pins.menu
+static inline bool pin_low(int p) { return p >= 0 && digitalRead(p) == LOW; }
 #else
 /* Direct-GPIO buttons on the PicoCartReader board (active LOW, pull-up). */
 static const int PIN_START  = 0;    /* GP0 -> START */
@@ -57,8 +55,13 @@ extern "C" bool pico_input_menu_tapped(void) {
 /* JoyCon analog stick — ADC channels on GP44 (X) and GP45 (Y). Center
  * calibrated at boot (assume stick is at rest). Anything > threshold
  * away from center in either axis triggers a digital direction. */
+#ifdef PICO_BOARD_TABLE
+#define PIN_JOY_X  g_pins.joy_x
+#define PIN_JOY_Y  g_pins.joy_y
+#else
 static const int PIN_JOY_X  = 44;
 static const int PIN_JOY_Y  = 45;
+#endif
 static const int JOY_THRESHOLD = 900;   /* ~22% of 12-bit range */
 static int joy_center_x = 2048;
 static int joy_center_y = 2048;
@@ -72,22 +75,26 @@ extern "C" volatile int g_landscape_mode;
 
 extern "C" void pico_input_init(void) {
     Serial.println("[input] pico_input_init");
+#ifdef PICO_BOARD_TABLE
+    /* No expander: on the Quad GP2/3 (its I2C) are side buttons and GP36 (its
+     * INT) is a DB9 line, so it must not be initialised here. */
+    const int tablePins[] = { g_pins.start, g_pins.coin, g_pins.menu,
+                              g_pins.up, g_pins.down, g_pins.left, g_pins.right,
+                              g_pins.fire, g_pins.fire2, g_pins.fire3, g_pins.joy_click };
+    for (int p : tablePins) if (p >= 0) pinMode(p, INPUT_PULLUP);
+#else
     pinMode(PIN_SELECT, INPUT_PULLUP);
     pinMode(PIN_START,  INPUT_PULLUP);
     pinMode(PIN_MENU,   INPUT_PULLUP);
-#ifdef PICO_QUAD
-    /* No expander: GP2/3 (its I2C) are the Quad's side buttons and GP36 (its
-     * INT) is a DB9 line, so it must not be initialised here. */
-    const int quadPins[] = { PIN_P1_UP, PIN_P1_DOWN, PIN_P1_LEFT, PIN_P1_RIGHT,
-                             PIN_P1_FIRE, PIN_FIRE_RED, PIN_FIRE_BLUE, PIN_JOY_CLICK };
-    for (int p : quadPins) pinMode(p, INPUT_PULLUP);
-#else
     bool ok = expander_init();
     Serial.printf("[input] PCA9539: %s\n", ok ? "OK" : "not found");
 #endif
 
     /* JoyCon auto-center: sample the stick a few times at boot (it's at
      * rest during power-up) and use the average as the neutral position. */
+#ifdef PICO_BOARD_TABLE
+    if (PIN_JOY_X < 0 || PIN_JOY_Y < 0) return;     /* no analog stick */
+#endif
     analogReadResolution(12);
     long sx = 0, sy = 0;
     const int N = 8;
@@ -118,7 +125,7 @@ extern "C" unsigned char buttons_get(void) {
      * around 30-50 ms. 1 kHz polling catches every edge with plenty of
      * margin. Any INT-line pulse from the PCA9539 bypasses the cache
      * immediately (state change → fresh read). */
-#ifdef PICO_QUAD
+#ifdef PICO_BOARD_TABLE
     if (last_ms != 0 && (now - last_ms) < 1)     /* all direct GPIO — cheap */
         return cached_state;
 #else
@@ -127,26 +134,30 @@ extern "C" unsigned char buttons_get(void) {
 #endif
     last_ms = now;
 
-#ifndef PICO_QUAD
+#ifndef PICO_BOARD_TABLE
     uint16_t s = expander_readAll();   /* 16 bits, active LOW */
 #endif
     unsigned char state = 0;
 
     /* Direct-GPIO controls */
+#ifdef PICO_BOARD_TABLE
+    if (pin_low(PIN_START))  state |= BUTTON_START;
+    if (pin_low(PIN_SELECT)) state |= BUTTON_COIN;
+
+    /* Player 1 joystick; fire also on the extra fire buttons / stick click
+     * (Quad: port 1 DB9, Red / Blue / Joy-Con click). */
+    if (pin_low(g_pins.up))        state |= BUTTON_UP;
+    if (pin_low(g_pins.down))      state |= BUTTON_DOWN;
+    if (pin_low(g_pins.left))      state |= BUTTON_LEFT;
+    if (pin_low(g_pins.right))     state |= BUTTON_RIGHT;
+    if (pin_low(g_pins.fire))      state |= BUTTON_FIRE;
+    if (pin_low(g_pins.fire2))     state |= BUTTON_FIRE;
+    if (pin_low(g_pins.fire3))     state |= BUTTON_FIRE;
+    if (pin_low(g_pins.joy_click)) state |= BUTTON_FIRE;
+#else
     if (digitalRead(PIN_START)  == LOW) state |= BUTTON_START;
     if (digitalRead(PIN_SELECT) == LOW) state |= BUTTON_COIN;
 
-#ifdef PICO_QUAD
-    /* Player 1 = port 1 DB9 joystick; fire also on Red / Blue / Joy-Con click. */
-    if (digitalRead(PIN_P1_UP)     == LOW) state |= BUTTON_UP;
-    if (digitalRead(PIN_P1_DOWN)   == LOW) state |= BUTTON_DOWN;
-    if (digitalRead(PIN_P1_LEFT)   == LOW) state |= BUTTON_LEFT;
-    if (digitalRead(PIN_P1_RIGHT)  == LOW) state |= BUTTON_RIGHT;
-    if (digitalRead(PIN_P1_FIRE)   == LOW) state |= BUTTON_FIRE;
-    if (digitalRead(PIN_FIRE_RED)  == LOW) state |= BUTTON_FIRE;
-    if (digitalRead(PIN_FIRE_BLUE) == LOW) state |= BUTTON_FIRE;
-    if (digitalRead(PIN_JOY_CLICK) == LOW) state |= BUTTON_FIRE;
-#else
     /* Player 1 joystick — PCA9539 P0.0-P0.4. */
     if (!(s & EXP_P1_UP))    state |= BUTTON_UP;
     if (!(s & EXP_P1_DOWN))  state |= BUTTON_DOWN;
@@ -174,6 +185,10 @@ extern "C" unsigned char buttons_get(void) {
      * is soldered/mounted to the PCB, aligned for LANDSCAPE orientation.
      * In PORTRAIT mode the same physical push hits the game 90° off, so
      * rotate its axes 90° in portrait only. */
+#ifdef PICO_BOARD_TABLE
+    if (PIN_JOY_X >= 0 && PIN_JOY_Y >= 0)
+#endif
+    {
     int jx = analogRead(PIN_JOY_X) - joy_center_x;
     int jy = analogRead(PIN_JOY_Y) - joy_center_y;
 #ifdef PICO_GALAGINO_LANDSCAPE
@@ -188,6 +203,7 @@ extern "C" unsigned char buttons_get(void) {
     if (jx >  JOY_THRESHOLD) state |= BUTTON_RIGHT;
     if (jy < -JOY_THRESHOLD) state |= BUTTON_UP;
     if (jy >  JOY_THRESHOLD) state |= BUTTON_DOWN;
+    }
 
     /* MENU chord — same behaviour as PicoCartReader's emu_GetPad():
      * MENU + UP/DOWN steps the volume (directions hidden from the game
@@ -195,7 +211,11 @@ extern "C" unsigned char buttons_get(void) {
     {
         static bool menu_down = false, chorded = false;
         static int  last_dir  = 0;
+#ifdef PICO_BOARD_TABLE
+        if (pin_low(PIN_MENU)) {
+#else
         if (digitalRead(PIN_MENU) == LOW) {
+#endif
             if (!menu_down) { menu_down = true; chorded = false; last_dir = 0; }
             int dir = (state & BUTTON_UP) ? +1 : (state & BUTTON_DOWN) ? -1 : 0;
             if (dir && dir != last_dir) {

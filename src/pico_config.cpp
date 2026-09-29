@@ -36,6 +36,72 @@ extern "C" void pico_config_save_landscape(int on) {
     handoff_flags_write(f);
 }
 extern "C" void pico_config_save_show_fps(int on)  { g_show_fps = on ? 1 : 0; }
+extern "C" int  pico_config_volume(void) { return -1; }        /* the Quad keeps it */
+extern "C" void pico_config_save_volume(int pct) { (void)pct; }
+#elif defined(PICO_STANDALONE)
+/* Plain Pico 2: no SD card — settings live in one 4 KB flash sector just
+ * above the 1 MB ROM drive (the firmware is far below). Only written from
+ * the menu on core 0 (core 1 is still parked in setup1 then). Default:
+ * portrait (full-size picture on a 240x320 panel), FPS off, volume 100%. */
+#include <hardware/flash.h>
+#include <hardware/sync.h>
+
+#ifndef PICO_CONFIG_PHYS
+#define PICO_CONFIG_PHYS 0x300000u
+#endif
+static const uint32_t CFG_MAGIC = 0x47434647u;          /* "GCFG" */
+struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, pad; };
+static Cfg s_cfg = { CFG_MAGIC, 0, 0, 100, 0 };
+
+extern "C" {
+    volatile int g_landscape_mode = 0;   /* default: portrait */
+    volatile int g_show_fps       = 0;   /* default: off */
+}
+
+extern "C" void pico_config_load(void) {
+    const Cfg *f = (const Cfg *)(XIP_BASE + PICO_CONFIG_PHYS);
+    if (f->magic == CFG_MAGIC) s_cfg = *f;
+    if (s_cfg.volume > 100) s_cfg.volume = 100;
+    g_landscape_mode = s_cfg.landscape ? 1 : 0;
+    g_show_fps = s_cfg.show_fps ? 1 : 0;
+    Serial.printf("[cfg] landscape=%d show_fps=%d volume=%d (%s)\n", g_landscape_mode,
+                  g_show_fps, s_cfg.volume, f->magic == CFG_MAGIC ? "flash" : "defaults");
+}
+
+static void pico_config_save(void) {
+    s_cfg.magic = CFG_MAGIC;
+    s_cfg.landscape = g_landscape_mode ? 1 : 0;
+    s_cfg.show_fps = g_show_fps ? 1 : 0;
+    const Cfg *f = (const Cfg *)(XIP_BASE + PICO_CONFIG_PHYS);
+    if (memcmp(f, &s_cfg, sizeof(s_cfg)) == 0) return;          /* unchanged */
+    static uint8_t page[FLASH_PAGE_SIZE];
+    memset(page, 0xFF, sizeof(page));
+    memcpy(page, &s_cfg, sizeof(s_cfg));
+    rp2040.idleOtherCore();
+    uint32_t irq = save_and_disable_interrupts();
+    flash_range_erase(PICO_CONFIG_PHYS, FLASH_SECTOR_SIZE);
+    flash_range_program(PICO_CONFIG_PHYS, page, FLASH_PAGE_SIZE);
+    restore_interrupts(irq);
+    rp2040.resumeOtherCore();
+    Serial.printf("[cfg] saved landscape=%d show_fps=%d volume=%d\n",
+                  s_cfg.landscape, s_cfg.show_fps, s_cfg.volume);
+}
+
+extern "C" void pico_config_save_landscape(int on) {
+    g_landscape_mode = on ? 1 : 0;
+    pico_config_save();
+}
+extern "C" void pico_config_save_show_fps(int on) {
+    g_show_fps = on ? 1 : 0;
+    pico_config_save();
+}
+/* Stored volume (0..100) — the menu uses it when no handoff volume is set. */
+extern "C" int pico_config_volume(void) { return s_cfg.volume; }
+extern "C" void pico_config_save_volume(int pct) {
+    if (pct < 0 || pct > 100 || pct == s_cfg.volume) return;
+    s_cfg.volume = (uint8_t)pct;
+    pico_config_save();
+}
 #else
 #include <SD.h>
 
@@ -77,4 +143,7 @@ extern "C" void pico_config_save_show_fps(int on) {
     g_show_fps = on ? 1 : 0;
     pico_config_save();
 }
+/* The CartReader keeps the volume itself (handoff). */
+extern "C" int  pico_config_volume(void) { return -1; }
+extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #endif  /* !PICO_QUAD */

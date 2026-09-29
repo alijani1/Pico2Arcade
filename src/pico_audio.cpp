@@ -3,7 +3,16 @@
 #include <Arduino.h>
 #include <PWMAudio.h>
 #include "pico_audio.h"
+#include "pico_board.h"
 
+#ifdef PICO_BOARD_TABLE
+/* Pins from the runtime table (pico_board.h) — the PWMAudio object is created
+ * on first init, once the table is loaded. amp = -1: no enable pin. */
+#define AUDIO_PIN  g_pins.audio
+#define AMP_EN_PIN g_pins.amp
+static PWMAudio *g_audio_p = nullptr;
+#define g_audio (*g_audio_p)
+#else
 /* Wiring — same pads as the PicoCartReader VCS emulator so we can share
  * hardware. GP22 = PWM audio out, GP4 = PAM8302 amp enable (active HIGH). */
 static const int AUDIO_PIN = 22;
@@ -11,6 +20,7 @@ static const int AMP_EN_PIN = 4;
 
 /* PWMAudio wants pin at construction. Create in mono mode. */
 static PWMAudio g_audio(AUDIO_PIN, /*stereo=*/false);
+#endif
 
 static bool     g_started    = false;
 static int      g_sample_rate = 0;
@@ -23,13 +33,19 @@ extern "C" void pico_audio_init(int sample_rate) {
     if (g_started && sample_rate == g_sample_rate) return;
 
     if (!g_started) {
+#ifdef PICO_BOARD_TABLE
+        if (AUDIO_PIN < 0) return;                 /* no audio wired */
+        g_audio_p = new PWMAudio(AUDIO_PIN, /*stereo=*/false);
+#endif
         // 4 buffers × 256 words = 1024 samples. ~42ms of latency at 24kHz;
         // small enough that game→audio lag stays imperceptible, large enough
         // that we survive a few missed refills.
         g_audio.setBuffers(4, 256);
         g_audio.begin(sample_rate);
-        pinMode(AMP_EN_PIN, OUTPUT);
-        digitalWrite(AMP_EN_PIN, LOW);    // amp OFF until game starts
+        if (AMP_EN_PIN >= 0) {
+            pinMode(AMP_EN_PIN, OUTPUT);
+            digitalWrite(AMP_EN_PIN, LOW);    // amp OFF until game starts
+        }
         g_started = true;
     } else {
         // Sample-rate switch mid-session (game change).
@@ -88,8 +104,8 @@ extern "C" uint8_t pico_audio_get_volume(void) {
 }
 
 extern "C" void pico_audio_amp_on(void) {
-    digitalWrite(AMP_EN_PIN, HIGH);
+    if (AMP_EN_PIN >= 0) digitalWrite(AMP_EN_PIN, HIGH);
 }
 extern "C" void pico_audio_amp_off(void) {
-    digitalWrite(AMP_EN_PIN, LOW);
+    if (AMP_EN_PIN >= 0) digitalWrite(AMP_EN_PIN, LOW);
 }

@@ -21,6 +21,8 @@
 #ifdef PICO_CUSTOM_INPUT
 extern "C" bool pico_sd_init(void);
 #include "pico_romfs.h"
+#include "pico_board.h"
+#include "pico_drive.h"
 extern "C" void pico_config_load(void);
 #endif
 
@@ -834,6 +836,12 @@ void setup() {
   /* Direct-GPIO + PCA9539 init happens in pico_input.cpp. Sentinel
    * BTN_*_PIN values in config.h aren't real GPIOs.
    * (Forward decl in pico_compat.h.) */
+#ifdef PICO_BOARD_TABLE
+  /* Pin table first (standalone: ARCADE.INI on the ROM drive) — input and
+   * audio are set up from it. */
+  romfs_init();
+  board_pins_load();
+#endif
   pico_input_init();
   /* SD init deferred until after tft.begin() below — the CDC monitor
    * frequently doesn't attach in time to catch pre-video output, so
@@ -878,12 +886,18 @@ void setup() {
 #ifdef PICO_CUSTOM_INPUT
   /* SD + config must be up BEFORE Video::begin so it can pick rotation
    * based on the runtime g_landscape_mode. */
+#ifndef PICO_BOARD_TABLE
   romfs_init();          /* SD card, or the Quad's flash ROM drive (pico_romfs.cpp) */
+#endif
   pico_config_load();
 #endif
 
   tft.begin();
 
+#ifdef PICO_USB_DRIVE
+  /* USB ROM drive mode (menu row, or standalone: MENU held / first boot). */
+  if (pico_drive_requested()) pico_drive_run();
+#endif
 #ifdef PICO_CUSTOM_INPUT
   pico_menu_pick_and_load();
 #endif

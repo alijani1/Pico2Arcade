@@ -20,6 +20,8 @@ extern "C" int  pico_audio_get_volume_pct(void);
 extern "C" bool pico_input_menu_tapped(void);
 #include "pico_handoff.h"
 #include "pico_bench.h"
+#include "pico_board.h"
+#include "pico_drive.h"
 
 extern "C" bool runtime_load_pacman(void);
 extern "C" bool runtime_load_mspacman(void);
@@ -113,6 +115,8 @@ extern "C" void pico_config_save_landscape(int on);
 #endif
 extern "C" volatile int g_show_fps;
 extern "C" void pico_config_save_show_fps(int on);
+extern "C" int  pico_config_volume(void);
+extern "C" void pico_config_save_volume(int pct);
 
 /* Games whose ROM zip is actually on the SD card (indices into games[]).
  * Scanned once when the menu opens. */
@@ -132,16 +136,22 @@ static void scan_roms(void) {
 /* Menu rows: available games, then (landscape builds) the display
  * toggle, the FPS-overlay toggle, then Exit. Row kinds are derived from
  * the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_EXIT };
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_DRIVE, ROW_EXIT };
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
 #  define MENU_DISPLAY_TOGGLE 1
 #endif
 #ifdef MENU_DISPLAY_TOGGLE
-static const int SETTING_ROWS = 2;   /* Display, Show FPS */
+static const int SETTING_ROWS_BASE = 2;   /* Display, Show FPS */
 #else
-static const int SETTING_ROWS = 1;   /* Show FPS */
+static const int SETTING_ROWS_BASE = 1;   /* Show FPS */
+#endif
+/* Flash-drive boards: + "ROM Drive (USB)" (pico_drive.cpp). */
+#ifdef PICO_USB_DRIVE
+static const int SETTING_ROWS = SETTING_ROWS_BASE + 1;
+#else
+static const int SETTING_ROWS = SETTING_ROWS_BASE;
 #endif
 static int menu_rows(void) {
     return nAvail + SETTING_ROWS + 1;  /* + Exit */
@@ -154,6 +164,9 @@ static RowKind row_kind(int row) {
     row--;
 #endif
     if (row == 0) return ROW_FPS;
+#ifdef PICO_USB_DRIVE
+    if (row == 1) return ROW_DRIVE;
+#endif
     return ROW_EXIT;
 }
 
@@ -201,17 +214,24 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setCursor(10, 32);
     if (nAvail == 0) {
         tft.setTextColor(TFT_RED, TFT_BLACK);
-#ifdef PICO_QUAD
+#ifdef PICO_BOARD_TABLE
         tft.print("No ROMs found on the ROM drive.");
         tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
         tft.setCursor(10, 44);
+#ifdef PICO_USB_DRIVE
+        tft.print("ROM Drive (USB): copy MAME zips");
+#else
         tft.print("Mini-Games > Arcade ROM Drive: copy MAME zips");
+#endif
 #else
         tft.print("No ROMs found on SD card.");
         tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
         tft.setCursor(10, 44);
         tft.print("Copy MAME zips to /roms/ (e.g. galaga.zip)");
 #endif
+    } else if (board_pins_warning()[0]) {
+        tft.setTextColor(TFT_RED, TFT_BLACK);       /* ARCADE.INI problem (standalone) */
+        tft.print(board_pins_warning());
     } else {
         tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
         tft.print("Select a game:");
@@ -220,11 +240,13 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setTextSize(2);
     int y = top;
     for (int i = 0; i < menu_rows(); i++) {
+        /* Game names in yellow, settings / actions in white. */
+        uint16_t fg = (row_kind(i) == ROW_GAME) ? TFT_YELLOW : TFT_WHITE;
         if (i == sel) {
             tft.fillRect(4, y - 1, W - 8, step - 1, TFT_BLUE);
-            tft.setTextColor(TFT_WHITE, TFT_BLUE);
+            tft.setTextColor(fg, TFT_BLUE);
         } else {
-            tft.setTextColor(TFT_WHITE, TFT_BLACK);
+            tft.setTextColor(fg, TFT_BLACK);
         }
         tft.setCursor(14, y);
         switch (row_kind(i)) {
@@ -237,6 +259,7 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
           case ROW_FPS:
             tft.printf("Show FPS: %s", g_show_fps ? "On" : "Off");
             break;
+          case ROW_DRIVE: tft.print("ROM Drive (USB)"); break;
           default: tft.print("Exit"); break;
         }
         y += step;
@@ -250,6 +273,8 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setCursor(6, H - HINT_H + 12);
 #ifdef PICO_QUAD
     tft.print("MENU+UP/DN vol  hold WHITE+BLACK: list");
+#elif defined(PICO_STANDALONE)
+    tft.print("MENU+UP/DN vol  hold START+COIN: list");
 #else
     tft.print("MENU+UP/DN vol  hold START+SEL: quit");
 #endif
@@ -279,6 +304,12 @@ extern "C" void pico_menu_pick_and_load(void) {
     /* Volume comes from the CartReader on launch; also re-published so a
      * later return to the CartReader keeps it even if unchanged here. */
     int hv = handoff_volume_read();
+#ifdef PICO_STANDALONE
+    /* Standalone: the handoff volume only lives across our own relaunches —
+     * keep it in flash too, and start from there after a power-on. */
+    if (hv >= 0) pico_config_save_volume(hv);
+    else hv = pico_config_volume();
+#endif
     pico_audio_set_volume_pct(hv >= 0 ? hv : 100);
     handoff_volume_write(pico_audio_get_volume_pct());
     Serial.printf("[menu] volume %d%% (%s)\n", pico_audio_get_volume_pct(),
@@ -374,6 +405,11 @@ extern "C" void pico_menu_pick_and_load(void) {
           case ROW_FPS:
             pico_config_save_show_fps(!g_show_fps);
             break;             /* loop redraws the menu with the new value */
+#ifdef PICO_USB_DRIVE
+          case ROW_DRIVE:
+            pico_drive_request();          /* reboots into ROM drive mode */
+            break;
+#endif
           case ROW_EXIT:
             exit_arcade();
             break;

@@ -24,10 +24,16 @@ extern "C" {
 #define HANDOFF_FATOFS_TAG      0xFA700000u
 #define HANDOFF_SCRATCH_FATSIZE 3
 #define HANDOFF_FATSIZE_TAG     0xFA710000u
+/* Quad host: scratch[0] (free once it has chain-booted us) = this tag | the
+ * ROM drive's PHYSICAL flash offset in 4 KB units — the chain window maps it
+ * for reads only, so USB ROM drive mode needs it to write the drive. */
+#define HANDOFF_SCRATCH_HOST    0
+#define HANDOFF_HOST_QUAD_TAG   0x51AD0000u
 
 /* scratch[1] bits 8..15 = option flags, carried both ways with the volume
  * (Quad host: saved in its settings, so they survive power-off). */
 #define HANDOFF_FLAG_PORTRAIT  0x01u   /* display portrait (else landscape) */
+#define HANDOFF_FLAG_DRIVE     0x02u   /* next boot: USB ROM drive mode (cleared on entry) */
 
 /* Volume handed over by the CartReader (0..100), or -1 if none. */
 int  handoff_volume_read(void);

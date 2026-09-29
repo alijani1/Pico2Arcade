@@ -2,8 +2,9 @@
 #include <Arduino.h>
 #include <string.h>
 #include "pico_romfs.h"
+#include "pico_board.h"
 
-#ifndef PICO_QUAD
+#ifndef PICO_BOARD_TABLE
 /* ── SD card backend (PicoCartReader) ─────────────────────────────────── */
 #include <SD.h>
 
@@ -29,19 +30,66 @@ extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
 extern "C" const char *romfs_where(void) { return "/roms/ on the SD card"; }
 
 #else
-/* ── Quad flash ROM drive backend (read-only FAT12/FAT16 over XIP) ────── */
+/* ── Flash ROM drive backend (read-only FAT12/FAT16 over XIP) ───────────
+ * Quad (chain-booted) and standalone Pico 2. The drive is read through XIP;
+ * writing it (USB ROM drive mode, pico_drive.cpp) uses its physical offset. */
 #include <hardware/structs/watchdog.h>
 #include "pico_handoff.h"
 
 #ifndef PICO_QUAD_FAT_WINDOW_OFS
 #define PICO_QUAD_FAT_WINDOW_OFS 0x50000u    /* Quad: 0x3C0000 - 0x370000 */
 #endif
+#ifndef PICO_QUAD_FAT_PHYS
+#define PICO_QUAD_FAT_PHYS       0x3C0000u   /* Quad: physical flash offset */
+#endif
 #ifndef PICO_QUAD_FAT_SIZE
 #define PICO_QUAD_FAT_SIZE       0x40000u    /* 256 KB */
 #endif
+#ifndef PICO_DRIVE_PHYS
+#define PICO_DRIVE_PHYS          0x200000u   /* standalone: drive at 2 MB ... */
+#endif
+#ifndef PICO_DRIVE_SIZE
+#define PICO_DRIVE_SIZE          0x100000u   /* ... 1 MB */
+#endif
 
-static const uint8_t *vol = nullptr;         /* start of the FAT volume (XIP) */
+static const uint8_t *vol = nullptr;         /* start of the FAT volume (XIP), when formatted */
 static uint32_t volSize = 0;
+static const uint8_t *s_xip = nullptr;       /* drive location, formatted or not */
+static uint32_t s_phys = 0, s_size = 0;
+
+static void locate_drive(void);
+extern "C" void romfs_location(const uint8_t **xip, uint32_t *phys, uint32_t *size) {
+    if (!s_xip) locate_drive();
+    *xip = s_xip; *phys = s_phys; *size = s_size;
+}
+
+/* Where is the drive? Chain-booted by the Quad: it tags scratch[0] with the
+ * drive's physical offset and passes its offset/size in our window in
+ * scratch[2]/[3]. Otherwise: the Quad build's defaults, or (standalone) our
+ * own drive, which XIP sees at its physical offset. */
+static void locate_drive(void) {
+    uint32_t s0 = watchdog_hw->scratch[HANDOFF_SCRATCH_HOST];
+    if ((s0 & 0xFFFF0000u) == HANDOFF_HOST_QUAD_TAG) {
+        uint32_t ofs = PICO_QUAD_FAT_WINDOW_OFS, size = PICO_QUAD_FAT_SIZE;
+        uint32_t s2 = watchdog_hw->scratch[HANDOFF_SCRATCH_FATOFS];
+        uint32_t s3 = watchdog_hw->scratch[HANDOFF_SCRATCH_FATSIZE];
+        if ((s2 & 0xFFFF0000u) == HANDOFF_FATOFS_TAG)  ofs  = (s2 & 0xFFFFu) << 12;
+        if ((s3 & 0xFFFF0000u) == HANDOFF_FATSIZE_TAG) size = (s3 & 0xFFFFu) << 12;
+        s_xip = (const uint8_t *)(XIP_BASE + ofs);
+        s_phys = (s0 & 0xFFFFu) << 12;
+        s_size = size;
+    } else {
+#ifdef PICO_QUAD
+        s_xip = (const uint8_t *)(XIP_BASE + PICO_QUAD_FAT_WINDOW_OFS);
+        s_phys = PICO_QUAD_FAT_PHYS;
+        s_size = PICO_QUAD_FAT_SIZE;
+#else
+        s_xip = (const uint8_t *)(XIP_BASE + PICO_DRIVE_PHYS);
+        s_phys = PICO_DRIVE_PHYS;
+        s_size = PICO_DRIVE_SIZE;
+#endif
+    }
+}
 static uint32_t bps, spc, fatOfs, rootOfs, rootEntries, dataOfs, clusterBytes, clusterCount;
 static bool fat16 = false;
 
@@ -61,17 +109,13 @@ static bool cluster_ok(uint32_t c) { return c >= 2 && c < clusterCount + 2; }
 static uint32_t cluster_ofs(uint32_t c) { return dataOfs + (c - 2) * clusterBytes; }
 
 extern "C" bool romfs_init(void) {
-    /* Where the Quad put the drive in our window (scratch[2]/[3]), else defaults. */
-    uint32_t ofs = PICO_QUAD_FAT_WINDOW_OFS, size = PICO_QUAD_FAT_SIZE;
-    uint32_t s2 = watchdog_hw->scratch[HANDOFF_SCRATCH_FATOFS];
-    uint32_t s3 = watchdog_hw->scratch[HANDOFF_SCRATCH_FATSIZE];
-    if ((s2 & 0xFFFF0000u) == HANDOFF_FATOFS_TAG)  ofs  = (s2 & 0xFFFFu) << 12;
-    if ((s3 & 0xFFFF0000u) == HANDOFF_FATSIZE_TAG) size = (s3 & 0xFFFFu) << 12;
-    vol = (const uint8_t *)(XIP_BASE + ofs);
-    volSize = size;
+    if (!s_xip) locate_drive();
+    vol = s_xip;
+    volSize = s_size;
+    uint32_t ofs = s_phys;
 
     if (vol[510] != 0x55 || vol[511] != 0xAA) {
-        Serial.printf("[romfs] no FAT volume at +0x%lx\n", (unsigned long)ofs);
+        Serial.printf("[romfs] no FAT volume at 0x%lx (format it: ROM Drive mode)\n", (unsigned long)ofs);
         vol = nullptr; return false;
     }
     bps = rd16(vol + 11);
@@ -174,5 +218,9 @@ extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
     return true;
 }
 
+#ifdef PICO_QUAD
 extern "C" const char *romfs_where(void) { return "the QUAD ROMS drive"; }
+#else
+extern "C" const char *romfs_where(void) { return "the ARCADE ROMS drive"; }
+#endif
 #endif
