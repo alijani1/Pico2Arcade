@@ -42,6 +42,11 @@
 // -----------------------------------------------------------------------------
 // Game runtime tunables (upstream defaults)
 // -----------------------------------------------------------------------------
+// Galagino's own logo menu (machine == MCH_MENU) is never shown here:
+// pico_menu.cpp picks the game before emulation starts. Compile it out so
+// its logo images (~68 KB of flash) aren't linked in.
+#define PICO_NO_UPSTREAM_MENU
+
 #define MASTER_ATTRACT_MENU_TIMEOUT  20000
 #include "dip_switches.h"
 

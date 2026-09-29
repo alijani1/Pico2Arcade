@@ -123,6 +123,7 @@ unsigned short greyscale(unsigned short in) {
           ((avg >>  3) & 0x0007));   // g5-g3
 }
 
+#ifndef PICO_NO_UPSTREAM_MENU
 // render one of three the menu logos. Only the active one is colorful
 // render logo into current buffer starting with line "row" of the logo
 void render_logo(short row, const unsigned short *logo, char active) {
@@ -171,9 +172,10 @@ void render_logo(short row, const unsigned short *logo, char active) {
     }
   }  
 }
+#endif /* !PICO_NO_UPSTREAM_MENU */
 #endif
 
-#ifndef SINGLE_MACHINE
+#if !defined(SINGLE_MACHINE) && !defined(PICO_NO_UPSTREAM_MENU)
 // menu for more than three machines
 const unsigned short *logos[] = {
 #ifdef ENABLE_PACMAN    
@@ -209,6 +211,7 @@ void render_line(short row) {
 
 #ifndef SINGLE_MACHINE
   if(machine == MCH_MENU) {
+#ifndef PICO_NO_UPSTREAM_MENU
 
     if(MACHINES <= 3) {    
       // non-scrolling menu for 2 or 3 machines
@@ -258,6 +261,7 @@ void render_line(short row) {
       	}
       }
     }
+#endif /* !PICO_NO_UPSTREAM_MENU: menu area stays black */
   } else
 #endif  
 

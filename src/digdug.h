@@ -159,7 +159,7 @@ static inline void digdug_run_frame(void) {
 
 #ifdef IO_EMULATION
 
-#ifndef SINGLE_MACHINE
+#if !defined(SINGLE_MACHINE) && !defined(PICO_NO_UPSTREAM_MENU)
 #include "digdug_logo.h"
 #endif
 /* digdug data tables (spritemap/tilemap/pftiles/cmap/playfield/wavetable

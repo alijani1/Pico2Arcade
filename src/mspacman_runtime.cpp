@@ -21,6 +21,7 @@
  * mspacman.zip is fully self-contained: Midway pacman.6e/6f/6h/6j + F2 aux
  * (u5/u6/u7) + gfx (5e/5f) + all PROMs. No puckman.zip dependency. */
 
+#include "rom_scratch.h"
 #include <Arduino.h>
 #include <SD.h>
 #include <stdint.h>
@@ -151,15 +152,17 @@ static bool load_base_pacman_rom(const uint8_t *msz, size_t msz_sz) {
 }
 
 static bool build_pacrom_auxrom(const uint8_t *msz, size_t msz_sz) {
-    static uint8_t u5[0x800], u6[0x1000], u7[0x1000];
+    RomScratch u5(0x800); if (!u5) return false;
+    RomScratch u6(0x1000); if (!u6) return false;
+    RomScratch u7(0x1000); if (!u7) return false;
     size_t got = 0;
-    if (!zip_extract_public(msz, msz_sz, "u5", u5, sizeof(u5), &got) || got != 0x800) {
+    if (!zip_extract_public(msz, msz_sz, "u5", u5, 0x800, &got) || got != 0x800) {
         Serial.printf("[mspacman] u5 failed (got=%u)\n", (unsigned)got); return false;
     }
-    if (!zip_extract_public(msz, msz_sz, "u6", u6, sizeof(u6), &got) || got != 0x1000) {
+    if (!zip_extract_public(msz, msz_sz, "u6", u6, 0x1000, &got) || got != 0x1000) {
         Serial.printf("[mspacman] u6 failed (got=%u)\n", (unsigned)got); return false;
     }
-    if (!zip_extract_public(msz, msz_sz, "u7", u7, sizeof(u7), &got) || got != 0x1000) {
+    if (!zip_extract_public(msz, msz_sz, "u7", u7, 0x1000, &got) || got != 0x1000) {
         Serial.printf("[mspacman] u7 failed (got=%u)\n", (unsigned)got); return false;
     }
 
@@ -236,12 +239,13 @@ static signed char *build_wavetable(const uint8_t *msz, size_t msz_sz) {
 }
 
 static unsigned short (*build_tilemap(const uint8_t *msz, size_t msz_sz))[8] {
-    static uint8_t g5e[0x1000], g5f[0x1000];
+    RomScratch g5e(0x1000); if (!g5e) return nullptr;
+    RomScratch g5f(0x1000); if (!g5f) return nullptr;
     size_t got = 0;
-    if (!zip_extract_public(msz, msz_sz, "5e", g5e, sizeof(g5e), &got) || got < 0x800) {
+    if (!zip_extract_public(msz, msz_sz, "5e", g5e, 0x1000, &got) || got < 0x800) {
         Serial.printf("[mspacman] 5e failed (got=%u)\n", (unsigned)got); return nullptr;
     }
-    if (!zip_extract_public(msz, msz_sz, "5f", g5f, sizeof(g5f), &got) || got < 0x800) {
+    if (!zip_extract_public(msz, msz_sz, "5f", g5f, 0x1000, &got) || got < 0x800) {
         Serial.printf("[mspacman] 5f failed (got=%u)\n", (unsigned)got); return nullptr;
     }
     unsigned short *out = (unsigned short *)malloc(256 * 8 * sizeof(unsigned short));
@@ -264,12 +268,13 @@ static unsigned short (*build_tilemap(const uint8_t *msz, size_t msz_sz))[8] {
 }
 
 static unsigned long (*build_spritemap(const uint8_t *msz, size_t msz_sz))[64][16] {
-    static uint8_t g5e[0x1000], g5f[0x1000];
+    RomScratch g5e(0x1000); if (!g5e) return nullptr;
+    RomScratch g5f(0x1000); if (!g5f) return nullptr;
     size_t got = 0;
-    if (!zip_extract_public(msz, msz_sz, "5e", g5e, sizeof(g5e), &got) || got < 0x1000) {
+    if (!zip_extract_public(msz, msz_sz, "5e", g5e, 0x1000, &got) || got < 0x1000) {
         Serial.printf("[mspacman] 5e (sprites) failed (got=%u)\n", (unsigned)got); return nullptr;
     }
-    if (!zip_extract_public(msz, msz_sz, "5f", g5f, sizeof(g5f), &got) || got < 0x1000) {
+    if (!zip_extract_public(msz, msz_sz, "5f", g5f, 0x1000, &got) || got < 0x1000) {
         Serial.printf("[mspacman] 5f (sprites) failed (got=%u)\n", (unsigned)got); return nullptr;
     }
     unsigned long *out = (unsigned long *)malloc(4 * 64 * 16 * sizeof(unsigned long));

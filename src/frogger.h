@@ -223,7 +223,7 @@ static inline void frogger_run_frame(void) {
 
 #ifdef IO_EMULATION
 
-#ifndef SINGLE_MACHINE
+#if !defined(SINGLE_MACHINE) && !defined(PICO_NO_UPSTREAM_MENU)
 #include "frogger_logo.h"
 #endif
 /* frogger_tilemap.h / spritemap.h / cmap.h replaced by runtime pointers */

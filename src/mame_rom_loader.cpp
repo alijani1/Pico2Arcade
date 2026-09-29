@@ -12,6 +12,7 @@
  */
 
 #include <Arduino.h>
+#include "rom_scratch.h"
 #include <SD.h>
 #include <stdint.h>
 #include <string.h>
@@ -237,7 +238,7 @@ static void decode_tile_pac(const uint8_t *data, uint16_t out_row[8]) {
  * Combines pm1_chg1.5e + pm1_chg2.5h into a 4 KB planar buffer, then
  * decodes 256 x 8x8 tiles. */
 extern "C" unsigned short *load_pacman_tilemap_from_zip(const uint8_t *zip, size_t zip_size) {
-    static uint8_t raw[4096];   /* .bss — 4KB local was overrunning stack */
+    RomScratch raw(4096); if (!raw) return nullptr;
     size_t got = 0;
     if (!zip_extract(zip, zip_size, "pm1_chg1.5e", raw + 0,    2048, &got) || got != 2048) return nullptr;
     if (!zip_extract(zip, zip_size, "pm1_chg2.5h", raw + 2048, 2048, &got) || got != 2048) return nullptr;
@@ -287,7 +288,7 @@ static void pack_sprite_flip(const uint8_t pix[16][16], bool flip_x, bool flip_y
  * Order of the outer 4 variants matches python: no-flip, y-flip,
  * x-flip, xy-flip. */
 extern "C" unsigned long *load_pacman_spritemap_from_zip(const uint8_t *zip, size_t zip_size) {
-    static uint8_t raw[4096];   /* .bss — 4KB local was overrunning core-0's 8KB stack */
+    RomScratch raw(4096); if (!raw) return nullptr;
     size_t got = 0;
     if (!zip_extract(zip, zip_size, "pm1_chg3.5f", raw + 0,    2048, &got) || got != 2048) return nullptr;
     if (!zip_extract(zip, zip_size, "pm1_chg4.5j", raw + 2048, 2048, &got) || got != 2048) return nullptr;
@@ -389,7 +390,7 @@ extern "C" unsigned char *load_galaga_rom_cpu3_from_zip(const uint8_t *zip, size
 
 /* Galaga tilemap: same 8x8 2bpp format as Pac-Man, single 4 KB file. */
 extern "C" unsigned short *load_galaga_tilemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw[4096];
+    RomScratch raw(4096); if (!raw) return nullptr;
     size_t got = 0;
     if (!zip_extract(zip, sz, "gg1_9.4l", raw, 4096, &got) || got != 4096) return nullptr;
     unsigned short *out = (unsigned short *)malloc(256 * 8 * sizeof(unsigned short));
@@ -415,7 +416,7 @@ static void decode_sprite_galaga(const uint8_t *data, uint8_t pix[16][16]) {
 }
 
 extern "C" unsigned long *load_galaga_spritemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw[8192];   /* 2 × 4K sprite ROMs */
+    RomScratch raw(8192); if (!raw) return nullptr;   /* 2 x 4K sprite ROMs */
     size_t got = 0;
     if (!zip_extract(zip, sz, "gg1_11.4d", raw + 0,    4096, &got) || got != 4096) return nullptr;
     if (!zip_extract(zip, sz, "gg1_10.4f", raw + 4096, 4096, &got) || got != 4096) return nullptr;
@@ -559,7 +560,8 @@ static void decode_tile_frogger(const uint8_t *d0, const uint8_t *d1, uint16_t o
 
 /* Load Frogger tilemap: array name `frogger_606` = 256 chars × 8 shorts. */
 extern "C" unsigned short *load_frogger_tilemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw0[2048], raw1[2048];
+    RomScratch raw0(2048); if (!raw0) return nullptr;
+    RomScratch raw1(2048); if (!raw1) return nullptr;
     size_t got = 0;
     if (!zip_extract(zip, sz, "frogger.606", raw0, 2048, &got) || got != 2048) return nullptr;
     if (!zip_extract(zip, sz, "frogger.607", raw1, 2048, &got) || got != 2048) return nullptr;
@@ -586,7 +588,8 @@ static void decode_sprite_frogger(const uint8_t *d0, const uint8_t *d1, uint8_t 
 
 /* Load Frogger sprites: reuses frogger.606/.607, 32 bytes per sprite per file. */
 extern "C" unsigned long *load_frogger_spritemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw0[2048], raw1[2048];
+    RomScratch raw0(2048); if (!raw0) return nullptr;
+    RomScratch raw1(2048); if (!raw1) return nullptr;
     size_t got = 0;
     if (!zip_extract(zip, sz, "frogger.606", raw0, 2048, &got) || got != 2048) return nullptr;
     if (!zip_extract(zip, sz, "frogger.607", raw1, 2048, &got) || got != 2048) return nullptr;
@@ -644,7 +647,8 @@ extern "C" unsigned char *load_dkong_rom_cpu2_from_zip(const uint8_t *zip, size_
 
 /* Tiles: 2 files of 2K → 256 chars using Frogger-style parse_chr_2. */
 extern "C" unsigned short *load_dkong_tilemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw0[2048], raw1[2048];
+    RomScratch raw0(2048); if (!raw0) return nullptr;
+    RomScratch raw1(2048); if (!raw1) return nullptr;
     size_t got = 0;
     if (!zip_extract(zip, sz, "v_5h_b.bin", raw0, 2048, &got) || got != 2048) return nullptr;
     if (!zip_extract(zip, sz, "v_3pt.bin",  raw1, 2048, &got) || got != 2048) return nullptr;
@@ -669,7 +673,8 @@ extern "C" unsigned short *load_dkong_tilemap_from_zip(const uint8_t *zip, size_
 /* Sprites: 4 files of 2K, parts of each 16x16 sprite spread across ALL four.
  * 128 sprites × 4 flip variants × 16 rows × 4 bytes = 32 KB. */
 extern "C" unsigned long *load_dkong_spritemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t r[4][2048];
+    RomScratch rbuf(8192); if (!rbuf) return nullptr;
+    uint8_t (*r)[2048] = (uint8_t (*)[2048])(uint8_t *)rbuf;
     static const char *names[4] = { "l_4m_b.bin", "l_4n_b.bin", "l_4r_b.bin", "l_4s_b.bin" };
     size_t got = 0;
     for (int i = 0; i < 4; i++) {
@@ -831,9 +836,9 @@ static void decode_tile_digdug(const uint8_t *data, uint16_t out_row[8]) {
  * 2 KB (256 chars) but upstream only decodes the first 128 chars. Give
  * zip_extract enough buffer for whichever size the ROM actually is. */
 extern "C" unsigned short *load_digdug_tilemap_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw[4096];   /* .bss - stack too shallow for 4K local */
+    RomScratch raw(4096); if (!raw) return nullptr;
     size_t got = 0;
-    if (!zip_extract(zip, sz, "dd1.9", raw, sizeof(raw), &got) || got < 1024) {
+    if (!zip_extract(zip, sz, "dd1.9", raw, 4096, &got) || got < 1024) {
         Serial.printf("[loader] digdug tilemap dd1.9 failed (got=%u)\n", (unsigned)got);
         return nullptr;
     }
@@ -848,9 +853,9 @@ extern "C" unsigned short *load_digdug_tilemap_from_zip(const uint8_t *zip, size
  * mainline digdug set but some sets ship 2 KB — handle both. Playfield
  * indices in digdug_blit_tile go up to 8 bits, so allocate 256 entries. */
 extern "C" unsigned short *load_digdug_pftiles_from_zip(const uint8_t *zip, size_t sz) {
-    static uint8_t raw[4096];
+    RomScratch raw(4096); if (!raw) return nullptr;
     size_t got = 0;
-    if (!zip_extract(zip, sz, "dd1.11", raw, sizeof(raw), &got) || got < 1024) {
+    if (!zip_extract(zip, sz, "dd1.11", raw, 4096, &got) || got < 1024) {
         Serial.printf("[loader] digdug pftiles dd1.11 failed (got=%u)\n", (unsigned)got);
         return nullptr;
     }
@@ -870,7 +875,7 @@ extern "C" unsigned short *load_digdug_pftiles_from_zip(const uint8_t *zip, size
  * and pack_sprite_flip. Total = 4 × 256 × 16 × 4 bytes = 64 KB. */
 extern "C" unsigned long *load_digdug_spritemap_from_zip(const uint8_t *zip, size_t sz) {
     static const char *names[4] = { "dd1.15", "dd1.14", "dd1.13", "dd1.12" };
-    static uint8_t raw[16384];   /* 4 × 4 KB */
+    RomScratch raw(16384); if (!raw) return nullptr;   /* 4 x 4 KB */
     size_t got = 0;
     for (int i = 0; i < 4; i++) {
         if (!zip_extract(zip, sz, names[i], raw + (size_t)i * 4096, 4096, &got) || got != 4096) {

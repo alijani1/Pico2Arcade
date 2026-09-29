@@ -140,7 +140,7 @@ static inline void dkong_run_frame(void) {
 
 #ifdef IO_EMULATION
 
-#ifndef SINGLE_MACHINE
+#if !defined(SINGLE_MACHINE) && !defined(PICO_NO_UPSTREAM_MENU)
 #include "dkong_logo.h"
 #endif
 /* dkong_tilemap.h / spritemap.h / cmap.h replaced by runtime pointers */

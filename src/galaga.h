@@ -259,7 +259,7 @@ static inline void galaga_run_frame(void) {
 
 #ifdef IO_EMULATION
 
-#ifndef SINGLE_MACHINE
+#if !defined(SINGLE_MACHINE) && !defined(PICO_NO_UPSTREAM_MENU)
 #include "galaga_logo.h"
 #endif
 /* galaga_spritemap.h, tilemap.h, cmap_tiles.h, cmap_sprites.h,
