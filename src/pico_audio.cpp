@@ -14,7 +14,10 @@ static PWMAudio g_audio(AUDIO_PIN, /*stereo=*/false);
 
 static bool     g_started    = false;
 static int      g_sample_rate = 0;
-static uint8_t  g_volume     = 16;   // default 100% (max) out of 16
+// Volume 0..100 %, applied as gain = pct² / 10000 — the same perceptual
+// curve PicoCartReader uses, so a given % sounds the same in both.
+static volatile int g_volume_pct = 100;
+static volatile int g_gain       = 10000;   // pct², 0..10000
 
 extern "C" void pico_audio_init(int sample_rate) {
     if (g_started && sample_rate == g_sample_rate) return;
@@ -53,7 +56,7 @@ extern "C" size_t pico_audio_push(const void *data, size_t bytes) {
 
     for (size_t i = 0; i < nsamp; i++) {
         int32_t centered = (int32_t)samples[i] - 32768;    // now -32768..32767
-        int32_t s        = centered * (int32_t)g_volume / 16;
+        int32_t s        = centered * g_gain / 10000;
         if (s >  32767) s =  32767;
         if (s < -32768) s = -32768;
         if (g_audio.availableForWrite() < 2) break;
@@ -63,13 +66,25 @@ extern "C" size_t pico_audio_push(const void *data, size_t bytes) {
     return written * 2;   // bytes actually written
 }
 
+extern "C" void pico_audio_set_volume_pct(int pct) {
+    if (pct < 0)   pct = 0;
+    if (pct > 100) pct = 100;
+    g_volume_pct = pct;
+    g_gain       = pct * pct;
+}
+
+extern "C" int pico_audio_get_volume_pct(void) {
+    return g_volume_pct;
+}
+
+// Legacy 0..16 API, mapped onto the % scale.
 extern "C" void pico_audio_set_volume(uint8_t vol) {
     if (vol > 16) vol = 16;
-    g_volume = vol;
+    pico_audio_set_volume_pct(vol * 100 / 16);
 }
 
 extern "C" uint8_t pico_audio_get_volume(void) {
-    return g_volume;
+    return (uint8_t)((g_volume_pct * 16 + 50) / 100);
 }
 
 extern "C" void pico_audio_amp_on(void) {

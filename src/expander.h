@@ -63,8 +63,8 @@ uint8_t expander_readReg(uint8_t reg);
 #define EXP_P1_LEFT    0x0004
 #define EXP_P1_RIGHT   0x0008
 #define EXP_P1_FIRE    0x0010
-#define EXP_BTN_A      0x0020
-#define EXP_BTN_B      0x0040
+#define EXP_BTN_B      0x0020   // P0.5
+#define EXP_BTN_A      0x0040   // P0.6
 #define EXP_P0_7       0x0080
 #define EXP_P2_UP      0x0100
 #define EXP_P2_DOWN    0x0200

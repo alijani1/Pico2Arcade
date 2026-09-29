@@ -13,11 +13,32 @@
 #include <Arduino.h>
 #include "expander.h"
 #include "emulation.h"    /* BUTTON_LEFT/RIGHT/UP/DOWN/FIRE/START/COIN/EXTRA */
+#include "pico_audio.h"
+#include "pico_handoff.h"
 
 /* Direct-GPIO buttons on the PicoCartReader board (active LOW, pull-up). */
-static const int PIN_SELECT = 0;    /* -> COIN */
-static const int PIN_START  = 1;    /* -> START */
-static const int PIN_MENU   = 37;   /* unused by Galagino right now */
+static const int PIN_START  = 0;    /* GP0 -> START */
+static const int PIN_SELECT = 1;    /* GP1 -> COIN */
+static const int PIN_MENU   = 37;   /* MENU+UP/DOWN = volume, tap = back */
+
+/* Set by buttons_get() when MENU is tapped (released without an
+ * UP/DOWN in between). Consumed by pico_input_menu_tapped(). */
+static volatile bool g_menu_tapped = false;
+
+/* Volume step for MENU+UP/DOWN — matches PicoCartReader. */
+static const int VOLUME_CHORD_STEP = 10;
+
+/* Hold START+SELECT this long during a game to return to the list. */
+static const unsigned long EXIT_HOLD_MS = 500;
+
+/* Set by pico_menu once a game is armed (defined in pico_core1.cpp). */
+extern volatile int g_menu_done;
+
+extern "C" bool pico_input_menu_tapped(void) {
+    bool t = g_menu_tapped;
+    g_menu_tapped = false;
+    return t;
+}
 
 /* JoyCon analog stick — ADC channels on GP44 (X) and GP45 (Y). Center
  * calibrated at boot (assume stick is at rest). Anything > threshold
@@ -86,21 +107,6 @@ extern "C" unsigned char buttons_get(void) {
     if (digitalRead(PIN_START)  == LOW) state |= BUTTON_START;
     if (digitalRead(PIN_SELECT) == LOW) state |= BUTTON_COIN;
 
-    /* MENU button (GP37) → soft-reboot back to our boot menu. Requires
-       ~250 ms sustained press so a brief bump doesn't drop the user's
-       game. Reboot lands back in setup() → our picker. */
-    static unsigned long menu_press_start = 0;
-    if (digitalRead(PIN_MENU) == LOW) {
-        if (menu_press_start == 0) menu_press_start = millis();
-        else if (millis() - menu_press_start > 250) {
-            Serial.println("[input] MENU held — rebooting to picker");
-            delay(50);
-            rp2040.reboot();
-        }
-    } else {
-        menu_press_start = 0;
-    }
-
     /* Player 1 joystick — PCA9539 P0.0-P0.4. */
     if (!(s & EXP_P1_UP))    state |= BUTTON_UP;
     if (!(s & EXP_P1_DOWN))  state |= BUTTON_DOWN;
@@ -141,6 +147,42 @@ extern "C" unsigned char buttons_get(void) {
     if (jx >  JOY_THRESHOLD) state |= BUTTON_RIGHT;
     if (jy < -JOY_THRESHOLD) state |= BUTTON_UP;
     if (jy >  JOY_THRESHOLD) state |= BUTTON_DOWN;
+
+    /* MENU chord — same behaviour as PicoCartReader's emu_GetPad():
+     * MENU + UP/DOWN steps the volume (directions hidden from the game
+     * while MENU is held); a plain MENU tap is reported on release. */
+    {
+        static bool menu_down = false, chorded = false;
+        static int  last_dir  = 0;
+        if (digitalRead(PIN_MENU) == LOW) {
+            if (!menu_down) { menu_down = true; chorded = false; last_dir = 0; }
+            int dir = (state & BUTTON_UP) ? +1 : (state & BUTTON_DOWN) ? -1 : 0;
+            if (dir && dir != last_dir) {
+                int v = pico_audio_get_volume_pct() + dir * VOLUME_CHORD_STEP;
+                if (v < 0)   v = 0;
+                if (v > 100) v = 100;
+                pico_audio_set_volume_pct(v);
+                handoff_volume_write(v);
+                chorded = true;
+            }
+            last_dir = dir;
+            state &= ~(BUTTON_UP | BUTTON_DOWN | BUTTON_LEFT | BUTTON_RIGHT);
+        } else if (menu_down) {
+            menu_down = false;
+            if (!chorded) g_menu_tapped = true;
+        }
+    }
+
+    /* Hold START+SELECT during a game → back to the game list. */
+    {
+        static unsigned long held_since = 0;
+        if (g_menu_done && (state & BUTTON_START) && (state & BUTTON_COIN)) {
+            if (held_since == 0) held_since = now | 1;
+            else if (now - held_since >= EXIT_HOLD_MS) handoff_relaunch_arcade();
+        } else {
+            held_since = 0;
+        }
+    }
 
     cached_state = state;
     return state;

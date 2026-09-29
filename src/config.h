@@ -70,8 +70,8 @@
 // The BTN_*_PIN macros below are placeholders; the glue reads state via
 // its own inline helpers and updates the io_state[] array upstream reads.
 // -----------------------------------------------------------------------------
-#define BTN_START_PIN  1     // GP1 = START button (direct GPIO)
-#define BTN_COIN_PIN   0     // GP0 = SELECT = "insert coin"
+#define BTN_START_PIN  0     // GP0 = START button (direct GPIO)
+#define BTN_COIN_PIN   1     // GP1 = SELECT = "insert coin"
 #define BTN_LEFT_PIN   100   // sentinel — real reads happen via pico_input.cpp
 #define BTN_RIGHT_PIN  101
 #define BTN_DOWN_PIN   102

@@ -33,7 +33,12 @@ void pico_audio_set_sample_rate(int sample_rate);
  * signal to decide whether to generate more audio. */
 size_t pico_audio_push(const void *data, size_t bytes);
 
-/* Volume scaler 0..16 (0 = mute, 16 = unity). */
+/* Volume 0..100 % with a perceptual (squared) curve — matches
+ * PicoCartReader. */
+void    pico_audio_set_volume_pct(int pct);
+int     pico_audio_get_volume_pct(void);
+
+/* Legacy volume scaler 0..16 (0 = mute, 16 = unity), mapped onto %. */
 void    pico_audio_set_volume(uint8_t vol);
 void    pico_audio_amp_on(void);
 void    pico_audio_amp_off(void);

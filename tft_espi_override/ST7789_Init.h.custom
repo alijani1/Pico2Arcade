@@ -1,0 +1,105 @@
+// Custom ST7789V init for GMT024-01 panel (2.4" 240x320 SPI).
+// This replaces TFT_eSPI's default init with the exact sequence
+// provided by the panel manufacturer, which uses different power
+// and gamma settings than TFT_eSPI's built-in defaults.
+
+#ifndef INIT_SEQUENCE_3
+{
+  // ----- COLMOD 65k (16-bit RGB565) -----
+  writecommand(0x3A);
+  writedata(0x05);
+
+  // ----- VCOM -----
+  writecommand(0xC5);
+  writedata(0x1A);
+
+  // ----- MADCTL (memory access, orientation) -----
+  writecommand(0x36);
+  writedata(TFT_MAD_COLOR_ORDER);   // 0x00 for RGB portrait
+
+  // ----- ST7789V Frame rate setting: Porch -----
+  writecommand(0xB2);
+  writedata(0x05); writedata(0x05); writedata(0x00);
+  writedata(0x33); writedata(0x33);
+
+  // ----- Gate Control -----
+  writecommand(0xB7);
+  writedata(0x05);
+
+  // ----- VCOM -----
+  writecommand(0xBB);
+  writedata(0x3F);
+
+  // ----- Power Control 1 -----
+  writecommand(0xC0);
+  writedata(0x2C);
+
+  // ----- VDV and VRH Command Enable -----
+  writecommand(0xC2);
+  writedata(0x01);
+
+  // ----- VRH Set -----
+  writecommand(0xC3);
+  writedata(0x0F);
+
+  // ----- VDV Set -----
+  writecommand(0xC4);
+  writedata(0x20);
+
+  // ----- Frame Rate Control in Normal Mode (111 Hz) -----
+  writecommand(0xC6);
+  writedata(0x01);
+
+  // ----- Power Control -----
+  writecommand(0xD0);
+  writedata(0xA4);
+  writedata(0xA1);
+
+  writecommand(0xE8);
+  writedata(0x03);
+
+  // ----- Equalize time control -----
+  writecommand(0xE9);
+  writedata(0x09); writedata(0x09); writedata(0x08);
+
+  // ----- Positive gamma -----
+  writecommand(0xE0);
+  writedata(0xD0); writedata(0x05); writedata(0x09); writedata(0x09);
+  writedata(0x08); writedata(0x14); writedata(0x28); writedata(0x33);
+  writedata(0x3F); writedata(0x07); writedata(0x13); writedata(0x14);
+  writedata(0x28); writedata(0x30);
+
+  // ----- Negative gamma -----
+  writecommand(0xE1);
+  writedata(0xD0); writedata(0x05); writedata(0x09); writedata(0x09);
+  writedata(0x08); writedata(0x03); writedata(0x24); writedata(0x32);
+  writedata(0x32); writedata(0x3B); writedata(0x14); writedata(0x13);
+  writedata(0x28); writedata(0x2F);
+
+  // ----- Display Inversion OFF (this panel wants normal, not inverted) -----
+  writecommand(0x20);
+
+  // ----- Sleep Out -----
+  writecommand(0x11);
+
+  end_tft_write();
+  delay(120);
+  begin_tft_write();
+
+  // ----- Display ON -----
+  writecommand(0x29);
+  delay(120);
+
+#ifdef TFT_BL
+  digitalWrite(TFT_BL, HIGH);
+  pinMode(TFT_BL, OUTPUT);
+#endif
+}
+
+#else
+// (No INIT_SEQUENCE_3 variant used for this panel)
+{
+  writecommand(0x11); delay(120);
+  writecommand(0x29); delay(120);
+}
+#endif
