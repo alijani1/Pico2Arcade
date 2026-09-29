@@ -1,209 +1,338 @@
 # PicoGalagino
 
 A port of Till Harbaum's [Galagino](https://github.com/harbaum/galagino) ESP32
-arcade emulator to the PicoCartReader hardware — RP2350B (Olimex Pico2XL)
-with an ST7789 240×320 TFT, PCA9539 I²C expander for buttons, and a JoyCon
-analog stick.
-
-Six games run from **MAME ZIP files dropped onto an SD card at runtime** —
-no Python tools, no ROM-conversion step, no rebuild per game:
+arcade emulator to the Raspberry Pi **RP2350**. Six classic arcade games run
+from the original **MAME ROM zips** — no Python tools, no ROM conversion, no
+rebuild per game:
 
 - Pac-Man
-- Ms. Pac-Man (with the Midway F2 aux-board emulated)
+- Ms. Pac-Man (with the Midway F2 aux board emulated)
 - Galaga
 - Frogger
 - Donkey Kong
 - Dig Dug
 
-A custom text menu lets you pick a game at boot; press-and-hold the MENU
-button while playing to soft-reboot back to the picker.
+The simplest way to play is a **standard Raspberry Pi Pico 2**, an ST7789
+display, a few switches and a speaker. Flash one UF2, copy your ROM zips onto
+the USB drive it shows up as, and play. Buttons, joystick and audio pins are
+set in a text file on that drive.
 
-## Hardware
+The same code also runs as the arcade mode of two other boards:
 
-- **MCU**: RP2350B on the Olimex Pico2XL (48 GPIO, 200 MHz sys clock)
-- **Display**: ST7789 240×320 on SPI0 @ 100 MHz (uses the GMT024-01 panel's
-  custom init overlay from PicoCartReader — the file `.pio/libdeps/pico2/TFT_eSPI/TFT_Drivers/ST7789_Init.h` must be replaced with our overlay per pin group memory)
-- **SD card**: SPI1 (SCK=GP10, MOSI=GP11, MISO=GP12, CS=GP13)
-- **Audio**: PWM out on GP22 → PAM8302 amp (enable on GP4)
-- **Input**: PCA9539 on I²C1 @ 0x74 (JoyCon stick + fire buttons) plus
-  direct GPIOs for START (GP1), COIN/SELECT (GP0), and MENU (GP37)
+| Target | Env | ROMs live on | Controls |
+|---|---|---|---|
+| **Standalone Pico 2** | `pico2_std` | 1 MB USB drive in the Pico's flash | your wiring (`ARCADE.INI`) |
+| **Quad Ultimate CX** (iCode) | `quad` | 256 KB USB drive in flash | built-in profile |
+| **PicoCartReader** | `pico2_arcade` | `/roms/` on the SD card | PCA9539 expander + JoyCon |
 
-## Using it — SD card layout
+We do **not** distribute ROMs. Use ROM sets you are entitled to.
 
-Drop MAME ZIPs into `/roms/` on the FAT-formatted SD card:
+---
 
-```
-/roms/puckman.zip     ← Pac-Man
-/roms/mspacman.zip    ← Ms. Pac-Man (needs Midway F2 aux ROMs — see below)
-/roms/galaga.zip      ← Galaga
-/roms/frogger.zip     ← Frogger
-/roms/dkong.zip       ← Donkey Kong
-/roms/digdug.zip      ← Dig Dug
-```
+## Standalone Pico 2 — quick start
 
-Only the ZIPs for the games you want are required. Missing ZIPs just cause
-the corresponding menu entry to say "LOAD FAILED" if picked; the rest of
-the games keep working.
+### 1. Parts
 
-You do **not** need to unpack the ZIPs, run any Python script, or install
-any tooling. The firmware reads the ZIP directly off SD, decompresses the
-files (STORED + DEFLATE), and converts them in RAM to the format Galagino
-expects — this is a full C port of the five Python converters that ship
-with upstream (`romconv`, `cmapconv`, `tileconv`, `spriteconv`, `audioconv`).
+- Raspberry Pi **Pico 2** (RP2350A, 4 MB flash). The original Pico (RP2040)
+  does not have enough RAM.
+- **ST7789 240×320 SPI display** (the common 2.0"–2.8" modules).
+- A joystick or four direction switches, plus buttons for FIRE, START, COIN
+  and MENU. All are simple switches to GND; the Pico's internal pull-ups are
+  used.
+- A speaker with a small amplifier (for example a PAM8302A class-D board).
+  The Pico outputs PWM audio; a simple RC low-pass filter (for example
+  1 kΩ + 10 nF) between the pin and the amplifier input smooths it.
 
-### Where the ZIPs come from
+### 2. Wiring (defaults)
 
-MAME's parent/clone sets. Files needed inside each ZIP:
+The display pins are fixed. Everything else is the default and can be changed
+in `ARCADE.INI` (step 4).
 
-| Game | ZIP | Required files |
-|------|-----|----------------|
-| Pac-Man | `puckman.zip` | `pm1_prg1..8`, `pm1_chg1..4`, `pm1-1.7f`, `pm1-4.4a`, `pm1-3.1m`, `pm1-2.3m` |
-| Ms. Pac-Man | `mspacman.zip` | `pacman.6e/6f/6h/6j`, `u5`, `u6`, `u7`, `5e`, `5f`, `82s123.7f`, `82s126.4a`, `82s126.1m`, `82s126.3m` |
-| Galaga | `galaga.zip` | `gg1_1b.3p`, `gg1_2b.3m`, `gg1_3.2m`, `gg1_4b.2l`, `gg1_5b.3f`, `gg1_7b.2c`, `gg1_9.4l`, `gg1_11.4d`, `gg1_10.4f`, `prom-5.5n`, `prom-3.1c`, `prom-4.2n`, `prom-1.1d` |
-| Frogger | `frogger.zip` | `frogger.26/27`, `frsm3.7`, `frogger.606..610`, `pr-91.6l` |
-| Donkey Kong | `dkong.zip` | (see mame_rom_loader.cpp Dkong loader) |
-| Dig Dug | `digdug.zip` | `dd1a.1..6`, `dd1.7`, `dd1.10b`, `dd1.9`, `dd1.11`, `dd1.12..15`, `136007.109..113` |
+| Function | GPIO | | Function | GPIO |
+|---|---|---|---|---|
+| Display SCLK | 6 | | Joystick UP | 10 |
+| Display MOSI (SDA) | 7 | | Joystick DOWN | 11 |
+| Display CS | 5 | | Joystick LEFT | 12 |
+| Display DC | 8 | | Joystick RIGHT | 13 |
+| Display RST | 9 | | FIRE | 14 |
+| Display VCC / GND | 3V3 / GND | | START | 15 |
+| Display backlight (BL) | 3V3 (or a GPIO, see `backlight`) | | COIN | 16 |
+| Audio (PWM out) | 22 | | MENU | 17 |
 
-We DO NOT distribute ROMs. Obtain them lawfully.
+GPIO 23, 24, 25 and 29 are used on the Pico 2 board itself and can't be
+mapped.
+
+### 3. Flash the firmware
+
+Hold **BOOTSEL** while plugging the Pico 2 into USB, then copy
+`firmware.uf2` onto the `RP2350` drive that appears. To build it yourself, see
+[Build](#build).
+
+### 4. Copy the ROMs and set the pins
+
+On the first boot the Pico formats its ROM drive and shows up on your
+computer as a USB drive called **ARCADE ROMS**. The screen shows
+"ROM Drive (USB)".
+
+1. Copy the ROM zips onto the drive, either in the root or in a `ROMS` folder
+   (see [ROM sets](#rom-sets)).
+2. If your wiring differs from the defaults, edit **`ARCADE.INI`** on the
+   drive.
+3. Eject the drive, then press **MENU** or **START**. The Pico restarts into
+   the game list.
+
+To get back to the ROM drive later, pick **ROM Drive (USB)** in the game list,
+or hold **MENU** while powering on.
+
+### ARCADE.INI
+
+A commented `ARCADE.INI` with the defaults is written when the drive is
+formatted. One `key = value` per line; `-1` means not connected; `;` or `#`
+starts a comment.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `up` `down` `left` `right` | 10 11 12 13 | joystick directions |
+| `fire` | 14 | fire button |
+| `fire2` `fire3` | -1 | extra fire buttons (optional) |
+| `start` | 15 | START |
+| `coin` | 16 | COIN (insert credit) |
+| `menu` | 17 | MENU: tap = back / exit the list, hold in a game = game list, hold at power-on = ROM drive |
+| `nav_up` `nav_down` | -1 | extra menu-only UP / DOWN buttons (optional) |
+| `joy_x` `joy_y` | -1 | analog stick on ADC pins 26–28 (optional) |
+| `joy_click` | -1 | analog stick click = fire (optional) |
+| `audio` | 22 | PWM audio output |
+| `amp` | -1 | amplifier enable, driven HIGH while a game plays (optional) |
+| `backlight` | -1 | display backlight, driven HIGH (optional) |
+
+Lines with an unknown key or an invalid pin keep the default, and the game
+list shows a red warning naming the first bad line.
+
+---
+
+## Playing
+
+**Game list**
+
+- **UP / DOWN** select a row. **FIRE** or **START** picks it.
+- Game names are yellow. A game is listed only if its zip is on the drive.
+  A zip that isn't the supported ROM set is listed in **red**; picking it
+  explains which file is missing or wrong.
+- **Display: Landscape / Portrait**: portrait is the arcade's own full-size
+  picture; landscape scales it to fit the panel sideways.
+- **Show FPS**: frame-rate overlay.
+- **ROM Drive (USB)**: restarts as the USB ROM drive (flash-drive boards).
+- **Volume**: LEFT / RIGHT change it in 10 % steps; FIRE steps up and wraps
+  to mute. There is no in-game volume control.
+- **Exit**: a MENU tap does the same. Standalone, this restarts the list.
+  Under the Quad or PicoCartReader it returns to that firmware.
+
+**In a game**
+
+- Joystick + FIRE; START and COIN as on the cabinet.
+- **Hold MENU for one second** (or hold START + COIN) to go back to the game
+  list.
+
+Settings (display orientation, FPS overlay, volume) are saved in flash on
+the standalone board. On the Quad the Quad keeps them; on the PicoCartReader
+they're on the SD card (volume: kept by the CartReader).
+
+---
+
+## ROM sets
+
+One MAME set per game: the **parent set, non-merged** (the zip holds every
+file the game needs, including files shared with a parent). Merged sets that
+also contain clones work too, but they are larger and may not fit the Quad's
+256 KB drive.
+
+| Game | Zip | Files the loader reads |
+|---|---|---|
+| Pac-Man | `puckman.zip` | `pm1_prg1.6e` … `pm1_prg8.6p`, `pm1_chg1.5e` … `pm1_chg4.5j`, `pm1-1.7f`, `pm1-2.3m`, `pm1-3.1m`, `pm1-4.4a` |
+| Ms. Pac-Man | `mspacman.zip` | `pacman.6e` `pacman.6f` `pacman.6h` `pacman.6j`, `u5` `u6` `u7`, `5e` `5f`, `82s123.7f`, `82s126.1m`, `82s126.3m`, `82s126.4a` |
+| Galaga | `galaga.zip` (rev B) | `gg1_1b.3p` `gg1_2b.3m` `gg1_3.2m` `gg1_4b.2l` `gg1_5b.3f` `gg1_7b.2c` `gg1_9.4l` `gg1_10.4f` `gg1_11.4d`, `prom-1.1d` `prom-3.1c` `prom-4.2n` `prom-5.5n` |
+| Frogger | `frogger.zip` | `frogger.26` `frogger.27` `frsm3.7`, `frogger.606` … `frogger.610`, `pr-91.6l` |
+| Donkey Kong | `dkong.zip` (US set 1) | `c_5at_g.bin` `c_5bt_g.bin` `c_5ct_g.bin` `c_5et_g.bin`, `s_3i_b.bin` `s_3j_b.bin`, `v_5h_b.bin` `v_3pt.bin`, `l_4m_b.bin` `l_4n_b.bin` `l_4r_b.bin` `l_4s_b.bin`, `c-2j.bpr` `c-2k.bpr` `v-5e.bpr` |
+| Dig Dug | `digdug.zip` | `dd1a.1` … `dd1a.6`, `dd1.7`, `dd1.9`, `dd1.10b`, `dd1.11` … `dd1.15`, `136007.109` … `136007.113` |
+
+When the game list opens, each zip is checked: every file above must be
+present with the expected CRC32 (table in
+[`src/pico_romcheck.cpp`](src/pico_romcheck.cpp)). The check reads the CRCs
+stored in the zip, so it catches missing files and wrong revisions or clone
+sets without unpacking anything.
+
+The firmware reads the zip directly, decompresses the files (STORED +
+DEFLATE) and converts them in RAM to the format Galagino expects. This is a
+C port of the five Python converters that ship with upstream (`romconv`,
+`cmapconv`, `tileconv`, `spriteconv`, `audioconv`).
+
+---
 
 ## Build
 
-Requires PlatformIO with the RP2040 platform + earlephilhower core.
+Requires [PlatformIO](https://platformio.org/) (the
+`maxgerhardt/platform-raspberrypi` platform with the earlephilhower Arduino
+core; `platformio.ini` pulls both in).
 
 ```bash
-pio run
-pio run -t upload
+pio run -e pico2_std                 # standalone Pico 2 -> .pio/build/pico2_std/firmware.uf2
+pio run -e pico2_std -t upload       # flash it (picotool)
 ```
 
-Which games are compiled in is set at the top of [`src/config.h`](src/config.h):
+| Env | Board | Notes |
+|---|---|---|
+| `pico2_std` | Raspberry Pi Pico 2 | standalone; TinyUSB for the ROM drive |
+| `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x360000, ≤ 384 KB); `-t upload` writes only that slot |
+| `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
+| `pico2` | PicoCartReader | flashes at offset 0, **replacing** the CartReader firmware |
+| `bench` | PicoCartReader | Z80 benchmark (attract mode, logs to SD) |
 
-```c
-#  define ENABLE_PACMAN
-#  define ENABLE_MSPACMAN
-#  define ENABLE_GALAGA
-#  define ENABLE_FROGGER
-#  define ENABLE_DKONG
-#  define ENABLE_DIGDUG
-```
+Which games are compiled in is set at the top of [`src/config.h`](src/config.h)
+(`ENABLE_PACMAN`, `ENABLE_GALAGA`, …). Comment a line to drop that game.
 
-Comment any line to drop that game — everything else keeps working.
+The ST7789 init sequence is replaced by a custom one
+(`tft_espi_override/ST7789_Init.h.custom`); `tft_overlay.py` installs it
+into each env's TFT_eSPI copy automatically before every build.
+
+### Flash layout (standalone Pico 2, 4 MB)
+
+| Offset | Size | Contents |
+|---|---|---|
+| 0x000000 | ~330 KB | firmware |
+| 0x200000 | 1 MB | FAT12 ROM drive "ARCADE ROMS" |
+| 0x300000 | 4 KB | settings (orientation, FPS overlay, volume) |
+
+Flashing a new firmware UF2 doesn't touch the ROM drive or the settings.
+
+---
 
 ## How the port works
 
-Upstream Galagino was designed to run pre-converted game data compiled
-into flash on an ESP32. This port turns it into a **runtime SD loader**
-so users don't need Python or any host-side tooling.
+Upstream Galagino was designed to run pre-converted game data compiled into
+flash on an ESP32. This port turns it into a **runtime ROM loader**, so users
+don't need Python or any host-side tooling.
 
 ### Architecture at a glance
 
 ```
-┌───────────┐   ┌──────────────────┐   ┌────────────────────┐
-│ core 0    │   │ core 1           │   │  hardware          │
-│           │   │                  │   │                    │
-│ setup()   │   │ emulation_task() │   │ ST7789 (SPI0)      │
-│ pico_menu │   │  ├─ prepare_     │   │ SD (SPI1)          │
-│  pick&    │──▶│  │  emulation()  │──▶│ PCA9539 (I²C1)     │
-│  load()   │   │  └─ while(1)     │   │ PWM audio (GP22)   │
-│           │   │      emulate_    │   │ AMP enable (GP4)   │
-│ render    │◀──│      frame()     │◀──│ JoyCon (ADC)       │
-│  loop     │   │                  │   │                    │
-└───────────┘   └──────────────────┘   └────────────────────┘
+┌───────────┐   ┌──────────────────┐   ┌──────────────────────┐
+│ core 0    │   │ core 1           │   │  hardware            │
+│           │   │                  │   │                      │
+│ setup()   │   │ emulation_task() │   │ ST7789 (SPI0)        │
+│ pico_menu │   │  ├─ prepare_     │   │ ROM zips: flash      │
+│  pick&    │──▶│  │  emulation()  │──▶│   drive or SD card   │
+│  load()   │   │  └─ while(1)     │   │ buttons (GPIO /      │
+│           │   │      emulate_    │   │   PCA9539)           │
+│ render    │◀──│      frame()     │◀──│ PWM audio            │
+│  loop     │   │                  │   │                      │
+└───────────┘   └──────────────────┘   └──────────────────────┘
 ```
 
-Core 0 handles the menu, the SD load, and the render/scan-out to the TFT
-(the "video task" in upstream lingo). Core 1 runs the Z80/i8048 emulator
-in a tight `emulate_frame()` loop, gated on a vblank counter that core 0
+Core 0 handles the menu, the ROM load, and the render/scan-out to the TFT
+(the "video task" in upstream lingo). Core 1 runs the Z80/i8048 emulator in a
+tight `emulate_frame()` loop, gated on a vblank counter that core 0
 increments once per screen refresh.
 
-A `g_menu_done` flag holds core 1 in `setup1()` until the user has picked
-a game and the runtime ROM pointers are populated — so Galagino's own
+A `g_menu_done` flag holds core 1 in `setup1()` until the user has picked a
+game and the runtime ROM pointers are populated, so Galagino's own
 attract-mode menu never runs.
+
+### Boards, pins and ROM storage
+
+- [`src/pico_board.cpp`](src/pico_board.cpp): runtime pin table. The Quad has
+  a built-in profile; the standalone board reads `ARCADE.INI`. Input
+  ([`src/pico_input.cpp`](src/pico_input.cpp)) and audio
+  ([`src/pico_audio.cpp`](src/pico_audio.cpp)) are set up from it. The
+  PicoCartReader keeps its fixed PCA9539 wiring.
+- [`src/pico_romfs.cpp`](src/pico_romfs.cpp): where the zips come from. On
+  the PicoCartReader it's the SD card. On the flash boards it's a small
+  read-only FAT12/16 reader over XIP: the drive is plain memory, so a zip is
+  found in the root directory (or a `ROMS` folder) and copied cluster by
+  cluster.
+- [`src/pico_drive.cpp`](src/pico_drive.cpp): USB ROM drive mode (TinyUSB
+  mass storage). Writes go through a 4 KB flash-sector cache, with core 1
+  idled around each erase/program. The drive is formatted FAT12 on first use.
+- [`src/pico_handoff.cpp`](src/pico_handoff.cpp): watchdog scratch registers
+  carry volume, display orientation and "start in ROM drive mode" across
+  reboots and to/from a host firmware (Quad / PicoCartReader), which
+  chain-boots this image with the boot ROM's `rom_chain_image()`.
 
 ### Hitting 60 Hz on the RP2350
 
-Real arcade hardware runs at 60 Hz. Getting Galagino there on the RP2350B
-took a chain of specific choices; if any one drops, the emulator halves
-its speed and everything drags.
+Real arcade hardware runs at 60 Hz. Getting Galagino there on the RP2350
+took a chain of specific choices; if any one drops, the emulator halves its
+speed and everything drags.
 
 **System / peripheral clocks.** The `board_build.f_cpu = 200000000L` in
-[`platformio.ini`](platformio.ini) runs the CPU at 200 MHz (2× default).
-SPI runs at 100 MHz (`-DSPI_FREQUENCY=100000000`). Galaga is the tightest
-of the six games — its three-Z80 frame takes close to 13 ms of the 16.6
-ms budget, so the CPU headroom matters. Ms. Pac-Man's F2 fetch adds a
+[`platformio.ini`](platformio.ini) runs the CPU at 200 MHz (vs. 150 MHz
+default). SPI runs at 100 MHz (`-DSPI_FREQUENCY=100000000`). Galaga is the
+tightest of the six games: its three-Z80 frame takes close to 13 ms of the
+16.6 ms budget, so the CPU headroom matters. Ms. Pac-Man's F2 fetch adds a
 small per-opcode branch on top of that.
 
-**ST7789 init overlay.** TFT_eSPI's stock ST7789 init sequence is wrong
-for the GMT024-01 panel we use — colours invert and gamma is off. The
-override lives in `PicoCartReader/tft_espi_override/` (from the sister
-project) and must be dropped into
-`.pio/libdeps/pico2/TFT_eSPI/TFT_Drivers/ST7789_Init.h` before the first
-build. Without it every frame looks bad regardless of speed.
-
 **One `pushImage` per frame.** The render task in
-[`src/video.cpp`](src/video.cpp) builds the whole 224×288 game framebuffer
-in RAM and hands it to TFT_eSPI as a single `pushImage` per screen
-refresh — no per-row DMA restarts, no per-tile flushes. At 100 MHz SPI,
-that transfer costs about `224*288*2*8 / 100e6 = 10.3 ms`, leaving ~6 ms
-for the render pass. Splitting the transfer smaller was tried and
-consistently missed the vblank budget.
+[`src/video.cpp`](src/video.cpp) builds the whole 224×288 game framebuffer in
+RAM and hands it to TFT_eSPI as a single `pushImage` per screen refresh — no
+per-row DMA restarts, no per-tile flushes. At 100 MHz SPI, that transfer
+costs about `224*288*2*8 / 100e6 = 10.3 ms`, leaving ~6 ms for the render
+pass. Splitting the transfer smaller was tried and consistently missed the
+vblank budget.
 
 **Half-rate display, double-rate emulation.** Config leaves `TFT_SPICLK`
-undefined, which selects Galagino's `VIDEO_HALF_RATE` mode: the render
-loop calls `xTaskNotifyGive` **twice per screen refresh** and the display
-runs at 30 fps while the emulator gets **two vblank pulses per refresh**
-and ticks at 60 Hz. Trying a 1:1 sync pinned the emulator to display
-rate (~30 fps) and everything felt sluggish; the double-pulse fix keeps
-game clocks honest.
+undefined, which selects Galagino's `VIDEO_HALF_RATE` mode: the render loop
+calls `xTaskNotifyGive` **twice per screen refresh** and the display runs at
+30 fps while the emulator gets **two vblank pulses per refresh** and ticks at
+60 Hz. Trying a 1:1 sync pinned the emulator to display rate (~30 fps) and
+everything felt sluggish; the double-pulse fix keeps game clocks honest.
 
 **vblank counter must decrement, not clear-all.** Real FreeRTOS's
-`ulTaskNotifyTake(pdTRUE, …)` clears the count and returns the old
-value. That semantic is wrong for `VIDEO_HALF_RATE`: if two pulses arrive
-between `emulate_frame()` calls and we clear, the second pulse is lost
-and the emulator drops to half speed. Our stub in
-[`src/pico_freertos_stubs.c`](src/pico_freertos_stubs.c) always
-decrements by one instead — every pulse is accounted for regardless of
-the caller's `clearOnExit` argument.
+`ulTaskNotifyTake(pdTRUE, …)` clears the count and returns the old value.
+That semantic is wrong for `VIDEO_HALF_RATE`: if two pulses arrive between
+`emulate_frame()` calls and we clear, the second pulse is lost and the
+emulator drops to half speed. Our stub in
+[`src/pico_freertos_stubs.c`](src/pico_freertos_stubs.c) always decrements
+by one instead — every pulse is accounted for regardless of the caller's
+`clearOnExit` argument.
 
-**Core split.** Core 0 owns the video task (100 MHz SPI + TFT_eSPI is
-already close to full-duty on the peripheral side). Core 1 runs
-`emulation_task()` — 60 Hz Z80/i8048 stepping plus the audio-render
-loop. `pico_serial_log` writes are buffered so debug prints don't stall
-either core.
+**Core split.** Core 0 owns the video task (100 MHz SPI + TFT_eSPI is already
+close to full-duty on the peripheral side). Core 1 runs `emulation_task()` —
+60 Hz Z80/i8048 stepping plus the audio-render loop. `pico_serial_log` writes
+are buffered so debug prints don't stall either core.
 
-**Result.** Consistent 60 fps emu / 30 fps display across all six games,
-verified via the `[emu] 60 takes in ~1000 ms = 60 fps` and `[video]
-60 frames in ~2000 ms = 30 fps` counters in the serial log. Galaga is
-the closest to the edge but sits comfortably at 59–60 fps in gameplay.
+**Result.** Consistent 60 fps emulation / 30 fps display across all six
+games. Galaga is the closest to the edge but sits comfortably at 59–60 fps
+in gameplay.
 
-### SD → memory pipeline
+**Landscape.** In landscape the 224×288 frame is scaled 6:5 (nearest
+neighbour, dropping every 6th row and column) to fit 320×240.
+
+### Zip → memory pipeline
 
 Each game has a `*_runtime.cpp` file with a `runtime_load_<game>()`
 entrypoint. When the menu picks a game, that function:
 
-1. Slurps the ZIP off SD into a malloc'd buffer.
-2. Walks the local-file-header stream, extracts each needed file with our
+1. Reads the zip into a malloc'd buffer (`romfs_slurp`).
+2. Walks the local-file-header stream and extracts each needed file with the
    in-tree `zip_extract` (STORED + uzlib DEFLATE — see [`src/uzlib`](src/uzlib)).
 3. Calls the appropriate loaders in [`src/mame_rom_loader.cpp`](src/mame_rom_loader.cpp)
-   to build the exact byte-layouts Galagino expects:
+   to build the exact byte layouts Galagino expects:
    - `load_<game>_rom_*` — CPU ROMs concatenated + patched
    - `load_<game>_tilemap_*` — 2-bpp planar tile decode
    - `load_<game>_spritemap_*` — 16×16 sprite decode with 4 flip variants
    - `load_<game>_cmap_*` — palette PROM + colormap lookup PROM merged into RGB565
    - `load_<game>_wavetable_*` — Namco WSG3 or AY-3-8910 wave data
-4. Reassigns the runtime pointers (`pacman_rom`, `pacman_5e`, etc.)
-   originally declared in `*_runtime.cpp`.
+4. Reassigns the runtime pointers (`pacman_rom`, `pacman_5e`, etc.) declared
+   in `*_runtime.cpp`.
 
-Since Galagino was written to reference these as `const` flash arrays,
-we replaced the header `#include`s in `pacman.h`/`galaga.h`/etc. with
-`extern` pointer declarations, then patched the Z80 core's optimized
-`digdug_StepZ80` and `emulation.h`'s `OpZ80_INL` to fetch through the
-pointers with per-CPU address masks (bounds-checking against the actual
-malloc'd buffer size).
+Since Galagino was written to reference these as `const` flash arrays, the
+header `#include`s in `pacman.h`/`galaga.h`/etc. were replaced with `extern`
+pointer declarations, and the Z80 memory access fetches through those
+pointers with per-CPU address masks.
 
 ### Ms. Pac-Man's F2 aux board
 
-Ms. Pac-Man ran on stock Pac-Man hardware with a Midway daughterboard
-between the Z80 and its ROMs. The board:
+Ms. Pac-Man ran on stock Pac-Man hardware with a Midway daughterboard between
+the Z80 and its ROMs. The board:
 
 - Replaces `pacman.6j` with a decoded copy of `u7` at 0x3000-0x3FFF
 - Adds a decoded 8 KB aux ROM at 0x8000-0x9FFF (from `u5`+`u6`)
@@ -211,53 +340,55 @@ between the Z80 and its ROMs. The board:
 - Enables the Ms. Pac-Man map on any access in `0x3FF8-0x3FFF` (ENABLE trap)
 - Reverts to plain Pac-Man on any access in seven small "disable" windows
 
-We port the GalaginoPlus build-time decoder (bit-swap on data, addr-swap
-on A11/A12, plus a 40-entry JMP-stub patch table) to run once at load
-time. The runtime bank-switch lives in `mspacman_fetch()` in
-[`src/mspacman_runtime.cpp`](src/mspacman_runtime.cpp), called from
-`OpZ80_INL` and `pacman_RdZ80` when `machine == MCH_MSPACMAN`.
+We port the GalaginoPlus build-time decoder (bit-swap on data, addr-swap on
+A11/A12, plus a 40-entry JMP-stub patch table) to run once at load time. The
+runtime bank switch lives in `mspacman_fetch()` in
+[`src/mspacman_runtime.cpp`](src/mspacman_runtime.cpp).
 
 Two graphics patch tables (`mspacman_til_patch.h` + `mspacman_spr_patch.h`,
-20 KB of flash data ported from GalaginoPlus's `.table` files) apply
-signed per-position deltas on top of the base decoded tile/sprite data.
+20 KB of flash data ported from GalaginoPlus's `.table` files) apply signed
+per-position deltas on top of the base decoded tile/sprite data.
 
-### Custom menu
+### Game list
 
-[`src/pico_menu.cpp`](src/pico_menu.cpp) draws a simple text list of the
-compiled-in games using TFT_eSPI, waits for UP/DOWN + FIRE/START, then
-runs the chosen game's `runtime_load_*()` and sets `machine = MCH_*`.
-Only after that does it release the `g_menu_done` gate so core 1 can
-start emulating.
-
-The MENU button (GP37) is polled by [`src/pico_input.cpp`](src/pico_input.cpp);
-holding it for 250 ms calls `rp2040.reboot()` to return to the picker.
+[`src/pico_menu.cpp`](src/pico_menu.cpp) draws the list of installed games
+and settings with TFT_eSPI, runs the chosen game's `runtime_load_*()` and
+sets `machine = MCH_*`. Only then does it release the `g_menu_done` gate so
+core 1 can start emulating. Going back to the list (MENU held in a game)
+reboots into it.
 
 ## Directory layout
 
 ```
-platformio.ini           PIO build config for the pico2 (RP2350B) env
+platformio.ini           PIO build config (envs: pico2_std, quad, pico2_arcade, pico2, bench)
+tft_overlay.py           installs the custom ST7789 init into TFT_eSPI (pre-build)
+arcade_upload.py         `-t upload` into a host's arcade slot (quad / pico2_arcade)
 src/
-  config.h               ENABLE_<game> flags, pin map, dip switches
+  config.h               ENABLE_<game> flags, dip switches
   emulation.[ch]         Z80 dispatch, machine dispatch, IRQ handling
   galagino.cpp           video/audio glue (mostly upstream, with our tweaks)
-  <game>.h               per-game read/write/render/prepare (upstream)
-  <game>_runtime.cpp     per-game SD loader + runtime pointer definitions
-  <game>_logo.h          per-game splash image data (upstream)
-  mame_rom_loader.cpp    ZIP-to-Galagino-format converters (all 5, in C)
+  <game>.h               per-game memory map / render logic (upstream)
+  <game>_runtime.cpp     per-game zip loader + runtime pointer definitions
+  mame_rom_loader.cpp    zip-to-Galagino-format converters (all 5, in C)
   z80_core.h             selects the Z80 CPU core
   z80_zazu/              superzazu/z80 (MIT) + Galagino patches/adapter
   i8048.[ch]             Intel 8048 emulator for DKong sound (upstream)
-  pacman.h ... digdug.h  per-machine memory maps + render logic (upstream)
-  pico_audio.[ch]        PWMAudio wrapper (our port)
-  pico_input.cpp         PCA9539 + JoyCon + direct-GPIO button reader
-  pico_menu.cpp          our runtime game picker
-  pico_sd.cpp            SD.begin + file listing
+  pico_board.[ch]        runtime pin table + ARCADE.INI
+  pico_romfs.[ch]        ROM storage: SD card or flash FAT drive
+  pico_drive.[ch]        USB ROM drive mode (TinyUSB mass storage)
+  pico_romcheck.[ch]     ROM set check (file names + CRC32s)
+  pico_config.cpp        settings: SD file / flash sector / host handoff
+  pico_handoff.[ch]      watchdog-scratch handoff with a host firmware
+  pico_audio.[ch]        PWMAudio wrapper
+  pico_input.cpp         buttons / stick reader (GPIO table or PCA9539)
+  pico_menu.cpp          the game list
+  pico_sd.cpp            SD card init (PicoCartReader only)
   pico_compat.h          ESP32→Pico shims (Serial, xTaskCreate, etc.)
   pico_freertos_stubs.c  vTaskDelay, ulTaskNotifyTake, notify-give
-  pico_core1.cpp         setup1() — waits for menu, then runs emulator
+  pico_core1.cpp         setup1() — waits for the menu, then runs the emulator
   video.[ch]             TFT_eSPI backend (replaces upstream ESP-IDF SPI)
   driver/i2s.h           ESP-IDF I²S no-op stub, forwards to pico_audio
-  uzlib/                 vendored DEFLATE decompressor for ZIP extraction
+  uzlib/                 vendored DEFLATE decompressor for zip extraction
   mspacman_*_patch.h     20 KB of Ms. Pac-Man gfx delta tables
 ```
 
