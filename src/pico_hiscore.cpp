@@ -6,6 +6,8 @@
  * once the game has initialised its table; the table is restored only when
  * every range matches (same rule as MAME's plugin). Ranges include the
  * on-screen "HIGH SCORE" digits where the game keeps them in video RAM.
+ * The same ranges (and the "pattern stable for 30 frames" rule below) are
+ * used by GalaginoPlus (VirtualClaudioBoy), which saves high scores too.
  */
 #include <Arduino.h>
 #include <string.h>
@@ -115,12 +117,17 @@ static uint32_t s_frames = 0;
 static uint8_t  s_saved[SLOT_DATA], s_prev[SLOT_DATA];  /* last saved / last seen */
 static uint8_t  s_len = 0;
 static uint32_t s_stableFrames = 0;
+static uint32_t s_initFrames = 0;                       /* consecutive frames the init pattern held */
 /* core 1 -> core 0 */
 static uint8_t           s_pending[SLOT_DATA];
 static volatile bool     s_saveReq = false;
 static volatile bool     s_exitReq = false;
 
 static const uint32_t WAIT_FRAMES   = 60 * 60;          /* give up restoring after 60 s */
+/* The init pattern must hold this many consecutive frames before the saved
+ * table goes in — guards against transient matches while the game boots
+ * (RAM tests, cleared RAM). */
+static const uint32_t INIT_STABLE_FRAMES = 30;
 static const uint32_t CHECK_EVERY   = 30;               /* compare twice a second */
 static const uint32_t STABLE_FRAMES = 60 * 10;          /* unchanged for 10 s -> save */
 
@@ -167,6 +174,7 @@ extern "C" void pico_hiscore_load(void) {
     for (int i = 0; i < NGAMES; i++) if (GAMES[i].mch == machine && GAMES[i].n) s_game = i;
     if (s_game >= 0) {
         s_len = table_len(GAMES[s_game]);
+        s_initFrames = 0;
         s_state = HS_WAIT;
         const HsSlot &sl = s_store.slot[s_game];
         Serial.printf("[hiscore] slot %d: %s\n", s_game,
@@ -182,16 +190,18 @@ extern "C" void pico_hiscore_frame(void) {
     const HsGame &g = GAMES[s_game];
     s_frames++;
     if (s_state == HS_WAIT) {
-        if (table_ready(g)) {
+        if (!table_ready(g)) s_initFrames = 0;
+        else if (++s_initFrames >= INIT_STABLE_FRAMES) {
             const HsSlot &sl = s_store.slot[s_game];
             if (sl.valid && sl.len == s_len) table_write(g, sl.data);
             table_read(g, s_saved);
             memcpy(s_prev, s_saved, s_len);
             s_stableFrames = 0;
             s_state = HS_RUN;
-        } else if (s_frames > WAIT_FRAMES) {
-            s_state = HS_OFF;                /* table never showed up: leave it alone */
+            return;
         }
+        if (s_frames > WAIT_FRAMES)
+            s_state = HS_OFF;                /* table never showed up: leave it alone */
         return;
     }
     if (s_frames % CHECK_EVERY) return;
