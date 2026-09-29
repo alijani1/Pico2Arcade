@@ -37,7 +37,7 @@ extern "C" const char *romfs_where(void) { return "/roms/ on the SD card"; }
 #include "pico_handoff.h"
 
 #ifndef PICO_QUAD_FAT_WINDOW_OFS
-#define PICO_QUAD_FAT_WINDOW_OFS 0x50000u    /* Quad: 0x3C0000 - 0x370000 */
+#define PICO_QUAD_FAT_WINDOW_OFS 0x60000u    /* Quad: 0x3C0000 - 0x360000 */
 #endif
 #ifndef PICO_QUAD_FAT_PHYS
 #define PICO_QUAD_FAT_PHYS       0x3C0000u   /* Quad: physical flash offset */
