@@ -217,10 +217,15 @@ static void draw_volume(TFT_eSPI &tft) {
  * past the bottom of a landscape panel wraps onto its top rows. */
 static void draw_menu(TFT_eSPI &tft, int sel) {
     const int W = tft.width(), H = tft.height();
-    const int HINT_H = 22;                     /* two hint lines at the bottom */
-    int top = 60;
+    const bool wide = W > H;                   /* landscape: one hint line, list pulled up */
+    const int HINT_H = wide ? 12 : 22;         /* hint lines at the bottom */
+    /* A note line under the title only when there is something to say (no
+     * ROMs / ARCADE.INI problem) — otherwise the list starts right below
+     * the title, so the rows get more spacing. */
+    const bool note = (nAvail == 0) || board_pins_warning()[0];
+    int top = note ? 60 : (wide ? 28 : 40);
     int step = (H - HINT_H - top) / menu_rows();
-    if (step < 20) {                           /* tight (landscape): pull the list up */
+    if (note && step < 20) {                   /* tight (landscape): pull the list up */
         top = 46;
         step = (H - HINT_H - top) / menu_rows();
     }
@@ -253,9 +258,6 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     } else if (board_pins_warning()[0]) {
         tft.setTextColor(TFT_RED, TFT_BLACK);       /* ARCADE.INI problem (standalone) */
         tft.print(board_pins_warning());
-    } else {
-        tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        tft.print("Select a game:");
     }
 
     tft.setTextSize(2);
@@ -292,9 +294,16 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
         y += step;
     }
 
-    /* Hint lines kept <= 37 chars (222 px) so they fit portrait width. */
+    /* Hint lines kept <= 37 chars (222 px) so they fit portrait width;
+     * landscape gets a single <= 51-char line (306 px). */
     tft.setTextSize(1);
     tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    if (wide) {
+        tft.setCursor(6, H - HINT_H + 2);
+        tft.print("FIRE select  LT/RT volume  hold MENU in game: list");
+        draw_volume(tft);
+        return;
+    }
     tft.setCursor(6, H - HINT_H + 2);
     tft.print("UP/DN pick  FIRE select  MENU exit");
     tft.setCursor(6, H - HINT_H + 12);
