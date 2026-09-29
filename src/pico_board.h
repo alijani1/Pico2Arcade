@@ -31,6 +31,7 @@ typedef struct {
     int8_t up, down, left, right;
     int8_t fire, fire2, fire3;      /* any of them = FIRE */
     int8_t start, coin, menu;
+    int8_t nav_up, nav_down;        /* menu-only UP / DOWN buttons, -1 = none */
     int8_t joy_x, joy_y;            /* ADC GPIOs for an analog stick, -1 = none */
     int8_t joy_click;               /* = FIRE */
     int8_t audio;                   /* PWM audio output */

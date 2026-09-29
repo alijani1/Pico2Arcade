@@ -22,6 +22,7 @@ extern "C" bool pico_input_menu_tapped(void);
 #include "pico_bench.h"
 #include "pico_board.h"
 #include "pico_drive.h"
+#include "pico_romcheck.h"
 
 extern "C" bool runtime_load_pacman(void);
 extern "C" bool runtime_load_mspacman(void);
@@ -122,6 +123,10 @@ extern "C" void pico_config_save_volume(int pct);
  * Scanned once when the menu opens. */
 static int avail[NUM_GAMES > 0 ? NUM_GAMES : 1];
 static int nAvail = 0;
+/* Per games[] index: the zip is there but isn't the supported ROM set
+ * (pico_romcheck.cpp) — listed in red, and picking it explains why. */
+static bool badSet[NUM_GAMES > 0 ? NUM_GAMES : 1];
+static char badWhy[NUM_GAMES > 0 ? NUM_GAMES : 1][40];
 
 static void scan_roms(void) {
     nAvail = 0;
@@ -129,14 +134,28 @@ static void scan_roms(void) {
         bool ok = romfs_exists(games[i].zip);
         Serial.printf("[menu] %-12s %s %s\n", games[i].label, games[i].zip,
                       ok ? "found" : "missing");
-        if (ok) avail[nAvail++] = i;
+        if (ok) {
+            badSet[i] = !romcheck_zip(games[i].zip, badWhy[i], sizeof(badWhy[i]));
+            avail[nAvail++] = i;
+        }
     }
 }
 
+/* Volume row: LEFT/RIGHT (or FIRE, wrapping) step it; kept by the host via
+ * the handoff, and standalone in flash too. */
+static const int VOLUME_STEP = 10;
+static void set_volume(int v) {
+    if (v < 0)   v = 0;
+    if (v > 100) v = 100;
+    pico_audio_set_volume_pct(v);
+    handoff_volume_write(v);
+    pico_config_save_volume(v);
+}
+
 /* Menu rows: available games, then (landscape builds) the display
- * toggle, the FPS-overlay toggle, then Exit. Row kinds are derived from
- * the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_DRIVE, ROW_EXIT };
+ * toggle, the FPS-overlay toggle, (flash boards) ROM Drive, Volume, then
+ * Exit. Row kinds are derived from the row index. */
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
@@ -149,9 +168,9 @@ static const int SETTING_ROWS_BASE = 1;   /* Show FPS */
 #endif
 /* Flash-drive boards: + "ROM Drive (USB)" (pico_drive.cpp). */
 #ifdef PICO_USB_DRIVE
-static const int SETTING_ROWS = SETTING_ROWS_BASE + 1;
+static const int SETTING_ROWS = SETTING_ROWS_BASE + 2;   /* + ROM Drive, Volume */
 #else
-static const int SETTING_ROWS = SETTING_ROWS_BASE;
+static const int SETTING_ROWS = SETTING_ROWS_BASE + 1;   /* + Volume */
 #endif
 static int menu_rows(void) {
     return nAvail + SETTING_ROWS + 1;  /* + Exit */
@@ -166,7 +185,9 @@ static RowKind row_kind(int row) {
     if (row == 0) return ROW_FPS;
 #ifdef PICO_USB_DRIVE
     if (row == 1) return ROW_DRIVE;
+    row--;
 #endif
+    if (row == 1) return ROW_VOLUME;
     return ROW_EXIT;
 }
 
@@ -241,7 +262,7 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     int y = top;
     for (int i = 0; i < menu_rows(); i++) {
         /* Game names in yellow, settings / actions in white. */
-        uint16_t fg = (row_kind(i) == ROW_GAME) ? TFT_YELLOW : TFT_WHITE;
+        uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
         if (i == sel) {
             tft.fillRect(4, y - 1, W - 8, step - 1, TFT_BLUE);
             tft.setTextColor(fg, TFT_BLUE);
@@ -260,6 +281,12 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
             tft.printf("Show FPS: %s", g_show_fps ? "On" : "Off");
             break;
           case ROW_DRIVE: tft.print("ROM Drive (USB)"); break;
+          case ROW_VOLUME: {
+            int v = pico_audio_get_volume_pct();
+            if (v <= 0) tft.print("Volume: < Mute >");
+            else        tft.printf("Volume: < %d%% >", v);
+            break;
+          }
           default: tft.print("Exit"); break;
         }
         y += step;
@@ -272,11 +299,11 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.print("UP/DN pick  FIRE select  MENU exit");
     tft.setCursor(6, H - HINT_H + 12);
 #ifdef PICO_QUAD
-    tft.print("MENU+UP/DN vol  hold MENU: game list");
+    tft.print("LT/RT volume  in game hold MENU: list");
 #elif defined(PICO_STANDALONE)
-    tft.print("MENU+UP/DN vol  hold MENU: game list");
+    tft.print("LT/RT volume  in game hold MENU: list");
 #else
-    tft.print("MENU+UP/DN vol  hold MENU: game list");
+    tft.print("LT/RT volume  in game hold MENU: list");
 #endif
     draw_volume(tft);
 }
@@ -292,6 +319,30 @@ static void show_load_error(TFT_eSPI &tft, int g) {
     tft.setCursor(10, 166);
     tft.printf("Check %s on %s", games[g].zip + 6, romfs_where());   /* skip "/roms/" */
     tft.setCursor(10, 180);
+    tft.print("Press FIRE/START to go back");
+    while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
+    while (!(buttons_get() & (BUTTON_FIRE | BUTTON_START))) delay(20);
+}
+
+/* The zip isn't the supported MAME set (pico_romcheck.cpp). */
+static void show_bad_set(TFT_eSPI &tft, int g) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(10, 40);
+    tft.print("WRONG ROM SET");
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setCursor(10, 70);
+    tft.printf("%s:", games[g].zip + 6);                  /* skip "/roms/" */
+    tft.setCursor(10, 84);
+    tft.print(badWhy[g]);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(10, 108);
+    tft.print("Use the MAME parent set for this game");
+    tft.setCursor(10, 120);
+    tft.printf("(non-merged), copied to %s.", romfs_where());
+    tft.setCursor(10, 144);
     tft.print("Press FIRE/START to go back");
     while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
     while (!(buttons_get() & (BUTTON_FIRE | BUTTON_START))) delay(20);
@@ -386,6 +437,16 @@ extern "C" void pico_menu_pick_and_load(void) {
                 if (++sel >= menu_rows()) sel = 0;
                 draw_menu(tft, sel);
             }
+            /* Volume row: LEFT/RIGHT step it in place. */
+            if (row_kind(sel) == ROW_VOLUME) {
+                int dv = ((m & BUTTON_RIGHT) && !(prev_mask & BUTTON_RIGHT)) ? VOLUME_STEP
+                       : ((m & BUTTON_LEFT) && !(prev_mask & BUTTON_LEFT)) ? -VOLUME_STEP : 0;
+                if (dv) {
+                    set_volume(pico_audio_get_volume_pct() + dv);
+                    vol_shown = pico_audio_get_volume_pct();
+                    draw_menu(tft, sel);
+                }
+            }
             if ((m & (BUTTON_FIRE | BUTTON_START)) && !(prev_mask & (BUTTON_FIRE | BUTTON_START)))
                 break;
             prev_mask = m;
@@ -410,11 +471,20 @@ extern "C" void pico_menu_pick_and_load(void) {
             pico_drive_request();          /* reboots into ROM drive mode */
             break;
 #endif
+          case ROW_VOLUME: {    /* FIRE: step up, wrapping to mute after 100% */
+            int v = pico_audio_get_volume_pct();
+            set_volume(v >= 100 ? 0 : v + VOLUME_STEP);
+            break;
+          }
           case ROW_EXIT:
             exit_arcade();
             break;
           default: {
             int cand = avail[sel];
+            if (badSet[cand]) {           /* not the supported ROM set: say why */
+                show_bad_set(tft, cand);
+                break;
+            }
             Serial.printf("[menu] picked: %s\n", games[cand].label);
             tft.fillScreen(TFT_BLACK);
             tft.setTextSize(2);

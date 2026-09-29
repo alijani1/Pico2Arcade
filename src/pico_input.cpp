@@ -33,16 +33,16 @@ static const int PIN_SELECT = 1;    /* GP1 -> COIN */
 static const int PIN_MENU   = 37;   /* MENU+UP/DOWN = volume, tap = back */
 #endif
 
-/* Set by buttons_get() when MENU is tapped (released without an
- * UP/DOWN in between). Consumed by pico_input_menu_tapped(). */
+/* Set by buttons_get() when MENU is tapped (pressed and released).
+ * Consumed by pico_input_menu_tapped(). */
 static volatile bool g_menu_tapped = false;
 
-/* Volume step for MENU+UP/DOWN — matches PicoCartReader. */
-static const int VOLUME_CHORD_STEP = 10;
+/* (The MENU+UP/DOWN volume chord is gone — volume is a row in the game
+ * list, pico_menu.cpp; there is no in-game volume control.) */
 
 /* Hold START+SELECT this long during a game to return to the list. */
 static const unsigned long EXIT_HOLD_MS = 500;
-/* Hold MENU alone (no volume chord) this long during a game → game list. */
+/* Hold MENU this long during a game → game list. */
 static const unsigned long MENU_EXIT_HOLD_MS = 1000;
 
 /* Set by pico_menu once a game is armed (defined in pico_core1.cpp). */
@@ -80,7 +80,7 @@ extern "C" void pico_input_init(void) {
 #ifdef PICO_BOARD_TABLE
     /* No expander: on the Quad GP2/3 (its I2C) are side buttons and GP36 (its
      * INT) is a DB9 line, so it must not be initialised here. */
-    const int tablePins[] = { g_pins.start, g_pins.coin, g_pins.menu,
+    const int tablePins[] = { g_pins.start, g_pins.coin, g_pins.menu, g_pins.nav_up, g_pins.nav_down,
                               g_pins.up, g_pins.down, g_pins.left, g_pins.right,
                               g_pins.fire, g_pins.fire2, g_pins.fire3, g_pins.joy_click };
     for (int p : tablePins) if (p >= 0) pinMode(p, INPUT_PULLUP);
@@ -207,38 +207,38 @@ extern "C" unsigned char buttons_get(void) {
     if (jy >  JOY_THRESHOLD) state |= BUTTON_DOWN;
     }
 
-    /* MENU chord — same behaviour as PicoCartReader's emu_GetPad():
-     * MENU + UP/DOWN steps the volume (directions hidden from the game
-     * while MENU is held); a plain MENU tap is reported on release.
-     * During a game, holding MENU alone returns to the game list. */
+    /* MENU: a tap is reported on release (the game list uses it to exit);
+     * held during a game it returns to the game list. A press that is
+     * already down at boot (the hold that just relaunched us, or leaving
+     * ROM drive mode) is ignored until released, so the late release
+     * doesn't also exit the list. */
     {
-        static bool menu_down = false, chorded = false;
-        static int  last_dir  = 0;
+        static bool menu_down = false, seen_up = false;
         static unsigned long menu_since = 0;
 #ifdef PICO_BOARD_TABLE
-        if (pin_low(PIN_MENU)) {
+        bool menu_low = pin_low(PIN_MENU);
 #else
-        if (digitalRead(PIN_MENU) == LOW) {
+        bool menu_low = digitalRead(PIN_MENU) == LOW;
 #endif
-            if (!menu_down) { menu_down = true; chorded = false; last_dir = 0; menu_since = now; }
-            int dir = (state & BUTTON_UP) ? +1 : (state & BUTTON_DOWN) ? -1 : 0;
-            if (dir && dir != last_dir) {
-                int v = pico_audio_get_volume_pct() + dir * VOLUME_CHORD_STEP;
-                if (v < 0)   v = 0;
-                if (v > 100) v = 100;
-                pico_audio_set_volume_pct(v);
-                handoff_volume_write(v);
-                chorded = true;
-            }
-            last_dir = dir;
-            state &= ~(BUTTON_UP | BUTTON_DOWN | BUTTON_LEFT | BUTTON_RIGHT);
-            if (g_menu_done && !chorded && now - menu_since >= MENU_EXIT_HOLD_MS)
+        if (!menu_low) seen_up = true;
+        if (menu_low && seen_up) {
+            if (!menu_down) { menu_down = true; menu_since = now; }
+            if (g_menu_done && now - menu_since >= MENU_EXIT_HOLD_MS)
                 handoff_relaunch_arcade();
         } else if (menu_down) {
             menu_down = false;
-            if (!chorded) g_menu_tapped = true;
+            g_menu_tapped = true;
         }
     }
+
+#ifdef PICO_BOARD_TABLE
+    /* Menu-only UP/DOWN buttons (Quad: left / right side buttons) — step
+     * through the game list; not passed to the game. */
+    if (!g_menu_done) {
+        if (pin_low(g_pins.nav_up))   state |= BUTTON_UP;
+        if (pin_low(g_pins.nav_down)) state |= BUTTON_DOWN;
+    }
+#endif
 
     /* Hold START+SELECT during a game → back to the game list. */
     {
