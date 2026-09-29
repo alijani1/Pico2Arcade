@@ -12,7 +12,10 @@ import os
 
 Import("env")
 
-ARCADE_OFFSET = 0x10201000   # 0x10200000 is the erased guard sector
+# Per-env override: custom_arcade_offset (the Quad's arcade slot is 0x10370000,
+# see GameAdapterRGBPico include/arcade.hpp). Default: PicoCartReader window.
+ARCADE_OFFSET = int(env.GetProjectOption("custom_arcade_offset", "0x10201000"), 0)
+# (PicoCartReader: 0x10200000 is the erased guard sector)
 
 picotool = os.path.join(
     env.subst("$PROJECT_PACKAGES_DIR"),

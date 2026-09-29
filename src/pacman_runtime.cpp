@@ -9,7 +9,7 @@
  */
 
 #include <Arduino.h>
-#include <SD.h>
+#include "pico_romfs.h"   /* ROM zips: SD card or the Quad ROM drive */
 #include <stdint.h>
 
 /* Type shapes match how galagino.cpp / pacman.h index into them.
@@ -34,16 +34,7 @@ extern "C" unsigned long  *load_pacman_spritemap_from_zip (const uint8_t *zip, s
  * helper in mame_rom_loader.cpp — kept local to avoid making that a
  * public API just for this call). Caller frees. */
 static bool sd_slurp(const char *path, uint8_t **out, size_t *out_sz) {
-    File f = SD.open(path, FILE_READ);
-    if (!f) return false;
-    size_t sz = f.size();
-    uint8_t *buf = (uint8_t *)malloc(sz);
-    if (!buf) { f.close(); return false; }
-    size_t got = f.read(buf, sz);
-    f.close();
-    if (got != sz) { free(buf); return false; }
-    *out = buf; *out_sz = sz;
-    return true;
+    return romfs_slurp(path, out, out_sz);
 }
 
 /* Populate the 5 Pac-Man pointers by loading + converting one of the
@@ -52,7 +43,7 @@ extern "C" bool runtime_load_pacman(void) {
     const char *candidates[] = { "/roms/puckman.zip", nullptr };
     const char *path = nullptr;
     for (int i = 0; candidates[i]; i++) {
-        if (SD.exists(candidates[i])) { path = candidates[i]; break; }
+        if (romfs_exists(candidates[i])) { path = candidates[i]; break; }
     }
     if (!path) { Serial.println("[pacman] no puckman.zip on SD"); return false; }
 

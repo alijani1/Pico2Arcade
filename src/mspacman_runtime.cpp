@@ -23,7 +23,7 @@
 
 #include "rom_scratch.h"
 #include <Arduino.h>
-#include <SD.h>
+#include "pico_romfs.h"   /* ROM zips: SD card or the Quad ROM drive */
 #include <stdint.h>
 #include <string.h>
 
@@ -124,16 +124,7 @@ extern "C" bool zip_extract_public(const uint8_t *zip, size_t zip_size,
                                    size_t *out_size);
 
 static bool sd_slurp(const char *path, uint8_t **out, size_t *out_sz) {
-    File f = SD.open(path, FILE_READ);
-    if (!f) return false;
-    size_t sz = f.size();
-    uint8_t *buf = (uint8_t *)malloc(sz);
-    if (!buf) { f.close(); return false; }
-    size_t got = f.read(buf, sz);
-    f.close();
-    if (got != sz) { free(buf); return false; }
-    *out = buf; *out_sz = sz;
-    return true;
+    return romfs_slurp(path, out, out_sz);
 }
 
 static bool load_base_pacman_rom(const uint8_t *msz, size_t msz_sz) {
@@ -319,7 +310,7 @@ static unsigned long (*build_spritemap(const uint8_t *msz, size_t msz_sz))[64][1
 
 extern "C" bool runtime_load_mspacman(void) {
     const char *path = "/roms/mspacman.zip";
-    if (!SD.exists(path)) { Serial.println("[mspacman] mspacman.zip not on SD"); return false; }
+    if (!romfs_exists(path)) { Serial.println("[mspacman] mspacman.zip not on SD"); return false; }
     uint8_t *msz = nullptr; size_t msz_sz = 0;
     if (!sd_slurp(path, &msz, &msz_sz)) { Serial.println("[mspacman] slurp failed"); return false; }
     Serial.printf("[mspacman] loaded %s (%u bytes) - decoding...\n", path, (unsigned)msz_sz);

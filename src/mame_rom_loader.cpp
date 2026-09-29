@@ -13,7 +13,7 @@
 
 #include <Arduino.h>
 #include "rom_scratch.h"
-#include <SD.h>
+#include "pico_romfs.h"   /* ROM zips: SD card or the Quad ROM drive */
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -33,16 +33,7 @@ static inline uint32_t rd32(const uint8_t *p) {
 
 /* Slurp an entire file from SD into a malloc'd buffer. Caller frees. */
 static bool sd_slurp(const char *path, uint8_t **out_buf, size_t *out_size) {
-    File f = SD.open(path, FILE_READ);
-    if (!f) { Serial.printf("[loader] open failed: %s\n", path); return false; }
-    size_t sz = f.size();
-    uint8_t *buf = (uint8_t *)malloc(sz);
-    if (!buf) { Serial.printf("[loader] malloc %u bytes failed\n", (unsigned)sz); f.close(); return false; }
-    size_t got = f.read(buf, sz);
-    f.close();
-    if (got != sz) { Serial.printf("[loader] short read: %u/%u\n", (unsigned)got, (unsigned)sz); free(buf); return false; }
-    *out_buf = buf; *out_size = sz;
-    return true;
+    return romfs_slurp(path, out_buf, out_size);
 }
 
 /* Extract one entry by name into `dst`. Returns true on success.

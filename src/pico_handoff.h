@@ -18,6 +18,12 @@ extern "C" {
 #define HANDOFF_ARCADE_MAGIC   0xA7CADE01u
 #define HANDOFF_SCRATCH_VOLUME 1
 #define HANDOFF_VOLUME_TAG     0x564F0000u
+/* Quad Ultimate CX host only (GameAdapterRGBPico include/arcade.hpp): where
+ * its FAT ROM drive sits inside our chain-boot window, in 4 KB units. */
+#define HANDOFF_SCRATCH_FATOFS  2
+#define HANDOFF_FATOFS_TAG      0xFA700000u
+#define HANDOFF_SCRATCH_FATSIZE 3
+#define HANDOFF_FATSIZE_TAG     0xFA710000u
 
 /* Volume handed over by the CartReader (0..100), or -1 if none. */
 int  handoff_volume_read(void);

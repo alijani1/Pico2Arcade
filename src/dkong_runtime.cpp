@@ -1,7 +1,7 @@
 /* dkong_runtime.cpp — runtime-loaded DKong pointers + loader. */
 
 #include <Arduino.h>
-#include <SD.h>
+#include "pico_romfs.h"   /* ROM zips: SD card or the Quad ROM drive */
 #include <stdint.h>
 
 extern "C" {
@@ -21,21 +21,12 @@ extern "C" unsigned short *load_dkong_cmap_from_zip         (const uint8_t*, siz
 extern "C" unsigned short *load_dkong_cmap_sprite_from_zip  (const uint8_t*, size_t);
 
 static bool sd_slurp(const char *path, uint8_t **out, size_t *out_sz) {
-    File f = SD.open(path, FILE_READ);
-    if (!f) return false;
-    size_t sz = f.size();
-    uint8_t *buf = (uint8_t *)malloc(sz);
-    if (!buf) { f.close(); return false; }
-    size_t got = f.read(buf, sz);
-    f.close();
-    if (got != sz) { free(buf); return false; }
-    *out = buf; *out_sz = sz;
-    return true;
+    return romfs_slurp(path, out, out_sz);
 }
 
 extern "C" bool runtime_load_dkong(void) {
     const char *path = "/roms/dkong.zip";
-    if (!SD.exists(path)) { Serial.println("[dkong] dkong.zip not on SD"); return false; }
+    if (!romfs_exists(path)) { Serial.println("[dkong] dkong.zip not on SD"); return false; }
     uint8_t *zip = nullptr; size_t zip_sz = 0;
     if (!sd_slurp(path, &zip, &zip_sz)) { Serial.println("[dkong] slurp failed"); return false; }
     Serial.printf("[dkong] loaded %s (%u bytes) — decoding...\n", path, (unsigned)zip_sz);

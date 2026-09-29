@@ -9,7 +9,7 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
-#include <SD.h>
+#include "pico_romfs.h"   /* ROM zips: SD card or the Quad ROM drive */
 #include "config.h"        /* ENABLE_PACMAN / ENABLE_GALAGA — must come first */
 #include "emulation.h"     /* machine variable + MCH_* constants */
 
@@ -122,7 +122,7 @@ static int nAvail = 0;
 static void scan_roms(void) {
     nAvail = 0;
     for (int i = 0; i < NUM_GAMES; i++) {
-        bool ok = SD.exists(games[i].zip);
+        bool ok = romfs_exists(games[i].zip);
         Serial.printf("[menu] %-12s %s %s\n", games[i].label, games[i].zip,
                       ok ? "found" : "missing");
         if (ok) avail[nAvail++] = i;
@@ -133,7 +133,12 @@ static void scan_roms(void) {
  * toggle, the FPS-overlay toggle, then Exit. Row kinds are derived from
  * the row index. */
 enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_EXIT };
-#ifdef PICO_GALAGINO_LANDSCAPE
+/* Display (portrait/landscape) toggle: landscape builds, except the Quad,
+ * which is always landscape (panel + Joy-Con mounted for it, no SD to save). */
+#if defined(PICO_GALAGINO_LANDSCAPE) && !defined(PICO_QUAD)
+#  define MENU_DISPLAY_TOGGLE 1
+#endif
+#ifdef MENU_DISPLAY_TOGGLE
 static const int SETTING_ROWS = 2;   /* Display, Show FPS */
 #else
 static const int SETTING_ROWS = 1;   /* Show FPS */
@@ -144,7 +149,7 @@ static int menu_rows(void) {
 static RowKind row_kind(int row) {
     if (row < nAvail) return ROW_GAME;
     row -= nAvail;
-#ifdef PICO_GALAGINO_LANDSCAPE
+#ifdef MENU_DISPLAY_TOGGLE
     if (row == 0) return ROW_DISPLAY;
     row--;
 #endif
@@ -196,10 +201,17 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setCursor(10, 32);
     if (nAvail == 0) {
         tft.setTextColor(TFT_RED, TFT_BLACK);
+#ifdef PICO_QUAD
+        tft.print("No ROMs found on the ROM drive.");
+        tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+        tft.setCursor(10, 44);
+        tft.print("Mini-Games > Arcade ROM Drive: copy MAME zips");
+#else
         tft.print("No ROMs found on SD card.");
         tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
         tft.setCursor(10, 44);
         tft.print("Copy MAME zips to /roms/ (e.g. galaga.zip)");
+#endif
     } else {
         tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
         tft.print("Select a game:");
@@ -217,7 +229,7 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
         tft.setCursor(14, y);
         switch (row_kind(i)) {
           case ROW_GAME: tft.print(games[avail[i]].label); break;
-#ifdef PICO_GALAGINO_LANDSCAPE
+#ifdef MENU_DISPLAY_TOGGLE
           case ROW_DISPLAY:
             tft.printf("Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
             break;
@@ -236,7 +248,11 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setCursor(6, H - HINT_H + 2);
     tft.print("UP/DN pick  FIRE select  MENU exit");
     tft.setCursor(6, H - HINT_H + 12);
+#ifdef PICO_QUAD
+    tft.print("MENU+UP/DN vol  hold GREEN+YELLOW: list");
+#else
     tft.print("MENU+UP/DN vol  hold START+SEL: quit");
+#endif
     draw_volume(tft);
 }
 
@@ -249,7 +265,7 @@ static void show_load_error(TFT_eSPI &tft, int g) {
     tft.setTextSize(1);
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(10, 166);
-    tft.printf("Check %s on the SD card", games[g].zip);
+    tft.printf("Check %s on %s", games[g].zip + 6, romfs_where());   /* skip "/roms/" */
     tft.setCursor(10, 180);
     tft.print("Press FIRE/START to go back");
     while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
@@ -346,7 +362,7 @@ extern "C" void pico_menu_pick_and_load(void) {
         }
 
         switch (row_kind(sel)) {
-#ifdef PICO_GALAGINO_LANDSCAPE
+#ifdef MENU_DISPLAY_TOGGLE
           case ROW_DISPLAY:
             pico_config_save_landscape(g_landscape_mode ? 0 : 1);
             delay(300);

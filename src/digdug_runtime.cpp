@@ -1,7 +1,7 @@
 /* digdug_runtime.cpp — runtime-loaded Digdug pointers + loader. */
 
 #include <Arduino.h>
-#include <SD.h>
+#include "pico_romfs.h"   /* ROM zips: SD card or the Quad ROM drive */
 #include <stdint.h>
 
 extern "C" {
@@ -31,21 +31,12 @@ extern "C" unsigned short *load_digdug_cmap_from_zip         (const uint8_t *zip
 extern "C" signed char    *load_digdug_wavetable_from_zip    (const uint8_t *zip, size_t sz);
 
 static bool sd_slurp(const char *path, uint8_t **out, size_t *out_sz) {
-    File f = SD.open(path, FILE_READ);
-    if (!f) return false;
-    size_t sz = f.size();
-    uint8_t *buf = (uint8_t *)malloc(sz);
-    if (!buf) { f.close(); return false; }
-    size_t got = f.read(buf, sz);
-    f.close();
-    if (got != sz) { free(buf); return false; }
-    *out = buf; *out_sz = sz;
-    return true;
+    return romfs_slurp(path, out, out_sz);
 }
 
 extern "C" bool runtime_load_digdug(void) {
     const char *path = "/roms/digdug.zip";
-    if (!SD.exists(path)) { Serial.println("[digdug] digdug.zip not on SD"); return false; }
+    if (!romfs_exists(path)) { Serial.println("[digdug] digdug.zip not on SD"); return false; }
 
     uint8_t *zip = nullptr; size_t zip_sz = 0;
     if (!sd_slurp(path, &zip, &zip_sz)) { Serial.println("[digdug] slurp failed"); return false; }

@@ -20,6 +20,7 @@
 
 #ifdef PICO_CUSTOM_INPUT
 extern "C" bool pico_sd_init(void);
+#include "pico_romfs.h"
 extern "C" void pico_config_load(void);
 #endif
 
@@ -877,7 +878,7 @@ void setup() {
 #ifdef PICO_CUSTOM_INPUT
   /* SD + config must be up BEFORE Video::begin so it can pick rotation
    * based on the runtime g_landscape_mode. */
-  pico_sd_init();
+  romfs_init();          /* SD card, or the Quad's flash ROM drive (pico_romfs.cpp) */
   pico_config_load();
 #endif
 

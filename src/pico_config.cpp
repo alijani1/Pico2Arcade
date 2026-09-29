@@ -9,6 +9,19 @@
  * Default (no file present) is portrait, FPS overlay off. */
 
 #include <Arduino.h>
+
+#ifdef PICO_QUAD
+/* Quad Ultimate CX: no SD card and the flash ROM drive is read-only to us, so
+ * nothing persists — always landscape (the panel and Joy-Con are mounted for
+ * it), FPS overlay off at boot (the menu toggle still works for the session). */
+extern "C" {
+    volatile int g_landscape_mode = 1;
+    volatile int g_show_fps       = 0;
+}
+extern "C" void pico_config_load(void) {}
+extern "C" void pico_config_save_landscape(int on) { g_landscape_mode = on ? 1 : 0; }
+extern "C" void pico_config_save_show_fps(int on)  { g_show_fps = on ? 1 : 0; }
+#else
 #include <SD.h>
 
 extern "C" {
@@ -49,3 +62,4 @@ extern "C" void pico_config_save_show_fps(int on) {
     g_show_fps = on ? 1 : 0;
     pico_config_save();
 }
+#endif  /* !PICO_QUAD */

@@ -7,6 +7,10 @@
  */
 
 #include <Arduino.h>
+
+/* The Quad has no SD card (its ROMs come from the flash ROM drive — see
+ * pico_romfs.cpp), and SPI1 pins 10-13 are its DB9 fire buttons there. */
+#ifndef PICO_QUAD
 #include <SPI.h>
 #include <SD.h>
 
@@ -52,3 +56,4 @@ extern "C" bool pico_sd_init(void) {
     Serial.printf("[sd] found %d .zip files\n", nzip);
     return true;
 }
+#endif  /* !PICO_QUAD */

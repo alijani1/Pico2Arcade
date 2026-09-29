@@ -16,10 +16,24 @@
 #include "pico_audio.h"
 #include "pico_handoff.h"
 
+#ifdef PICO_QUAD
+/* Quad Ultimate CX (all active LOW, pull-up): no PCA9539 — player 1 is the
+ * port 1 DB9 joystick, read directly, plus the device buttons. Pins match
+ * GameAdapterRGBPico data/quad.json (port 1 = the P1 nets 28-31, fire 12). */
+static const int PIN_START  = 15;   /* Green  -> START */
+static const int PIN_SELECT = 17;   /* Yellow -> COIN */
+static const int PIN_MENU   = 18;   /* Gray Menu: MENU+UP/DOWN = volume, tap = back */
+static const int PIN_P1_UP = 28, PIN_P1_DOWN = 29, PIN_P1_LEFT = 30, PIN_P1_RIGHT = 31;
+static const int PIN_P1_FIRE   = 12;
+static const int PIN_FIRE_RED  = 14;   /* thumb fire on the device */
+static const int PIN_FIRE_BLUE = 16;
+static const int PIN_JOY_CLICK = 21;   /* Joy-Con click (direct GPIO here, no flicker) */
+#else
 /* Direct-GPIO buttons on the PicoCartReader board (active LOW, pull-up). */
 static const int PIN_START  = 0;    /* GP0 -> START */
 static const int PIN_SELECT = 1;    /* GP1 -> COIN */
 static const int PIN_MENU   = 37;   /* MENU+UP/DOWN = volume, tap = back */
+#endif
 
 /* Set by buttons_get() when MENU is tapped (released without an
  * UP/DOWN in between). Consumed by pico_input_menu_tapped(). */
@@ -61,8 +75,16 @@ extern "C" void pico_input_init(void) {
     pinMode(PIN_SELECT, INPUT_PULLUP);
     pinMode(PIN_START,  INPUT_PULLUP);
     pinMode(PIN_MENU,   INPUT_PULLUP);
+#ifdef PICO_QUAD
+    /* No expander: GP2/3 (its I2C) are the Quad's side buttons and GP36 (its
+     * INT) is a DB9 line, so it must not be initialised here. */
+    const int quadPins[] = { PIN_P1_UP, PIN_P1_DOWN, PIN_P1_LEFT, PIN_P1_RIGHT,
+                             PIN_P1_FIRE, PIN_FIRE_RED, PIN_FIRE_BLUE, PIN_JOY_CLICK };
+    for (int p : quadPins) pinMode(p, INPUT_PULLUP);
+#else
     bool ok = expander_init();
     Serial.printf("[input] PCA9539: %s\n", ok ? "OK" : "not found");
+#endif
 
     /* JoyCon auto-center: sample the stick a few times at boot (it's at
      * rest during power-up) and use the average as the neutral position. */
@@ -96,17 +118,35 @@ extern "C" unsigned char buttons_get(void) {
      * around 30-50 ms. 1 kHz polling catches every edge with plenty of
      * margin. Any INT-line pulse from the PCA9539 bypasses the cache
      * immediately (state change → fresh read). */
+#ifdef PICO_QUAD
+    if (last_ms != 0 && (now - last_ms) < 1)     /* all direct GPIO — cheap */
+        return cached_state;
+#else
     if (last_ms != 0 && (now - last_ms) < 1 && !expander_hasInterrupt())
         return cached_state;
+#endif
     last_ms = now;
 
+#ifndef PICO_QUAD
     uint16_t s = expander_readAll();   /* 16 bits, active LOW */
+#endif
     unsigned char state = 0;
 
     /* Direct-GPIO controls */
     if (digitalRead(PIN_START)  == LOW) state |= BUTTON_START;
     if (digitalRead(PIN_SELECT) == LOW) state |= BUTTON_COIN;
 
+#ifdef PICO_QUAD
+    /* Player 1 = port 1 DB9 joystick; fire also on Red / Blue / Joy-Con click. */
+    if (digitalRead(PIN_P1_UP)     == LOW) state |= BUTTON_UP;
+    if (digitalRead(PIN_P1_DOWN)   == LOW) state |= BUTTON_DOWN;
+    if (digitalRead(PIN_P1_LEFT)   == LOW) state |= BUTTON_LEFT;
+    if (digitalRead(PIN_P1_RIGHT)  == LOW) state |= BUTTON_RIGHT;
+    if (digitalRead(PIN_P1_FIRE)   == LOW) state |= BUTTON_FIRE;
+    if (digitalRead(PIN_FIRE_RED)  == LOW) state |= BUTTON_FIRE;
+    if (digitalRead(PIN_FIRE_BLUE) == LOW) state |= BUTTON_FIRE;
+    if (digitalRead(PIN_JOY_CLICK) == LOW) state |= BUTTON_FIRE;
+#else
     /* Player 1 joystick — PCA9539 P0.0-P0.4. */
     if (!(s & EXP_P1_UP))    state |= BUTTON_UP;
     if (!(s & EXP_P1_DOWN))  state |= BUTTON_DOWN;
@@ -119,6 +159,7 @@ extern "C" unsigned char buttons_get(void) {
        handy for arcade play), BTN_B duplicates COIN. */
     if (!(s & EXP_BTN_A))    state |= BUTTON_FIRE;
     if (!(s & EXP_BTN_B))    state |= BUTTON_COIN;
+#endif
 
 
     /* JoyCon push-button (P1.5) NOT mapped — the pin carries an
