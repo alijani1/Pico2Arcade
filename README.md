@@ -135,6 +135,12 @@ list shows a red warning naming the first bad line.
 - **Hold MENU for one second** (or hold START + COIN) to go back to the game
   list.
 
+**High scores are kept** across power cycles, like MAME's hiscore plugin:
+once a game has set up its high-score table after starting, the saved one is
+put back, and the table is saved again after it changes and then stays the
+same for 10 seconds (for example after entering your initials), or when you
+leave the game. Saving pauses the game for a split second.
+
 Settings (display orientation, FPS overlay, volume) are saved in flash on
 the standalone board. On the Quad the Quad keeps them; on the PicoCartReader
 they're on the SD card (volume: kept by the CartReader).
@@ -203,6 +209,7 @@ into each env's TFT_eSPI copy automatically before every build.
 | 0x000000 | ~330 KB | firmware |
 | 0x200000 | 1 MB | FAT12 ROM drive "ARCADE ROMS" |
 | 0x300000 | 4 KB | settings (orientation, FPS overlay, volume) |
+| 0x301000 | 4 KB | high scores |
 
 Flashing a new firmware UF2 doesn't touch the ROM drive or the settings.
 
@@ -379,6 +386,7 @@ src/
   pico_romfs.[ch]        ROM storage: SD card or flash FAT drive
   pico_drive.[ch]        USB ROM drive mode (TinyUSB mass storage)
   pico_romcheck.[ch]     ROM set check (file names + CRC32s)
+  pico_hiscore.[ch]      high-score save / restore
   pico_config.cpp        settings: SD file / flash sector / host handoff
   pico_handoff.[ch]      watchdog-scratch handoff with a host firmware
   pico_audio.[ch]        PWMAudio wrapper
@@ -404,6 +412,9 @@ src/
   the Z80 CPU core (MIT, see `src/z80_zazu/LICENSE`). It replaced upstream
   Galagino's Z80 core, which is not licensed for commercial use.
 - **MAME team** — for documenting the arcade hardware so exhaustively.
+- **hiscore.dat** (Leezer et al., based on highscore.mameworld.info, shipped
+  with MAME's hiscore plugin) — the high-score table locations used in
+  [`src/pico_hiscore.cpp`](src/pico_hiscore.cpp).
 
 ## License
 

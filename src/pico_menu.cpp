@@ -23,6 +23,7 @@ extern "C" bool pico_input_menu_tapped(void);
 #include "pico_board.h"
 #include "pico_drive.h"
 #include "pico_romcheck.h"
+#include "pico_hiscore.h"
 
 extern "C" bool runtime_load_pacman(void);
 extern "C" bool runtime_load_mspacman(void);
@@ -508,6 +509,7 @@ extern "C" void pico_menu_pick_and_load(void) {
     }
 
     SET_MACHINE(games[g].mch);
+    pico_hiscore_load();         /* saved high scores for this game (needs `machine`) */
 #ifdef ENABLE_DKONG
     /* DKong's i8048 audio CPU produces 11765 Hz samples; other games
      * feed the DAC at 24000 Hz. Upstream's MCH_MENU handler switches

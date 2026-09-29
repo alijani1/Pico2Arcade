@@ -23,6 +23,7 @@ extern "C" bool pico_sd_init(void);
 #include "pico_romfs.h"
 #include "pico_board.h"
 #include "pico_drive.h"
+#include "pico_hiscore.h"
 extern "C" void pico_config_load(void);
 #endif
 
@@ -804,8 +805,10 @@ _1942_END
 void emulation_task(void *p) {
   prepare_emulation();
 
-  while(1)
+  while(1) {
     emulate_frame();
+    pico_hiscore_frame();   /* restore / watch the high-score table (pico_hiscore.cpp) */
+  }
 }
 
 void setup() {
@@ -1017,6 +1020,7 @@ void loop(void) {
   // to the emulation task in the background to 
   // synchronize video
   update_screen(); 
+  pico_hiscore_service();   /* high-score saves + save-then-exit (core 0 owns flash / SD) */
 
 #ifdef LED_PIN
   leds_update();

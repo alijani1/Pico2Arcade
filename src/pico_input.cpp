@@ -16,6 +16,7 @@
 #include "pico_audio.h"
 #include "pico_handoff.h"
 #include "pico_board.h"
+#include "pico_hiscore.h"
 
 #ifdef PICO_BOARD_TABLE
 /* Quad Ultimate CX / standalone Pico 2 (all active LOW, pull-up): no PCA9539 —
@@ -224,7 +225,7 @@ extern "C" unsigned char buttons_get(void) {
         if (menu_low && seen_up) {
             if (!menu_down) { menu_down = true; menu_since = now; }
             if (g_menu_done && now - menu_since >= MENU_EXIT_HOLD_MS)
-                handoff_relaunch_arcade();
+                pico_hiscore_exit_to_list();     /* saves a changed high-score table first */
         } else if (menu_down) {
             menu_down = false;
             g_menu_tapped = true;
@@ -245,7 +246,7 @@ extern "C" unsigned char buttons_get(void) {
         static unsigned long held_since = 0;
         if (g_menu_done && (state & BUTTON_START) && (state & BUTTON_COIN)) {
             if (held_since == 0) held_since = now | 1;
-            else if (now - held_since >= EXIT_HOLD_MS) handoff_relaunch_arcade();
+            else if (now - held_since >= EXIT_HOLD_MS) pico_hiscore_exit_to_list();
         } else {
             held_since = 0;
         }
