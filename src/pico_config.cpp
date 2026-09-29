@@ -11,15 +11,30 @@
 #include <Arduino.h>
 
 #ifdef PICO_QUAD
-/* Quad Ultimate CX: no SD card and the flash ROM drive is read-only to us, so
- * nothing persists — always landscape (the panel and Joy-Con are mounted for
- * it), FPS overlay off at boot (the menu toggle still works for the session). */
+/* Quad Ultimate CX: no SD card and the flash ROM drive is read-only to us.
+ * The display orientation is kept by the Quad instead: it passes it in the
+ * handoff flags (watchdog scratch[1], HANDOFF_FLAG_PORTRAIT) on launch, we
+ * write it back when it changes (the menu then relaunches us), and the Quad
+ * saves it in its settings on return. Default landscape (the panel is mounted
+ * that way; portrait = turn the Quad sideways for a full-size picture). The FPS
+ * overlay is session-only, off at boot. */
+#include "pico_handoff.h"
 extern "C" {
     volatile int g_landscape_mode = 1;
     volatile int g_show_fps       = 0;
 }
-extern "C" void pico_config_load(void) {}
-extern "C" void pico_config_save_landscape(int on) { g_landscape_mode = on ? 1 : 0; }
+extern "C" void pico_config_load(void) {
+    int f = handoff_flags_read();
+    if (f >= 0) g_landscape_mode = (f & HANDOFF_FLAG_PORTRAIT) ? 0 : 1;
+    Serial.printf("[cfg] landscape=%d (from Quad)\n", g_landscape_mode);
+}
+extern "C" void pico_config_save_landscape(int on) {
+    g_landscape_mode = on ? 1 : 0;
+    int f = handoff_flags_read();
+    if (f < 0) f = 0;
+    f = on ? (f & ~HANDOFF_FLAG_PORTRAIT) : (f | HANDOFF_FLAG_PORTRAIT);
+    handoff_flags_write(f);
+}
 extern "C" void pico_config_save_show_fps(int on)  { g_show_fps = on ? 1 : 0; }
 #else
 #include <SD.h>

@@ -25,8 +25,16 @@ extern "C" {
 #define HANDOFF_SCRATCH_FATSIZE 3
 #define HANDOFF_FATSIZE_TAG     0xFA710000u
 
+/* scratch[1] bits 8..15 = option flags, carried both ways with the volume
+ * (Quad host: saved in its settings, so they survive power-off). */
+#define HANDOFF_FLAG_PORTRAIT  0x01u   /* display portrait (else landscape) */
+
 /* Volume handed over by the CartReader (0..100), or -1 if none. */
 int  handoff_volume_read(void);
+/* Option flags from the host (HANDOFF_FLAG_*), or -1 if none. */
+int  handoff_flags_read(void);
+/* Publish option flags (kept alongside the volume) for the next boot/host. */
+void handoff_flags_write(int flags);
 /* Publish the current volume so the CartReader adopts it on return. */
 void handoff_volume_write(int pct);
 /* Reboot straight back into this firmware's game list. Under the

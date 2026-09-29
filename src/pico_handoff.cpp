@@ -10,10 +10,31 @@ extern "C" int handoff_volume_read(void) {
     return pct <= 100 ? pct : -1;
 }
 
+/* Option flags live in bits 8..15 of the volume register; keep them when the
+ * volume changes and vice versa. */
+static uint32_t handoff_flag_bits(void) {
+    uint32_t v = watchdog_hw->scratch[HANDOFF_SCRATCH_VOLUME];
+    return ((v & 0xFFFF0000u) == HANDOFF_VOLUME_TAG) ? (v & 0xFF00u) : 0;
+}
+
 extern "C" void handoff_volume_write(int pct) {
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    watchdog_hw->scratch[HANDOFF_SCRATCH_VOLUME] = HANDOFF_VOLUME_TAG | (uint32_t)pct;
+    watchdog_hw->scratch[HANDOFF_SCRATCH_VOLUME] =
+        HANDOFF_VOLUME_TAG | handoff_flag_bits() | (uint32_t)pct;
+}
+
+extern "C" int handoff_flags_read(void) {
+    uint32_t v = watchdog_hw->scratch[HANDOFF_SCRATCH_VOLUME];
+    if ((v & 0xFFFF0000u) != HANDOFF_VOLUME_TAG) return -1;
+    return (int)((v >> 8) & 0xFF);
+}
+
+extern "C" void handoff_flags_write(int flags) {
+    uint32_t v = watchdog_hw->scratch[HANDOFF_SCRATCH_VOLUME];
+    uint32_t pct = ((v & 0xFFFF0000u) == HANDOFF_VOLUME_TAG) ? (v & 0xFFu) : 100;
+    watchdog_hw->scratch[HANDOFF_SCRATCH_VOLUME] =
+        HANDOFF_VOLUME_TAG | ((uint32_t)(flags & 0xFF) << 8) | pct;
 }
 
 extern "C" void handoff_relaunch_arcade(void) {

@@ -133,9 +133,9 @@ static void scan_roms(void) {
  * toggle, the FPS-overlay toggle, then Exit. Row kinds are derived from
  * the row index. */
 enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_EXIT };
-/* Display (portrait/landscape) toggle: landscape builds, except the Quad,
- * which is always landscape (panel + Joy-Con mounted for it, no SD to save). */
-#if defined(PICO_GALAGINO_LANDSCAPE) && !defined(PICO_QUAD)
+/* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
+ * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
+#if defined(PICO_GALAGINO_LANDSCAPE)
 #  define MENU_DISPLAY_TOGGLE 1
 #endif
 #ifdef MENU_DISPLAY_TOGGLE
@@ -249,7 +249,7 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.print("UP/DN pick  FIRE select  MENU exit");
     tft.setCursor(6, H - HINT_H + 12);
 #ifdef PICO_QUAD
-    tft.print("MENU+UP/DN vol  hold GREEN+YELLOW: list");
+    tft.print("MENU+UP/DN vol  hold WHITE+BLACK: list");
 #else
     tft.print("MENU+UP/DN vol  hold START+SEL: quit");
 #endif

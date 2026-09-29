@@ -20,8 +20,8 @@
 /* Quad Ultimate CX (all active LOW, pull-up): no PCA9539 — player 1 is the
  * port 1 DB9 joystick, read directly, plus the device buttons. Pins match
  * GameAdapterRGBPico data/quad.json (port 1 = the P1 nets 28-31, fire 12). */
-static const int PIN_START  = 15;   /* Green  -> START */
-static const int PIN_SELECT = 17;   /* Yellow -> COIN */
+static const int PIN_START  = 20;   /* White -> START (the Quad's Start, USB button 9) */
+static const int PIN_SELECT = 19;   /* Black -> COIN  (the Quad's Select, USB button 8) */
 static const int PIN_MENU   = 18;   /* Gray Menu: MENU+UP/DOWN = volume, tap = back */
 static const int PIN_P1_UP = 28, PIN_P1_DOWN = 29, PIN_P1_LEFT = 30, PIN_P1_RIGHT = 31;
 static const int PIN_P1_FIRE   = 12;
