@@ -700,6 +700,9 @@ void audio_init(void) {
 
 void update_screen(void) {
   uint32_t t0 = micros();
+  // Start of this two-frame video cycle (see the half-rate pacing below).
+  static uint32_t frame_base = 0;
+  if (frame_base == 0) frame_base = t0;
 
 #ifdef ENABLE_PACMAN
 PACMAN_BEGIN
@@ -760,16 +763,24 @@ _1942_END
       snd_transmit();
     } 
  
-    // one screen at 60 Hz is 16.6ms
-    unsigned long t1 = (micros()-t0)/1000;  // calculate time in milliseconds
-    // printf("uspf %d\n", t1);
-    if(t1<(half?33:16)) vTaskDelay((half?33:16)-t1);
-    else if(half)       vTaskDelay(1);    // at least 1 ms delay to prevent watchdog timeout
+    // PicoGalagino: pace each half against an absolute microsecond
+    // deadline (frame_base + 16667 / + 33333). Upstream waited in whole
+    // milliseconds from a truncated elapsed time, and the per-cycle
+    // overhead accumulated, so games ran at ~56 fps (screen ~28) instead
+    // of 60. Sleep in 1 ms steps while far from the deadline, then spin.
+    uint32_t deadline = frame_base + (half ? 33333u : 16667u);
+    while ((int32_t)(deadline - micros()) > 1500) delay(1);
+    while ((int32_t)(deadline - micros()) > 0) tight_loop_contents();
 
     // physical refresh is 30Hz. So send vblank trigger twice a frame
     // to the emulation. This will make the game run with 60hz speed
     xTaskNotifyGive(emulationtask);
   }
+  // Next cycle starts exactly 2 frames later. A small overrun is caught
+  // up on the next cycle; after a long stall (e.g. a game load) resync
+  // instead of racing to catch up.
+  frame_base += 33333u;
+  if ((int32_t)(micros() - frame_base) > 33333) frame_base = micros();
 #else
   #warning FULL SPEED
   
