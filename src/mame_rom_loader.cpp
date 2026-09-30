@@ -953,3 +953,96 @@ extern "C" signed char *load_digdug_wavetable_from_zip(const uint8_t *zip, size_
     for (int i = 0; i < 512; i++) out[i] = (signed char)((int)raw[i] - 7);
     return out;
 }
+
+/* ============================== SUPER COBRA ============================== */
+
+/* CPU1: 6 x 4 KB at 0x0000-0x5FFF, padded to the 32 KB the fetch mask covers. */
+extern "C" unsigned char *load_scobra_rom_cpu1_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *names[6] = { "epr1265.2c", "2e", "epr1267.2f", "2h", "epr1269.2j", "2l" };
+    unsigned char *out = (unsigned char *)malloc(0x8000);
+    if (!out) return nullptr;
+    memset(out, 0xff, 0x8000);
+    for (int i = 0; i < 6; i++) {
+        size_t got = 0;
+        if (!zip_extract(zip, sz, names[i], out + (size_t)i * 4096, 4096, &got) || got != 4096) {
+            Serial.printf("[loader] scobra cpu1 %s failed\n", names[i]);
+            free(out); return nullptr;
+        }
+    }
+    return out;
+}
+
+/* CPU2 (sound): 3 x 2 KB, padded to 8 KB. */
+extern "C" unsigned char *load_scobra_rom_cpu2_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *names[3] = { "5c", "5d", "5e" };
+    unsigned char *out = (unsigned char *)malloc(0x2000);
+    if (!out) return nullptr;
+    memset(out, 0xff, 0x2000);
+    for (int i = 0; i < 3; i++) {
+        size_t got = 0;
+        if (!zip_extract(zip, sz, names[i], out + (size_t)i * 2048, 2048, &got) || got != 2048) {
+            Serial.printf("[loader] scobra cpu2 %s failed\n", names[i]);
+            free(out); return nullptr;
+        }
+    }
+    return out;
+}
+
+/* Galaxian-style gfx: 5h is bit plane 1 (MSB), 5f plane 0. The Frogger
+ * decoders put their first file in plane 0, so pass 5f first. */
+static bool scobra_gfx(const uint8_t *zip, size_t sz, uint8_t *p0, uint8_t *p1) {
+    size_t got = 0;
+    return zip_extract(zip, sz, "epr1273.5f", p0, 2048, &got) && got == 2048 &&
+           zip_extract(zip, sz, "epr1274.5h", p1, 2048, &got) && got == 2048;
+}
+
+/* 256 chars x 8 rows, 2bpp. */
+extern "C" unsigned short *load_scobra_tilemap_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch p0(2048); if (!p0) return nullptr;
+    RomScratch p1(2048); if (!p1) return nullptr;
+    if (!scobra_gfx(zip, sz, p0, p1)) return nullptr;
+    unsigned short *out = (unsigned short *)malloc(256 * 8 * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int c = 0; c < 256; c++) decode_tile_frogger(&p0[8 * c], &p1[8 * c], &out[c * 8]);
+    return out;
+}
+
+/* 64 sprites 16x16 x 4 flip variants (none, y, x, xy) = 16 KB. */
+extern "C" unsigned long *load_scobra_spritemap_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch p0(2048); if (!p0) return nullptr;
+    RomScratch p1(2048); if (!p1) return nullptr;
+    if (!scobra_gfx(zip, sz, p0, p1)) return nullptr;
+    unsigned long *out = (unsigned long *)malloc(4 * 64 * 16 * sizeof(unsigned long));
+    if (!out) return nullptr;
+    const bool flip_x[4] = { false, false, true, true };
+    const bool flip_y[4] = { false, true,  false, true };
+    for (int s = 0; s < 64; s++) {
+        uint8_t pix[16][16];
+        decode_sprite_frogger(&p0[32 * s], &p1[32 * s], pix);
+        for (int v = 0; v < 4; v++) {
+            uint32_t rows[16];
+            pack_sprite_flip(pix, flip_x[v], flip_y[v], rows);
+            for (int r = 0; r < 16; r++) out[v * 64 * 16 + s * 16 + r] = (unsigned long)rows[r];
+        }
+    }
+    return out;
+}
+
+/* 82s123.6e: 32 x bbgggrrr through the Galaxian resistor network,
+ * 8 palettes x 4 colours, byte-swapped RGB565. */
+extern "C" unsigned short *load_scobra_cmap_from_zip(const uint8_t *zip, size_t sz) {
+    uint8_t prom[32];
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "82s123.6e", prom, 32, &got) || got != 32) return nullptr;
+    unsigned short *out = (unsigned short *)malloc(32 * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int i = 0; i < 32; i++) {
+        uint8_t c = prom[i];
+        int r = 0x21 * ((c >> 0) & 1) + 0x47 * ((c >> 1) & 1) + 0x97 * ((c >> 2) & 1);
+        int g = 0x21 * ((c >> 3) & 1) + 0x47 * ((c >> 4) & 1) + 0x97 * ((c >> 5) & 1);
+        int b = 0x4f * ((c >> 6) & 1) + 0xa8 * ((c >> 7) & 1);
+        uint16_t rgb = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        out[i] = (uint16_t)((rgb >> 8) | (rgb << 8));
+    }
+    return out;
+}

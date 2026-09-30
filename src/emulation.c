@@ -88,6 +88,10 @@ unsigned long frogger_snd_icnt;
 unsigned char invaders_snd[2] = { 0, 0 };   /* OUT 3 / OUT 5 sound latches */
 #endif
 
+#ifdef ENABLE_SCOBRA
+unsigned char scobra_background = 0, scobra_stars_on = 0;
+#endif
+
 #ifdef ENABLE_DIGDUG
 unsigned char namco_command = 0;
 unsigned char namco_mode = 0;
@@ -114,7 +118,7 @@ unsigned long master_attract_timeout = 0;
 
 #endif
 
-#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942)
+#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA)
 // mirror of sounds registers
 unsigned char soundregs[32] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
@@ -249,6 +253,10 @@ unsigned char namco_read_dd(unsigned short Addr) {
 #include "invaders.h"
 #endif
 
+#ifdef ENABLE_SCOBRA
+#include "scobra.h"
+#endif
+
 
 void OutZ80(unsigned short Port, unsigned char Value) {
 #ifdef ENABLE_PACMAN
@@ -271,6 +279,13 @@ void OutZ80(unsigned short Port, unsigned char Value) {
     return;
   }
 #endif
+
+#ifdef ENABLE_SCOBRA
+  if(MACHINE_IS_SCOBRA) {
+    scobra_OutZ80(Port, Value);
+    return;
+  }
+#endif
 }
   
 unsigned char InZ80(unsigned short Port) {
@@ -282,6 +297,11 @@ unsigned char InZ80(unsigned short Port) {
 #ifdef ENABLE_INVADERS
   if(MACHINE_IS_INVADERS)
     return invaders_InZ80(Port);
+#endif
+
+#ifdef ENABLE_SCOBRA
+  if(MACHINE_IS_SCOBRA)
+    return scobra_InZ80(Port);
 #endif
 
  return 0; 
@@ -405,6 +425,12 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
       invaders_WrZ80(Addr, Value);
       return;
 #endif
+
+#ifdef ENABLE_SCOBRA
+    case MCH_SCOBRA:
+      scobra_WrZ80(Addr, Value);
+      return;
+#endif
 #ifndef SINGLE_MACHINE
   }
 #endif
@@ -515,6 +541,11 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
 #ifdef ENABLE_INVADERS
     case MCH_INVADERS:
       return invaders_RdZ80(Addr);
+#endif
+
+#ifdef ENABLE_SCOBRA
+    case MCH_SCOBRA:
+      return scobra_RdZ80(Addr);
 #endif
 #ifndef SINGLE_MACHINE
   }
@@ -729,6 +760,12 @@ _1942_END
 INVADERS_BEGIN
   invaders_run_frame();
 INVADERS_END
+#endif
+
+#ifdef ENABLE_SCOBRA
+SCOBRA_BEGIN
+  scobra_run_frame();
+SCOBRA_END
 #endif
 
   sof = micros() - sof;

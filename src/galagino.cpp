@@ -79,6 +79,10 @@ unsigned short *frame_buffer;
 #include "invaders.h"
 #endif
 
+#ifdef ENABLE_SCOBRA
+#include "scobra.h"
+#endif
+
 #ifndef SINGLE_MACHINE
 signed char machine = MCH_MENU;   // start with menu
 #endif
@@ -101,13 +105,41 @@ unsigned short dkong_sample_cnt[3] = { 0,0,0 };
 const signed char *dkong_sample_ptr[3];
 #endif
 
-#if defined(ENABLE_FROGGER) || defined(ENABLE_1942)
+#if defined(ENABLE_FROGGER) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA)
+#define AY_EMULATION
 int ay_period[2][4] = {{0,0,0,0}, {0,0,0,0}};
 int ay_volume[2][3] = {{0,0,0}, {0,0,0}};
 int ay_enable[2][3] = {{0,0,0}, {0,0,0}};
 int audio_cnt[2][4], audio_toggle[2][4] = {{1,1,1,1},{1,1,1,1}};
 unsigned long ay_noise_rng[2] = { 1, 1 };
 extern unsigned char soundregs[];
+
+// Envelope generator (used only where enabled per game below). A write to
+// R13 restarts it: the game's OutZ80 sets ay_env_restart[ay].
+extern "C" { unsigned char ay_env_restart[2] = { 0, 0 }; }
+static bool ay_env_on = false;
+static char ay_use_env[2][3];
+static int ay_env_period[2], ay_env_cnt[2];
+static unsigned char ay_env_shape[2], ay_env_step[2], ay_env_hold[2], ay_env_holdval[2];
+static bool ay_env_attack[2];
+static inline int ay_env_volume(int ay) {
+  if(ay_env_hold[ay]) return ay_env_holdval[ay];
+  return ay_env_attack[ay] ? ay_env_step[ay] : 15 - ay_env_step[ay];
+}
+// one envelope step every 16*EP AY clocks = 2*EP in the clock/8 units of ay_inc
+static inline void ay_env_advance(int ay, int ay_inc) {
+  if(ay_env_hold[ay]) return;
+  ay_env_cnt[ay] += ay_inc;
+  int step_len = 2 * (ay_env_period[ay] ? ay_env_period[ay] : 1);
+  while(ay_env_cnt[ay] >= step_len && !ay_env_hold[ay]) {
+    ay_env_cnt[ay] -= step_len;
+    if(++ay_env_step[ay] < 16) continue;
+    unsigned char s = ay_env_shape[ay];      // CONT ATT ALT HOLD
+    if(!(s & 8))     { ay_env_hold[ay] = 1; ay_env_holdval[ay] = 0; }
+    else if(s & 1)   { ay_env_hold[ay] = 1; ay_env_holdval[ay] = ((s >> 2) ^ (s >> 1)) & 1 ? 15 : 0; }
+    else             { if(s & 2) ay_env_attack[ay] = !ay_env_attack[ay]; ay_env_step[ay] = 0; }
+  }
+}
 #endif
 
 // one method to return to the main menu is to reset
@@ -315,6 +347,12 @@ INVADERS_BEGIN
   invaders_render_row(row);
 INVADERS_END
 #endif
+
+#ifdef ENABLE_SCOBRA
+SCOBRA_BEGIN
+  scobra_render_row(row);
+SCOBRA_END
+#endif
 }
   
 #ifdef ENABLE_GALAGA
@@ -340,33 +378,22 @@ static unsigned short snd_buffer[64];  // buffer space for a single channel
 #endif
 
 void snd_render_buffer(void) {
-#if defined(ENABLE_FROGGER) || defined(ENABLE_1942)
-  #ifndef ENABLE_1942        // only frogger
-    #define AY        1      // frogger has one AY
-    #define AY_INC    9      // and it runs at 1.78 MHz -> 223718/24000 = 9,32
-    #define AY_VOL   11      // min/max = -/+ 3*15*11 = -/+ 495
-  #else
-    #ifndef ENABLE_FROGGER   // only 1942
-      #define AY      2      // 1942 has two AYs
-      #define AY_INC  8      // and they runs at 1.5 MHz -> 187500/24000 = 7,81
-      #define AY_VOL  4      // min/max = -/+ 6*15*4 = -/+ 360 (must fit in short after *64)
-    #else
-      // both enabled
-      #define AY ((machine == MCH_FROGGER)?1:2)
-      #define AY_INC ((machine == MCH_FROGGER)?9:8)
-      #define AY_VOL ((machine == MCH_FROGGER)?11:4)
-    #endif
-  #endif
-  
-  if(
+#ifdef AY_EMULATION
+  // AY-3-8910s of this machine: count, clock step per 24 kHz sample
+  // (AY clock / 8 / 24000) and volume (count * 3 * 15 * AY_VOL <= ~500)
+  int AY = 0, AY_INC = 9, AY_VOL = 11;
+  ay_env_on = false;
 #ifdef ENABLE_FROGGER
-     MACHINE_IS_FROGGER ||
+  if(MACHINE_IS_FROGGER) { AY = 1; AY_INC = 9; AY_VOL = 11; }   // 1.78 MHz
 #endif
 #ifdef ENABLE_1942
-     MACHINE_IS_1942 ||
+  if(MACHINE_IS_1942)    { AY = 2; AY_INC = 8; AY_VOL = 4; }    // 1.5 MHz
 #endif
-     0) {
+#ifdef ENABLE_SCOBRA
+  if(MACHINE_IS_SCOBRA)  { AY = 2; AY_INC = 9; AY_VOL = 5; ay_env_on = true; }
+#endif
 
+  if(AY) {
     // up to two AY's
     for(char ay=0;ay<AY;ay++) {
       int ay_off = 16*ay;
@@ -376,6 +403,18 @@ void snd_render_buffer(void) {
 	ay_period[ay][c] = soundregs[ay_off+2*c] + 256 * (soundregs[ay_off+2*c+1] & 15);
 	ay_enable[ay][c] = (((soundregs[ay_off+7] >> c)&1) | ((soundregs[ay_off+7] >> (c+2))&2))^3;
 	ay_volume[ay][c] = soundregs[ay_off+8+c] & 0x0f;
+	ay_use_env[ay][c] = ay_env_on && (soundregs[ay_off+8+c] & 0x10);
+      }
+      if(ay_env_on) {
+        ay_env_period[ay] = soundregs[ay_off+11] + 256 * soundregs[ay_off+12];
+        if(ay_env_restart[ay]) {
+          ay_env_restart[ay] = 0;
+          ay_env_shape[ay] = soundregs[ay_off+13] & 15;
+          ay_env_attack[ay] = (ay_env_shape[ay] & 4) != 0;
+          ay_env_step[ay] = 0;
+          ay_env_cnt[ay] = 0;
+          ay_env_hold[ay] = 0;
+        }
       }
       // noise channel
       ay_period[ay][3] = soundregs[ay_off+6] & 0x1f;
@@ -458,18 +497,12 @@ DKONG_BEGIN
 DKONG_END
 #endif
 
-#if defined(ENABLE_FROGGER) || defined(ENABLE_1942)
-    if(
-#ifdef ENABLE_FROGGER
-     MACHINE_IS_FROGGER ||
-#endif
-#ifdef ENABLE_1942
-     MACHINE_IS_1942 ||
-#endif
-     0) {
+#ifdef AY_EMULATION
+    if(AY) {
     v = 0;  // silence
     
     for(char ay=0;ay<AY;ay++) {
+      if(ay_env_on) ay_env_advance(ay, AY_INC);
 
       // frogger can acually skip the noise generator as
       // it doesn't use it      
@@ -486,13 +519,14 @@ DKONG_END
 	
       for(char c=0;c<3;c++) {
 	      // a channel is on if period != 0, vol != 0 and tone bit == 0
-	      if(ay_period[ay][c] && ay_volume[ay][c] && ay_enable[ay][c]) {
+	      int vol = ay_use_env[ay][c] ? ay_env_volume(ay) : ay_volume[ay][c];
+	      if(ay_period[ay][c] && (vol || ay_use_env[ay][c]) && ay_enable[ay][c]) {
 	        short bit = 1;
 	        if(ay_enable[ay][c] & 1) bit &= (audio_toggle[ay][c]>0)?1:0;  // tone
 	        if(ay_enable[ay][c] & 2) bit &= (ay_noise_rng[ay]&1)?1:0;     // noise
 	  
 	        if(bit == 0) bit = -1;
-	        v += AY_VOL * bit * ay_volume[ay][c];
+	        v += AY_VOL * bit * vol;
 	  
 	        audio_cnt[ay][c] += AY_INC; // for 24 khz
 	        if(audio_cnt[ay][c] > ay_period[ay][c]) {
@@ -762,6 +796,12 @@ _1942_END
 INVADERS_BEGIN
   invaders_prepare_frame();
 INVADERS_END
+#endif
+
+#ifdef ENABLE_SCOBRA
+SCOBRA_BEGIN
+  scobra_prepare_frame();
+SCOBRA_END
 #endif
 
   // max possible video rate:

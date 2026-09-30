@@ -207,4 +207,10 @@
 
 #define INVADERS_DIP  (INVADERS_DIP_SHIPS3 | INVADERS_DIP_EXTRA_1500 | INVADERS_DIP_COININFO_ON)
 
+// Super Cobra (values from GalaginoPlus)
+// IN1 bit 0 continue, bit 1 lives; bits 2-7 are inputs (idle high)
+#define SCOBRA_DIP_IN1  0xff
+// IN2 bits 1-2 coinage (01 = 1 coin 1 credit), bit 3 cabinet (0 = upright)
+#define SCOBRA_DIP_IN2  0x02
+
 #endif // _DIP_SWITCHES_H_

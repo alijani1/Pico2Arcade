@@ -47,6 +47,9 @@ enum {
 #ifdef ENABLE_INVADERS
       MCH_INVADERS,
 #endif
+#ifdef ENABLE_SCOBRA
+      MCH_SCOBRA,
+#endif
       MCH_LAST
 };
 
@@ -180,6 +183,11 @@ enum {
   #define INVADERS_BEGIN  else if(machine == MCH_INVADERS) {
   #define INVADERS_END    }
 #endif
+#ifdef ENABLE_SCOBRA
+  #define MACHINE_IS_SCOBRA  (machine == MCH_SCOBRA)
+  #define SCOBRA_BEGIN  else if(machine == MCH_SCOBRA) {
+  #define SCOBRA_END    }
+#endif
 
 #if defined(__cplusplus)
 extern "C"
@@ -192,7 +200,7 @@ extern char game_started;
 #ifdef ENABLE_GALAGA
 extern unsigned char starcontrol;
 #endif
-#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG)
+#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA)
 extern unsigned char soundregs[32];
 #endif
 #ifndef SINGLE_MACHINE
@@ -279,6 +287,16 @@ extern "C" unsigned char *invaders_rom;
 extern unsigned char *invaders_rom;
 #endif
 #endif
+#ifdef ENABLE_SCOBRA
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char *scobra_rom_cpu1;
+extern unsigned char *scobra_rom_cpu2;
+#ifdef __cplusplus
+}
+#endif
+#endif
 #ifdef ENABLE_1942
 extern unsigned char _1942_bank;
 extern const unsigned char _1942_rom_cpu1[];
@@ -341,6 +359,10 @@ static inline byte OpZ80_INL(register word Addr) {
     rom_table[MCH_DIGDUG][1] = digdug_rom_cpu2;
     rom_table[MCH_DIGDUG][2] = digdug_rom_cpu3;
 #endif
+#ifdef ENABLE_SCOBRA
+    rom_table[MCH_SCOBRA][0] = scobra_rom_cpu1;
+    rom_table[MCH_SCOBRA][1] = scobra_rom_cpu2;
+#endif
     /* Add 1942 assignments as their loaders land. */
     rom_table_ready = 1;
   }
@@ -378,6 +400,10 @@ static inline byte OpZ80_INL(register word Addr) {
 #ifdef ENABLE_FROGGER
   /* Frogger cpu1 padded to 16K, cpu2 padded to 8K. */
   if (machine == MCH_FROGGER && current_cpu == 1) addr_mask = 0x1FFFu;
+#endif
+#ifdef ENABLE_SCOBRA
+  /* Super Cobra cpu1 padded to 32K, cpu2 to 8K. */
+  if (machine == MCH_SCOBRA) addr_mask = current_cpu ? 0x1FFFu : 0x7FFFu;
 #endif
 #ifdef ENABLE_DIGDUG
   /* Digdug cpu0=16K, cpu1=8K, cpu2=4K. digdug_StepZ80 has its own masks;

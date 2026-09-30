@@ -119,10 +119,25 @@ static const RomFile invaders_files[] = {
     { "invaders.h", 0x734f5ad8u },
 };
 
+static const RomFile scobra_files[] = {
+    { "2e", 0x8e7245cdu },
+    { "2h", 0x7244f21cu },
+    { "2l", 0xd52affdeu },
+    { "5c", 0xd4346959u },
+    { "5d", 0xcc025d95u },
+    { "5e", 0x1628c53fu },
+    { "82s123.6e", 0x9b87f90du },
+    { "epr1265.2c", 0xa0744b3fu },
+    { "epr1267.2f", 0x47a4e6fbu },
+    { "epr1269.2j", 0xe1f8a801u },
+    { "epr1273.5f", 0xa96316d3u },
+    { "epr1274.5h", 0x64d113b4u },
+};
+
 struct RomSet { const char *zip; const RomFile *files; int n; };
 #define SET(z) { "/roms/" #z ".zip", z##_files, (int)(sizeof(z##_files) / sizeof(z##_files[0])) }
 static const RomSet SETS[] = {
-    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders),
+    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra),
 };
 
 static inline uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
