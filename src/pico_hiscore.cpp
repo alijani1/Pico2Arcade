@@ -16,6 +16,7 @@
 #include "pico_board.h"
 #include "pico_handoff.h"
 #include "pico_hiscore.h"
+#include "pico_audio.h"
 
 #ifdef PICO_BOARD_TABLE
 #include <hardware/flash.h>
@@ -239,10 +240,12 @@ static void store_write(void) {
     s_store.version = 1;
 #ifdef PICO_BOARD_TABLE
     rp2040.idleOtherCore();                  /* core 1 (emulator) runs from flash */
+    pico_audio_suspend();                    /* else its DMA desyncs: clicks + slowdown */
     uint32_t irq = save_and_disable_interrupts();
     flash_range_erase(s_phys, FLASH_SECTOR_SIZE);
     flash_range_program(s_phys, (const uint8_t *)&s_store, sizeof(s_store));
     restore_interrupts(irq);
+    pico_audio_resume();
     rp2040.resumeOtherCore();
     g_hs_saves++;
 #else

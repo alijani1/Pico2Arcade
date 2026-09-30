@@ -55,6 +55,18 @@ extern "C" void pico_audio_init(int sample_rate) {
     g_sample_rate = sample_rate;
 }
 
+/* Flash writes turn interrupts off for tens of ms — longer than one DMA
+ * buffer — and the ping-pong DMA's re-arm IRQ gets missed: the two channels
+ * end up out of step for good (constant clicking, and the runaway DMA slows
+ * everything down). So audio is stopped cleanly around every flash write and
+ * restarted afterwards. Call with the other core idled (it pushes samples). */
+extern "C" void pico_audio_suspend(void) {
+    if (g_started) g_audio.end();
+}
+extern "C" void pico_audio_resume(void) {
+    if (g_started) g_audio.begin(g_sample_rate);
+}
+
 extern "C" void pico_audio_set_sample_rate(int sample_rate) {
     pico_audio_init(sample_rate);
 }

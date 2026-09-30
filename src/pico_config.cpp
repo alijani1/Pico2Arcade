@@ -45,6 +45,7 @@ extern "C" void pico_config_save_volume(int pct) { (void)pct; }
  * portrait (full-size picture on a 240x320 panel), FPS off, volume 100%. */
 #include <hardware/flash.h>
 #include <hardware/sync.h>
+#include "pico_audio.h"
 
 #ifndef PICO_CONFIG_PHYS
 #define PICO_CONFIG_PHYS 0x300000u
@@ -78,10 +79,12 @@ static void pico_config_save(void) {
     memset(page, 0xFF, sizeof(page));
     memcpy(page, &s_cfg, sizeof(s_cfg));
     rp2040.idleOtherCore();
+    pico_audio_suspend();                    /* PWM audio DMA can't miss IRQs (pico_audio.cpp) */
     uint32_t irq = save_and_disable_interrupts();
     flash_range_erase(PICO_CONFIG_PHYS, FLASH_SECTOR_SIZE);
     flash_range_program(PICO_CONFIG_PHYS, page, FLASH_PAGE_SIZE);
     restore_interrupts(irq);
+    pico_audio_resume();
     rp2040.resumeOtherCore();
     Serial.printf("[cfg] saved landscape=%d show_fps=%d volume=%d\n",
                   s_cfg.landscape, s_cfg.show_fps, s_cfg.volume);

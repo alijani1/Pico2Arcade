@@ -10,6 +10,7 @@
 #include "pico_drive.h"
 #include "pico_romfs.h"
 #include "pico_handoff.h"
+#include "pico_audio.h"
 
 #ifdef PICO_GALAGINO_LANDSCAPE
 extern "C" volatile int g_landscape_mode;
@@ -192,6 +193,7 @@ extern "C" void pico_drive_run(void) {
     uint32_t size;
     romfs_location(&s_xip, &s_phys, &size);
     s_sectors = size / SECTOR;
+    pico_audio_suspend();        /* no audio here; its DMA can't survive flash writes (pico_audio.cpp) */
     s_cache = (uint8_t *)malloc(FLASH_SECTOR_SIZE);
     Serial.printf("[drive] ROM drive mode: 0x%lx, %lu sectors\n",
                   (unsigned long)s_phys, (unsigned long)s_sectors);

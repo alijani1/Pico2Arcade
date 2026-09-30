@@ -33,6 +33,11 @@ void pico_audio_set_sample_rate(int sample_rate);
  * signal to decide whether to generate more audio. */
 size_t pico_audio_push(const void *data, size_t bytes);
 
+/* Stop / restart the PWM audio around flash writes (interrupts off would
+ * desynchronise its DMA). Call with the other core idled. */
+void pico_audio_suspend(void);
+void pico_audio_resume(void);
+
 /* Volume 0..100 % with a perceptual (squared) curve — matches
  * PicoCartReader. */
 void    pico_audio_set_volume_pct(int pct);
