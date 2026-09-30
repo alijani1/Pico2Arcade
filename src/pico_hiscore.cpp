@@ -87,6 +87,10 @@ static_assert(sizeof(GAMES) / sizeof(GAMES[0]) == 6, "one slot per game");
 
 static HsStore s_store;                                 /* core 0 owns it (load/save) */
 
+/* Diagnostics for the FPS overlay (video.cpp): saves done this session and
+ * the state letter (W = waiting for the table, R = running, - = off). */
+extern "C" { volatile unsigned g_hs_saves = 0; volatile char g_hs_state = '-'; }
+
 #ifdef PICO_BOARD_TABLE
 /* Flash sector: Quad — just below the ROM drive (the last 4 KB of the
  * arcade slot, which the arcade image must never reach); standalone —
@@ -130,6 +134,10 @@ static const uint32_t WAIT_FRAMES   = 60 * 60;          /* give up restoring aft
 static const uint32_t INIT_STABLE_FRAMES = 30;
 static const uint32_t CHECK_EVERY   = 30;               /* compare twice a second */
 static const uint32_t STABLE_FRAMES = 60 * 10;          /* unchanged for 10 s -> save */
+/* At most one automatic save per minute (each save pauses the game briefly);
+ * leaving the game always saves. */
+static const uint32_t MIN_SAVE_GAP  = 60 * 60;
+static uint32_t s_lastSaveFrame = 0;
 
 static uint8_t table_len(const HsGame &g) {
     uint8_t n = 0;
@@ -175,7 +183,7 @@ extern "C" void pico_hiscore_load(void) {
     if (s_game >= 0) {
         s_len = table_len(GAMES[s_game]);
         s_initFrames = 0;
-        s_state = HS_WAIT;
+        s_state = HS_WAIT; g_hs_state = 'W';
         const HsSlot &sl = s_store.slot[s_game];
         Serial.printf("[hiscore] slot %d: %s\n", s_game,
                       (sl.valid && sl.len == s_len) ? "saved table" : "none yet");
@@ -197,11 +205,11 @@ extern "C" void pico_hiscore_frame(void) {
             table_read(g, s_saved);
             memcpy(s_prev, s_saved, s_len);
             s_stableFrames = 0;
-            s_state = HS_RUN;
+            s_state = HS_RUN; g_hs_state = 'R';
             return;
         }
         if (s_frames > WAIT_FRAMES)
-            s_state = HS_OFF;                /* table never showed up: leave it alone */
+            s_state = HS_OFF; g_hs_state = '-';   /* table never showed up: leave it alone */
         return;
     }
     if (s_frames % CHECK_EVERY) return;
@@ -213,7 +221,9 @@ extern "C" void pico_hiscore_frame(void) {
         return;
     }
     s_stableFrames += CHECK_EVERY;
-    if (s_stableFrames >= STABLE_FRAMES && memcmp(cur, s_saved, s_len) != 0 && !s_saveReq) {
+    if (s_stableFrames >= STABLE_FRAMES && memcmp(cur, s_saved, s_len) != 0 && !s_saveReq &&
+        (s_lastSaveFrame == 0 || s_frames - s_lastSaveFrame >= MIN_SAVE_GAP)) {
+        s_lastSaveFrame = s_frames;
         memcpy(s_pending, cur, s_len);
         memcpy(s_saved, cur, s_len);
         s_saveReq = true;                    /* core 0 writes it */
@@ -234,10 +244,12 @@ static void store_write(void) {
     flash_range_program(s_phys, (const uint8_t *)&s_store, sizeof(s_store));
     restore_interrupts(irq);
     rp2040.resumeOtherCore();
+    g_hs_saves++;
 #else
     SD.remove("/gal_hi.bin");
     File f = SD.open("/gal_hi.bin", FILE_WRITE);
     if (f) { f.write((const uint8_t *)&s_store, sizeof(s_store)); f.close(); }
+    g_hs_saves++;
 #endif
     Serial.printf("[hiscore] saved slot %d\n", s_game);
 }

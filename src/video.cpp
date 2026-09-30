@@ -229,6 +229,8 @@ void Video::write(uint16_t *colors, uint32_t len) {
 extern "C" volatile int g_show_fps;
 extern "C" volatile unsigned long g_emu_frames;
 extern "C" volatile unsigned long g_emu_us_sum;
+extern "C" volatile unsigned g_hs_saves;     /* pico_hiscore.cpp diagnostics */
+extern "C" volatile char g_hs_state;
 
 static const float FRAME_BUDGET_MS = 1000.0f / 60.0f;
 
@@ -240,7 +242,7 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
   if (is_landscape_locked) {
     /* Left border: push_x_off px wide (67 px with the 186 px image). */
     int x = 2, w = push_x_off - 3;
-    tft.fillRect(0, 0, w + 2, 58, TFT_BLACK);
+    tft.fillRect(0, 0, w + 2, 70, TFT_BLACK);
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(x, 2);   tft.printf("SCR %4.1f", scr_fps);
     tft.setCursor(x, 12);  tft.printf("EMU %4.1f", emu_fps);
@@ -248,6 +250,8 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
     tft.setCursor(x, 26);  tft.printf("CPU");
     tft.setCursor(x, 36);  tft.printf("%5.1fms", emu_ms);
     tft.setCursor(x, 46);  tft.printf("%4.0f%%", load);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(x, 60);  tft.printf("HS %c %u", g_hs_state, g_hs_saves);
     return;
   }
 #endif
@@ -259,6 +263,8 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
   tft.printf("SCR %4.1f EMU %4.1f ", scr_fps, emu_fps);
   tft.setTextColor(col, TFT_BLACK);
   tft.printf("CPU %4.1fms %3.0f%%", emu_ms, load);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.printf(" %c%u", g_hs_state, g_hs_saves);   /* high scores: state + saves */
 }
 
 void Video::fps_stats_tick(void) {
@@ -287,7 +293,7 @@ void Video::fps_stats_tick(void) {
   } else if (shown) {
     /* Turned off: clear what we drew. */
 #ifdef PICO_GALAGINO_LANDSCAPE
-    if (is_landscape_locked) tft.fillRect(0, 0, push_x_off - 1, 58, TFT_BLACK);
+    if (is_landscape_locked) tft.fillRect(0, 0, push_x_off - 1, 70, TFT_BLACK);
     else
 #endif
     tft.fillRect(0, TFT_Y_OFFSET + GAME_H + 2, 240, 12, TFT_BLACK);
