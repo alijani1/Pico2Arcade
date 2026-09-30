@@ -36,14 +36,16 @@ extern "C" const char *romfs_where(void) { return "/roms/ on the SD card"; }
 #include <hardware/structs/watchdog.h>
 #include "pico_handoff.h"
 
-#ifndef PICO_QUAD_FAT_WINDOW_OFS
-#define PICO_QUAD_FAT_WINDOW_OFS 0x60000u    /* Quad: 0x3C0000 - 0x360000 */
+/* Hosted builds: where the host's ROM drive is if it didn't pass it (set per
+ * env in platformio.ini; defaults = the Quad). */
+#ifndef PICO_HOST_FAT_WINDOW_OFS
+#define PICO_HOST_FAT_WINDOW_OFS 0x60000u    /* Quad: 0x3C0000 - 0x360000 */
 #endif
-#ifndef PICO_QUAD_FAT_PHYS
-#define PICO_QUAD_FAT_PHYS       0x3C0000u   /* Quad: physical flash offset */
+#ifndef PICO_HOST_FAT_PHYS
+#define PICO_HOST_FAT_PHYS       0x3C0000u   /* Quad: physical flash offset */
 #endif
-#ifndef PICO_QUAD_FAT_SIZE
-#define PICO_QUAD_FAT_SIZE       0x40000u    /* 256 KB */
+#ifndef PICO_HOST_FAT_SIZE
+#define PICO_HOST_FAT_SIZE       0x40000u    /* 256 KB */
 #endif
 #ifndef PICO_DRIVE_PHYS
 #define PICO_DRIVE_PHYS          0x200000u   /* standalone: drive at 2 MB ... */
@@ -70,7 +72,7 @@ extern "C" void romfs_location(const uint8_t **xip, uint32_t *phys, uint32_t *si
 static void locate_drive(void) {
     uint32_t s0 = watchdog_hw->scratch[HANDOFF_SCRATCH_HOST];
     if ((s0 & 0xFFFF0000u) == HANDOFF_HOST_QUAD_TAG) {
-        uint32_t ofs = PICO_QUAD_FAT_WINDOW_OFS, size = PICO_QUAD_FAT_SIZE;
+        uint32_t ofs = PICO_HOST_FAT_WINDOW_OFS, size = PICO_HOST_FAT_SIZE;
         uint32_t s2 = watchdog_hw->scratch[HANDOFF_SCRATCH_FATOFS];
         uint32_t s3 = watchdog_hw->scratch[HANDOFF_SCRATCH_FATSIZE];
         if ((s2 & 0xFFFF0000u) == HANDOFF_FATOFS_TAG)  ofs  = (s2 & 0xFFFFu) << 12;
@@ -79,10 +81,10 @@ static void locate_drive(void) {
         s_phys = (s0 & 0xFFFFu) << 12;
         s_size = size;
     } else {
-#ifdef PICO_QUAD
-        s_xip = (const uint8_t *)(XIP_BASE + PICO_QUAD_FAT_WINDOW_OFS);
-        s_phys = PICO_QUAD_FAT_PHYS;
-        s_size = PICO_QUAD_FAT_SIZE;
+#ifdef PICO_HOSTED
+        s_xip = (const uint8_t *)(XIP_BASE + PICO_HOST_FAT_WINDOW_OFS);
+        s_phys = PICO_HOST_FAT_PHYS;
+        s_size = PICO_HOST_FAT_SIZE;
 #else
         s_xip = (const uint8_t *)(XIP_BASE + PICO_DRIVE_PHYS);
         s_phys = PICO_DRIVE_PHYS;
@@ -218,9 +220,7 @@ extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
     return true;
 }
 
-#ifdef PICO_QUAD
-extern "C" const char *romfs_where(void) { return "the QUAD ROMS drive"; }
-#else
+/* Every flash board's drive is labelled ARCADE ROMS (the Quad's first drives
+ * were "QUAD ROMS"; only the label differs). */
 extern "C" const char *romfs_where(void) { return "the ARCADE ROMS drive"; }
-#endif
 #endif

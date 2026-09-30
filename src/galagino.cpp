@@ -24,6 +24,7 @@ extern "C" bool pico_sd_init(void);
 #include "pico_board.h"
 #include "pico_drive.h"
 #include "pico_hiscore.h"
+extern "C" void pico_input_poll(void);
 extern "C" void pico_config_load(void);
 #endif
 
@@ -1021,6 +1022,7 @@ void loop(void) {
   // synchronize video
   update_screen(); 
   pico_hiscore_service();   /* high-score saves + save-then-exit (core 0 owns flash / SD) */
+  pico_input_poll();        /* core-0-only inputs, e.g. the 5200 stick (pico_input.cpp) */
 
 #ifdef LED_PIN
   leds_update();

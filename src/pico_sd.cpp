@@ -11,7 +11,7 @@
 /* The Quad has no SD card (its ROMs come from the flash ROM drive — see
  * pico_romfs.cpp), and SPI1 pins 10-13 are its DB9 fire buttons there.
  * Same for the standalone Pico 2 (its own flash ROM drive, 10-13 = stick). */
-#if !defined(PICO_QUAD) && !defined(PICO_STANDALONE)
+#if !defined(PICO_QUAD) && !defined(PICO_5200) && !defined(PICO_STANDALONE)
 #include <SPI.h>
 #include <SD.h>
 
@@ -57,4 +57,4 @@ extern "C" bool pico_sd_init(void) {
     Serial.printf("[sd] found %d .zip files\n", nzip);
     return true;
 }
-#endif  /* !PICO_QUAD && !PICO_STANDALONE */
+#endif  /* !PICO_QUAD && !PICO_5200 && !PICO_STANDALONE */

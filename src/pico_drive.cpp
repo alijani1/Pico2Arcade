@@ -198,13 +198,10 @@ extern "C" void pico_drive_run(void) {
     Serial.printf("[drive] ROM drive mode: 0x%lx, %lu sectors\n",
                   (unsigned long)s_phys, (unsigned long)s_sectors);
 
-#ifdef PICO_QUAD
-    const char *driveName = "QUAD ROMS";
-    static const char LABEL[11] = {'Q','U','A','D',' ','R','O','M','S',' ',' '};
-#else
+    /* One name on every board (the Quad's first drives were "QUAD ROMS"; an
+     * already formatted drive keeps its label). */
     const char *driveName = "ARCADE ROMS";
     static const char LABEL[11] = {'A','R','C','A','D','E',' ','R','O','M','S'};
-#endif
     if (!is_formatted()) {
 #ifdef PICO_STANDALONE
         static const char INI83[11] = {'A','R','C','A','D','E',' ',' ','I','N','I'};

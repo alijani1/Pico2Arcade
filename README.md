@@ -23,6 +23,7 @@ The same code also runs as the arcade mode of two other boards:
 |---|---|---|---|
 | **Standalone Pico 2** | `pico2_std` | 1 MB USB drive in the Pico's flash | your wiring (`ARCADE.INI`) |
 | **Quad Ultimate CX** (iCode) | `quad` | 256 KB USB drive in flash | built-in profile |
+| **Duo 5200 Ultimate** (iCode) | `duo5200` | 256 KB USB drive in flash | built-in profile + the port 1 Atari 5200 controller (analog stick, fire buttons) |
 | **PicoCartReader** | `pico2_arcade` | `/roms/` on the SD card | PCA9539 expander + JoyCon |
 
 We do **not** distribute ROMs. Use ROM sets you are entitled to.
@@ -190,7 +191,8 @@ pio run -e pico2_std -t upload       # flash it (picotool)
 | Env | Board | Notes |
 |---|---|---|
 | `pico2_std` | Raspberry Pi Pico 2 | standalone; TinyUSB for the ROM drive |
-| `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x360000, ≤ 384 KB); `-t upload` writes only that slot |
+| `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x360000, ≤ 380 KB); `-t upload` writes only that slot |
+| `duo5200` | Duo 5200 Ultimate | chain-booted by the Duo 5200 firmware (1.1+) from its arcade slot (0x340000, ≤ 380 KB); `-t upload` writes only that slot |
 | `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
 | `pico2` | PicoCartReader | flashes at offset 0, **replacing** the CartReader firmware |
 | `bench` | PicoCartReader | Z80 benchmark (attract mode, logs to SD) |

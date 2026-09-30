@@ -1,7 +1,8 @@
 /* pico_romfs.h — where the game ROM zips come from.
  *
  * Default (PicoCartReader): the SD card, /roms/<set>.zip.
- * PICO_QUAD (Quad Ultimate CX): the Quad's 256 KB FAT12 "QUAD ROMS" drive in
+ * PICO_QUAD / PICO_5200 (hosted: Quad Ultimate CX, Duo 5200 Ultimate): the
+ *   host's 256 KB FAT12 "ARCADE ROMS" drive (early Quad drives: "QUAD ROMS") in
  *   flash. The Quad chain-boots us with the boot ROM's rom_chain_image(); the
  *   window it maps to 0x10000000 contains this image followed by the ROM drive,
  *   so the drive is plain memory at 0x10000000 + its window offset. The Quad

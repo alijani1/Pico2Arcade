@@ -69,6 +69,74 @@ static const int JOY_THRESHOLD = 900;   /* ~22% of 12-bit range */
 static int joy_center_x = 2048;
 static int joy_center_y = 2048;
 
+#ifdef PICO_BOARD_TABLE
+/* ── Atari 5200 controller analog stick (g_pins.stick_x / stick_y) ──────
+ * The 5200 pots are read the way the Duo 5200 firmware does it (GameAdapter
+ * pins.cpp): each pin's capacitor rests discharged (OUTPUT LOW); released to
+ * INPUT it charges through the pot, and the time until the pin reads HIGH
+ * grows with the resistance — longer = right (X) / down (Y), about 0-1.3 ms
+ * over the stick's travel (the host's PIO counts ~3335 at 2.5 MHz). Blocks
+ * for up to 2 ms, so it runs at most every 16 ms and only on core 0.
+ * Directions are digital: the range is learned from the min/max seen (the
+ * nominal range until the stick has moved), with a 40 % deadzone. */
+static const uint32_t RC_TIMEOUT_US = 2000;     /* no controller / pot beyond range */
+static const uint32_t RC_NOMINAL_US = 1334;     /* full travel, nominal */
+static volatile unsigned char s_stickDirs = 0;  /* BUTTON_UP/DOWN/LEFT/RIGHT from the stick */
+
+static void rc_stick_init(void) {
+    const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
+    for (int p : pins) {
+        if (p < 0) continue;
+        gpio_init(p);
+        gpio_disable_pulls(p);
+        gpio_put(p, 0);
+        gpio_set_dir(p, GPIO_OUT);              /* park discharged */
+    }
+}
+
+static void rc_stick_read(void) {
+    if (g_pins.stick_x < 0 || g_pins.stick_y < 0) return;
+    static uint32_t lastUs = 0;
+    static uint32_t lo[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu }, hi[2] = { 0, 0 };
+    uint32_t now = time_us_32();
+    if (lastUs != 0 && now - lastUs < 16000) return;
+    lastUs = now;
+
+    const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
+    uint32_t t[2] = { 0, 0 };
+    uint32_t t0 = time_us_32();
+    gpio_set_dir(pins[0], GPIO_IN);             /* release both caps together */
+    gpio_set_dir(pins[1], GPIO_IN);
+    for (;;) {
+        uint32_t el = time_us_32() - t0;
+        for (int a = 0; a < 2; a++)
+            if (!t[a] && gpio_get(pins[a])) t[a] = el + 1;
+        if ((t[0] && t[1]) || el >= RC_TIMEOUT_US) break;
+    }
+    for (int a = 0; a < 2; a++) gpio_set_dir(pins[a], GPIO_OUT);   /* discharge again (pin LOW) */
+
+    unsigned char dirs = 0;
+    for (int a = 0; a < 2; a++) {
+        if (!t[a]) continue;                    /* timed out: no controller on this axis */
+        if (t[a] < lo[a]) lo[a] = t[a];
+        if (t[a] > hi[a]) hi[a] = t[a];
+        uint32_t range = hi[a] - lo[a];
+        int32_t center, half;
+        if (range >= RC_NOMINAL_US / 2) { center = (int32_t)(lo[a] + hi[a]) / 2; half = (int32_t)range / 2; }
+        else                            { center = RC_NOMINAL_US / 2;           half = RC_NOMINAL_US / 2; }
+        int32_t d = (int32_t)t[a] - center, thr = half * 4 / 10;
+        if (d >  thr) dirs |= (a == 0) ? BUTTON_RIGHT : BUTTON_DOWN;
+        if (d < -thr) dirs |= (a == 0) ? BUTTON_LEFT  : BUTTON_UP;
+    }
+    s_stickDirs = dirs;
+}
+
+/* Core 0 (loop()): keep the 5200 stick fresh while core 1 runs a game. */
+extern "C" void pico_input_poll(void) { rc_stick_read(); }
+#else
+extern "C" void pico_input_poll(void) {}
+#endif
+
 #ifdef PICO_GALAGINO_LANDSCAPE
 /* Runtime landscape flag from pico_config.cpp. C linkage matches its
  * definition. Declared at file scope so buttons_get can reference it
@@ -83,8 +151,10 @@ extern "C" void pico_input_init(void) {
      * INT) is a DB9 line, so it must not be initialised here. */
     const int tablePins[] = { g_pins.start, g_pins.coin, g_pins.menu, g_pins.nav_up, g_pins.nav_down,
                               g_pins.up, g_pins.down, g_pins.left, g_pins.right,
-                              g_pins.fire, g_pins.fire2, g_pins.fire3, g_pins.joy_click };
+                              g_pins.fire, g_pins.fire2, g_pins.fire3, g_pins.fire4,
+                              g_pins.joy_click };
     for (int p : tablePins) if (p >= 0) pinMode(p, INPUT_PULLUP);
+    rc_stick_init();
 #else
     pinMode(PIN_SELECT, INPUT_PULLUP);
     pinMode(PIN_START,  INPUT_PULLUP);
@@ -156,7 +226,14 @@ extern "C" unsigned char buttons_get(void) {
     if (pin_low(g_pins.fire))      state |= BUTTON_FIRE;
     if (pin_low(g_pins.fire2))     state |= BUTTON_FIRE;
     if (pin_low(g_pins.fire3))     state |= BUTTON_FIRE;
+    if (pin_low(g_pins.fire4))     state |= BUTTON_FIRE;
     if (pin_low(g_pins.joy_click)) state |= BUTTON_FIRE;
+
+    /* Atari 5200 controller stick (Duo 5200). The RC read blocks for up to
+     * 2 ms, so it only runs on core 0 (the game list here; loop() during a
+     * game) — core 1, the emulator, just uses the last result. */
+    if (get_core_num() == 0) rc_stick_read();
+    state |= s_stickDirs;
 #else
     if (digitalRead(PIN_START)  == LOW) state |= BUTTON_START;
     if (digitalRead(PIN_SELECT) == LOW) state |= BUTTON_COIN;

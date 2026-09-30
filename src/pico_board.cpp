@@ -15,26 +15,45 @@
  * backlight MOSFET 23. */
 board_pins_t g_pins = {
     /* up down left right */ 28, 29, 30, 31,
-    /* fire fire2 fire3   */ 12, 14, 16,
+    /* fire fire2 fire3 fire4 */ 12, 14, 16, -1,
     /* start coin menu    */ 20, 19, 18,
     /* nav_up nav_down    */ 3, 2,          /* left / right side buttons */
     /* joy_x joy_y        */ 44, 45,
     /* joy_click          */ 21,
     /* audio amp          */ 22, 4,
     /* backlight          */ 23,
+    /* stick_x stick_y    */ -1, -1,
+};
+#elif defined(PICO_5200)
+/* Duo 5200 Ultimate — same device buttons, Joy-Con, audio and backlight as the
+ * Quad (GameAdapterRGBPico data/duo5200.json), no DB9 joystick: directions come
+ * from the Joy-Con and the port 1 Atari 5200 controller's analog stick (RC pots
+ * on GPIO 40/41); fire = its Fire A / Fire B (GPIO 10/11), Red, Blue, or the
+ * Joy-Con click; White = START, Black = COIN, gray Menu. */
+board_pins_t g_pins = {
+    /* up down left right */ -1, -1, -1, -1,
+    /* fire fire2 fire3 fire4 */ 10, 11, 14, 16,
+    /* start coin menu    */ 20, 19, 18,
+    /* nav_up nav_down    */ -1, -1,
+    /* joy_x joy_y        */ 44, 45,
+    /* joy_click          */ 21,
+    /* audio amp          */ 22, 4,
+    /* backlight          */ 23,
+    /* stick_x stick_y    */ 40, 41,
 };
 #else
 /* Plain Pico 2 defaults (also the contents of the default ARCADE.INI). Chosen
  * clear of the display (SPI0: SCLK 6, MOSI 7, CS 5, DC 8, RST 9). */
 board_pins_t g_pins = {
     /* up down left right */ 10, 11, 12, 13,
-    /* fire fire2 fire3   */ 14, -1, -1,
+    /* fire fire2 fire3 fire4 */ 14, -1, -1, -1,
     /* start coin menu    */ 15, 16, 17,
     /* nav_up nav_down    */ -1, -1,
     /* joy_x joy_y        */ -1, -1,
     /* joy_click          */ -1,
     /* audio amp          */ 22, -1,
     /* backlight          */ -1,
+    /* stick_x stick_y    */ -1, -1,
 };
 #endif
 
@@ -50,6 +69,7 @@ static const PinKey KEYS[] = {
     { "fire",      &g_pins.fire,      "fire button" },
     { "fire2",     &g_pins.fire2,     "extra fire button" },
     { "fire3",     &g_pins.fire3,     "extra fire button" },
+    { "fire4",     &g_pins.fire4,     "extra fire button" },
     { "start",     &g_pins.start,     "START (hold START+COIN in a game = game list)" },
     { "coin",      &g_pins.coin,      "COIN / insert credit" },
     { "menu",      &g_pins.menu,      "MENU: tap = back, hold in a game = game list, hold at power-on = ROM drive" },

@@ -9,8 +9,9 @@
  * Default (no file present) is portrait, FPS overlay off. */
 
 #include <Arduino.h>
+#include "pico_board.h"      /* PICO_HOSTED */
 
-#ifdef PICO_QUAD
+#ifdef PICO_HOSTED
 /* Quad Ultimate CX: no SD card and the flash ROM drive is read-only to us.
  * The display orientation is kept by the Quad instead: it passes it in the
  * handoff flags (watchdog scratch[1], HANDOFF_FLAG_PORTRAIT) on launch, we
@@ -149,4 +150,4 @@ extern "C" void pico_config_save_show_fps(int on) {
 /* The CartReader keeps the volume itself (handoff). */
 extern "C" int  pico_config_volume(void) { return -1; }
 extern "C" void pico_config_save_volume(int pct) { (void)pct; }
-#endif  /* !PICO_QUAD */
+#endif  /* !PICO_HOSTED */

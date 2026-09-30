@@ -102,7 +102,7 @@ extern "C" { volatile unsigned g_hs_saves = 0; volatile char g_hs_state = '-'; }
 static uint32_t s_phys;
 static const uint8_t *s_xip;
 static void hs_locate(void) {
-#ifdef PICO_QUAD
+#ifdef PICO_HOSTED
     const uint8_t *xip; uint32_t phys, size;
     romfs_location(&xip, &phys, &size);
     s_phys = phys - FLASH_SECTOR_SIZE;
