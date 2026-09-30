@@ -431,6 +431,11 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
       scobra_WrZ80(Addr, Value);
       return;
 #endif
+#ifdef ENABLE_SCRAMBLE
+    case MCH_SCRAMBLE:
+      scramble_WrZ80(Addr, Value);
+      return;
+#endif
 #ifndef SINGLE_MACHINE
   }
 #endif
@@ -546,6 +551,10 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
 #ifdef ENABLE_SCOBRA
     case MCH_SCOBRA:
       return scobra_RdZ80(Addr);
+#endif
+#ifdef ENABLE_SCRAMBLE
+    case MCH_SCRAMBLE:
+      return scramble_RdZ80(Addr);
 #endif
 #ifndef SINGLE_MACHINE
   }

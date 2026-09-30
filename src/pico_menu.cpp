@@ -33,6 +33,7 @@ extern "C" bool runtime_load_dkong(void);
 extern "C" bool runtime_load_digdug(void);
 extern "C" bool runtime_load_invaders(void);
 extern "C" bool runtime_load_scobra(void);
+extern "C" bool runtime_load_scramble(void);
 extern "C" unsigned char buttons_get(void);
 /* Gate that setup1() polls before starting the emulator on core 1.
  * Defined in pico_core1.cpp. */
@@ -52,7 +53,9 @@ struct GameEntry {
     const char *zip;     /* ROM set on SD; game is listed only if present */
     signed char mch;
     bool (*loader)(void);
+    bool two_fire;       /* separate A / B fire buttons (pico_input.cpp) */
 };
+extern "C" volatile int g_two_fire;
 
 static const GameEntry games[] = {
 #ifdef ENABLE_PACMAN
@@ -113,7 +116,10 @@ static const GameEntry games[] = {
     { "Space Invaders", "/roms/invaders.zip", MCH_INVADERS, runtime_load_invaders },
 #endif
 #ifdef ENABLE_SCOBRA
-    { "Super Cobra", "/roms/scobra.zip", MCH_SCOBRA, runtime_load_scobra },
+    { "Super Cobra", "/roms/scobra.zip", MCH_SCOBRA, runtime_load_scobra, true },
+#endif
+#ifdef ENABLE_SCRAMBLE
+    { "Scramble", "/roms/scramble.zip", MCH_SCRAMBLE, runtime_load_scramble, true },
 #endif
     /* Add per game as its runtime loader lands. */
 };
@@ -221,6 +227,12 @@ static void draw_volume(TFT_eSPI &tft) {
     else        tft.printf("%d%%", v);
 }
 
+/* Rows never get tighter than this (size-2 text is 16 px tall). When they
+ * don't all fit, the list scrolls: a window of rows that follows the
+ * selection, with arrows at the right edge when there is more above/below. */
+static const int MIN_STEP = 18;
+static int s_first = 0;                        /* first row shown */
+
 /* Draw the menu list, highlighting the selected row. Layout comes from
  * the panel's real size (240x320 portrait or 320x240 landscape): drawing
  * past the bottom of a landscape panel wraps onto its top rows. */
@@ -239,6 +251,16 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
         step = (H - HINT_H - top) / menu_rows();
     }
     if (step > 24) step = 24;
+    const int rows = menu_rows();
+    int shown = rows;
+    if (step < MIN_STEP) {
+        step = MIN_STEP;
+        shown = (H - HINT_H - top) / step;
+    }
+    if (sel < s_first) s_first = sel;
+    if (sel >= s_first + shown) s_first = sel - shown + 1;
+    if (s_first > rows - shown) s_first = rows - shown;
+    if (s_first < 0) s_first = 0;
 
     tft.fillScreen(TFT_BLACK);
     tft.setTextSize(2);
@@ -271,7 +293,7 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
 
     tft.setTextSize(2);
     int y = top;
-    for (int i = 0; i < menu_rows(); i++) {
+    for (int i = s_first; i < s_first + shown; i++) {
         /* Game names in yellow, settings / actions in white. */
         uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
         if (i == sel) {
@@ -302,6 +324,12 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
         }
         y += step;
     }
+    /* more rows above / below */
+    if (s_first > 0)
+        tft.fillTriangle(W - 12, top + 2, W - 17, top + 9, W - 7, top + 9, TFT_LIGHTGREY);
+    if (s_first + shown < rows)
+        tft.fillTriangle(W - 12, top + shown * step - 5, W - 17, top + shown * step - 12,
+                         W - 7, top + shown * step - 12, TFT_LIGHTGREY);
 
     /* Hint lines kept <= 37 chars (222 px) so they fit portrait width;
      * landscape gets a single <= 51-char line (306 px). */
@@ -524,6 +552,7 @@ extern "C" void pico_menu_pick_and_load(void) {
      * rate on game pick — since we bypass it, do it here or the ring
      * buffer starves and ticks. */
     audio_dkong_bitrate(games[g].mch == MCH_DKONG);
+    g_two_fire = games[g].two_fire;
 #endif
     tft.fillScreen(TFT_BLACK);
     /* Turn the PAM8302 amp ON now — during boot + menu the amp stays

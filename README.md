@@ -97,7 +97,8 @@ starts a comment.
 |---|---|---|
 | `up` `down` `left` `right` | 10 11 12 13 | joystick directions |
 | `fire` | 14 | fire button |
-| `fire2` `fire3` | -1 | extra fire buttons (optional) |
+| `fire2` `fire3` `fire4` | -1 | extra fire buttons (optional) |
+| `fire_b` `fire_b2` `fire_b3` | -1 | second fire buttons for two-button games, e.g. Super Cobra's bomb (fire otherwise); with no `fire_b`, `fire` does both (optional) |
 | `start` | 15 | START |
 | `coin` | 16 | COIN (insert credit) |
 | `menu` | 17 | MENU: tap = back / exit the list, hold in a game = game list, hold at power-on = ROM drive |

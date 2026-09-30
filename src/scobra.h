@@ -1,4 +1,4 @@
-/* scobra.h — Super Cobra (Konami/Stern 1981).
+/* scobra.h — Super Cobra (Konami/Stern 1981) and Scramble (Konami 1981).
  *
  * Ported from GalaginoPlus (VirtualClaudioBoy, GPLv3), machines/scramble +
  * machines/supercobra, reshaped into upstream Galagino's per-game C layout.
@@ -7,6 +7,8 @@
  * (per-column scroll, 8 sprites, 8 bullets, starfield, blue background).
  * The memory map follows MAME (galaxian.cpp, scobra); GalaginoPlus's
  * sprite-RAM read and its audio/RAM2 overlap bugs aren't carried over.
+ * Scramble is the same board with everything below 0x8000 moved down by
+ * 0x4000 and the PPIs at 0x8100 / 0x8200 (scramble_RdZ80/WrZ80 below).
  *
  * Main CPU                               memory[]
  *   0x0000-0x5FFF  ROM (6 x 4 KB)
@@ -63,14 +65,24 @@ static inline unsigned char scobra_ppi0_r(unsigned char port) {
       if(keymask & BUTTON_COIN)  retval &= ~0x80;
       if(keymask & BUTTON_LEFT)  retval &= ~0x20;
       if(keymask & BUTTON_RIGHT) retval &= ~0x10;
-      if(keymask & BUTTON_FIRE)  retval &= ~(0x08 | 0x02);   /* laser + bomb */
+      if(keymask & BUTTON_FIRE)  retval &= ~0x08;          /* laser */
+      if(keymask & BUTTON_FIRE2) retval &= ~0x02;          /* bomb */
       return retval;
     case 1:   /* IN1: DIPs (continue, lives), cocktail, START2, START1 */
+#ifdef ENABLE_SCRAMBLE
+      retval = (machine == MCH_SCRAMBLE) ? SCRAMBLE_DIP_IN1 : SCOBRA_DIP_IN1;
+#else
       retval = SCOBRA_DIP_IN1;
+#endif
       if(keymask & BUTTON_START) retval &= ~0x80;
       return retval;
     case 2:   /* IN2: DOWN(c), coinage, cabinet, UP, prot, DOWN, prot */
-      retval = (scobra_prot_result & 0x80) ? (0xf1 | SCOBRA_DIP_IN2) : (0x51 | SCOBRA_DIP_IN2);
+      retval = (scobra_prot_result & 0x80) ? 0xf1 : 0x51;
+#ifdef ENABLE_SCRAMBLE
+      retval |= (machine == MCH_SCRAMBLE) ? SCRAMBLE_DIP_IN2 : SCOBRA_DIP_IN2;
+#else
+      retval |= SCOBRA_DIP_IN2;
+#endif
       if(keymask & BUTTON_DOWN) retval &= ~0x40;
       if(keymask & BUTTON_UP)   retval &= ~0x10;
       return retval;
@@ -91,6 +103,36 @@ static inline void scobra_protection_w(unsigned char Value) {
   }
 }
 
+static inline void scobra_ppi1_w(unsigned char port, unsigned char Value) {
+  switch(port) {
+    case 0: scobra_snd_latch = Value; break;
+    case 1:                                  /* bit 3 falling edge: sound IRQ */
+      if((scobra_snd_ctrl & 0x08) && !(Value & 0x08)) scobra_snd_irq = 1;
+      scobra_snd_ctrl = Value;
+      break;
+    case 2: scobra_protection_w(Value); break;
+  }
+}
+
+/* LS259 at 0xA800 (Super Cobra) / 0x6800 (Scramble) */
+static inline void scobra_latch_w(unsigned char bit, unsigned char Value) {
+  switch(bit) {
+    case 1: irq_enable[0] = Value & 1; break;
+    case 3: scobra_background = Value & 1; game_started = 1; break;
+    case 4: scobra_stars_on = Value & 1; break;
+  }
+}
+
+/* sound CPU memory, the same on both games */
+static inline unsigned char scobra_snd_RdZ80(unsigned short Addr) {
+  if(Addr < 0x2000) return scobra_rom_cpu2[Addr];
+  if((Addr & 0xf000) == 0x8000) return memory[SCOBRA_SRAM + (Addr & 0x3ff)];
+  return 0xff;
+}
+static inline void scobra_snd_WrZ80(unsigned short Addr, unsigned char Value) {
+  if((Addr & 0xf000) == 0x8000) memory[SCOBRA_SRAM + (Addr & 0x3ff)] = Value;
+}
+
 static inline unsigned char scobra_RdZ80(unsigned short Addr) {
   if(current_cpu == 0) {
     if(Addr < 0x8000) return scobra_rom_cpu1[Addr];
@@ -103,9 +145,7 @@ static inline unsigned char scobra_RdZ80(unsigned short Addr) {
     }
     return 0xff;                             /* watchdog etc. */
   }
-  if(Addr < 0x2000) return scobra_rom_cpu2[Addr];
-  if((Addr & 0xf000) == 0x8000) return memory[SCOBRA_SRAM + (Addr & 0x3ff)];
-  return 0xff;
+  return scobra_snd_RdZ80(Addr);
 }
 
 static inline void scobra_WrZ80(unsigned short Addr, unsigned char Value) {
@@ -114,28 +154,47 @@ static inline void scobra_WrZ80(unsigned short Addr, unsigned char Value) {
       case 0x8000: memory[Addr - 0x8000] = Value; return;
       case 0x8800: memory[SCOBRA_VRAM + (Addr & 0x3ff)] = Value; return;
       case 0x9000: memory[SCOBRA_OBJ + (Addr & 0xff)] = Value; return;
-      case 0xa000:                           /* PPI1 */
-        switch(Addr & 3) {
-          case 0: scobra_snd_latch = Value; break;
-          case 1:                            /* bit 3 falling edge: sound IRQ */
-            if((scobra_snd_ctrl & 0x08) && !(Value & 0x08)) scobra_snd_irq = 1;
-            scobra_snd_ctrl = Value;
-            break;
-          case 2: scobra_protection_w(Value); break;
-        }
-        return;
-      case 0xa800:
-        switch(Addr & 7) {
-          case 1: irq_enable[0] = Value & 1; break;
-          case 3: scobra_background = Value & 1; game_started = 1; break;
-          case 4: scobra_stars_on = Value & 1; break;
-        }
-        return;
+      case 0xa000: scobra_ppi1_w(Addr & 3, Value); return;
+      case 0xa800: scobra_latch_w(Addr & 7, Value); return;
     }
     return;
   }
-  if((Addr & 0xf000) == 0x8000) memory[SCOBRA_SRAM + (Addr & 0x3ff)] = Value;
+  scobra_snd_WrZ80(Addr, Value);
 }
+
+#ifdef ENABLE_SCRAMBLE
+/* Scramble main CPU: ROM 0x0000-0x3FFF, RAM 0x4000, video RAM 0x4800
+ * (+mirror), object RAM 0x5000, latch 0x6800, watchdog 0x7000/0x7800,
+ * PPI0 0x8100 (+mirror 0x8110), PPI1 0x8200. */
+static inline unsigned char scramble_RdZ80(unsigned short Addr) {
+  if(current_cpu == 0) {
+    if(Addr < 0x4000) return scobra_rom_cpu1[Addr];
+    switch(Addr & 0xf800) {
+      case 0x4000: return memory[Addr - 0x4000];
+      case 0x4800: return memory[SCOBRA_VRAM + (Addr & 0x3ff)];
+      case 0x5000: return memory[SCOBRA_OBJ + (Addr & 0xff)];
+    }
+    if((Addr & 0xff00) == 0x8100) return scobra_ppi0_r(Addr & 3);
+    if((Addr & 0xff00) == 0x8200) return ((Addr & 3) == 2) ? scobra_prot_result : 0xff;
+    return 0xff;                             /* watchdog etc. */
+  }
+  return scobra_snd_RdZ80(Addr);
+}
+
+static inline void scramble_WrZ80(unsigned short Addr, unsigned char Value) {
+  if(current_cpu == 0) {
+    switch(Addr & 0xf800) {
+      case 0x4000: memory[Addr - 0x4000] = Value; return;
+      case 0x4800: memory[SCOBRA_VRAM + (Addr & 0x3ff)] = Value; return;
+      case 0x5000: memory[SCOBRA_OBJ + (Addr & 0xff)] = Value; return;
+      case 0x6800: scobra_latch_w(Addr & 7, Value); return;
+    }
+    if((Addr & 0xff00) == 0x8200) scobra_ppi1_w(Addr & 3, Value);
+    return;
+  }
+  scobra_snd_WrZ80(Addr, Value);
+}
+#endif
 
 /* sound CPU I/O: AY#1 at 0x10 (addr) / 0x20 (data), AY#0 at 0x40 / 0x80 */
 static inline void scobra_OutZ80(unsigned short Port, unsigned char Value) {

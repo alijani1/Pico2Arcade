@@ -38,7 +38,10 @@ extern "C" {
 
 typedef struct {
     int8_t up, down, left, right;
-    int8_t fire, fire2, fire3, fire4;   /* any of them = FIRE */
+    int8_t fire, fire2, fire3, fire4;   /* A: any of them = FIRE */
+    int8_t fireb, fireb2, fireb3;       /* B: FIRE2 in two-button games, else FIRE.
+                                           fireb = the joystick's own second button;
+                                           without it, fire gives both A and B there */
     int8_t start, coin, menu;
     int8_t nav_up, nav_down;        /* menu-only UP / DOWN buttons, -1 = none */
     int8_t joy_x, joy_y;            /* ADC GPIOs for an analog stick, -1 = none */

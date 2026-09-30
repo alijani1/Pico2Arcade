@@ -46,6 +46,11 @@ static const unsigned long EXIT_HOLD_MS = 500;
 /* Hold MENU this long during a game → game list. */
 static const unsigned long MENU_EXIT_HOLD_MS = 1000;
 
+/* Two-button games (laser + bomb): set by pico_menu for the chosen game.
+ * Then the B buttons report BUTTON_FIRE2 instead of their usual job, and a
+ * single-button external joystick fires both. */
+extern "C" { volatile int g_two_fire = 0; }
+
 /* Set by pico_menu once a game is armed (defined in pico_core1.cpp). */
 extern volatile int g_menu_done;
 
@@ -152,6 +157,7 @@ extern "C" void pico_input_init(void) {
     const int tablePins[] = { g_pins.start, g_pins.coin, g_pins.menu, g_pins.nav_up, g_pins.nav_down,
                               g_pins.up, g_pins.down, g_pins.left, g_pins.right,
                               g_pins.fire, g_pins.fire2, g_pins.fire3, g_pins.fire4,
+                              g_pins.fireb, g_pins.fireb2, g_pins.fireb3,
                               g_pins.joy_click };
     for (int p : tablePins) if (p >= 0) pinMode(p, INPUT_PULLUP);
     rc_stick_init();
@@ -217,16 +223,25 @@ extern "C" unsigned char buttons_get(void) {
     if (pin_low(PIN_START))  state |= BUTTON_START;
     if (pin_low(PIN_SELECT)) state |= BUTTON_COIN;
 
-    /* Player 1 joystick; fire also on the extra fire buttons / stick click
-     * (Quad: port 1 DB9, Red / Blue / Joy-Con click). */
+    /* Player 1 joystick; fire also on the extra fire buttons / stick click.
+     * Two-button games: the A buttons give FIRE, the B buttons FIRE2, and a
+     * one-button joystick (no fireb) gives both. Otherwise all are FIRE. */
     if (pin_low(g_pins.up))        state |= BUTTON_UP;
     if (pin_low(g_pins.down))      state |= BUTTON_DOWN;
     if (pin_low(g_pins.left))      state |= BUTTON_LEFT;
     if (pin_low(g_pins.right))     state |= BUTTON_RIGHT;
-    if (pin_low(g_pins.fire))      state |= BUTTON_FIRE;
-    if (pin_low(g_pins.fire2))     state |= BUTTON_FIRE;
-    if (pin_low(g_pins.fire3))     state |= BUTTON_FIRE;
-    if (pin_low(g_pins.fire4))     state |= BUTTON_FIRE;
+    {
+        const unsigned char B = g_two_fire ? BUTTON_FIRE2 : BUTTON_FIRE;
+        const unsigned char joyFire = (g_two_fire && g_pins.fireb < 0) ? (BUTTON_FIRE | BUTTON_FIRE2)
+                                                                       : BUTTON_FIRE;
+        if (pin_low(g_pins.fire))   state |= joyFire;
+        if (pin_low(g_pins.fire2))  state |= BUTTON_FIRE;
+        if (pin_low(g_pins.fire3))  state |= BUTTON_FIRE;
+        if (pin_low(g_pins.fire4))  state |= BUTTON_FIRE;
+        if (pin_low(g_pins.fireb))  state |= B;
+        if (pin_low(g_pins.fireb2)) state |= B;
+        if (pin_low(g_pins.fireb3)) state |= B;
+    }
     if (pin_low(g_pins.joy_click)) state |= BUTTON_FIRE;
 
     /* Atari 5200 controller stick (Duo 5200). The RC read blocks for up to
@@ -243,13 +258,15 @@ extern "C" unsigned char buttons_get(void) {
     if (!(s & EXP_P1_DOWN))  state |= BUTTON_DOWN;
     if (!(s & EXP_P1_LEFT))  state |= BUTTON_LEFT;
     if (!(s & EXP_P1_RIGHT)) state |= BUTTON_RIGHT;
-    if (!(s & EXP_P1_FIRE))  state |= BUTTON_FIRE;
+    /* external joystick: one button — both fires in a two-button game */
+    if (!(s & EXP_P1_FIRE))  state |= g_two_fire ? (BUTTON_FIRE | BUTTON_FIRE2) : BUTTON_FIRE;
 
     /* On-board thumb buttons — both have external pull-ups on the PCB,
        so they're safe to poll. BTN_A duplicates FIRE (thumb-fire is
-       handy for arcade play), BTN_B duplicates COIN. */
+       handy for arcade play), BTN_B duplicates COIN — or is the second
+       fire button (FIRE2) in a two-button game. */
     if (!(s & EXP_BTN_A))    state |= BUTTON_FIRE;
-    if (!(s & EXP_BTN_B))    state |= BUTTON_COIN;
+    if (!(s & EXP_BTN_B))    state |= g_two_fire ? BUTTON_FIRE2 : BUTTON_COIN;
 #endif
 
 

@@ -213,4 +213,9 @@
 // IN2 bits 1-2 coinage (01 = 1 coin 1 credit), bit 3 cabinet (0 = upright)
 #define SCOBRA_DIP_IN2  0x02
 
+// Scramble: IN1 bits 0-1 lives (00 = 3, 01 = 4, 10 = 5, 11 = free play),
+// IN2 bits 1-2 coinage (00 = 1 coin 1 credit), bit 3 cabinet (0 = upright)
+#define SCRAMBLE_DIP_IN1  0xfc
+#define SCRAMBLE_DIP_IN2  0x00
+
 #endif // _DIP_SWITCHES_H_

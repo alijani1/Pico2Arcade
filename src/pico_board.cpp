@@ -9,13 +9,15 @@
 
 #ifdef PICO_QUAD
 /* Quad Ultimate CX — pins match GameAdapterRGBPico data/quad.json: port 1
- * DB9 = the P1 nets 28-31 (fire 12); Red / Blue thumb buttons and the Joy-Con
- * click also fire; White = START, Black = COIN (the Quad's Start / Select),
- * gray Menu; Joy-Con ADC on 44/45; PWM audio 22 + PAM8302 enable 4;
- * backlight MOSFET 23. */
+ * DB9 = the P1 nets 28-31 (fire 12, one button: A and B in two-button games);
+ * the device buttons as there: Red (button 0) and Blue = A, Green (button 1)
+ * and Yellow = B; the Joy-Con click also fires; White = START, Black = COIN
+ * (the Quad's Start / Select), gray Menu; Joy-Con ADC on 44/45; PWM audio
+ * 22 + PAM8302 enable 4; backlight MOSFET 23. */
 board_pins_t g_pins = {
     /* up down left right */ 28, 29, 30, 31,
     /* fire fire2 fire3 fire4 */ 12, 14, 16, -1,
+    /* fireb fireb2 fireb3 */ -1, 15, 17,
     /* start coin menu    */ 20, 19, 18,
     /* nav_up nav_down    */ 3, 2,          /* left / right side buttons */
     /* joy_x joy_y        */ 44, 45,
@@ -28,11 +30,13 @@ board_pins_t g_pins = {
 /* Duo 5200 Ultimate — same device buttons, Joy-Con, audio and backlight as the
  * Quad (GameAdapterRGBPico data/duo5200.json), no DB9 joystick: directions come
  * from the Joy-Con and the port 1 Atari 5200 controller's analog stick (RC pots
- * on GPIO 40/41); fire = its Fire A / Fire B (GPIO 10/11), Red, Blue, or the
- * Joy-Con click; White = START, Black = COIN, gray Menu. */
+ * on GPIO 40/41); A = its Fire A (GPIO 10), Red (button 0) or Blue, B = its
+ * Fire B (GPIO 11), Green (button 1) or Yellow; the Joy-Con click also fires;
+ * White = START, Black = COIN, gray Menu. */
 board_pins_t g_pins = {
     /* up down left right */ -1, -1, -1, -1,
-    /* fire fire2 fire3 fire4 */ 10, 11, 14, 16,
+    /* fire fire2 fire3 fire4 */ 10, 14, 16, -1,
+    /* fireb fireb2 fireb3 */ 11, 15, 17,
     /* start coin menu    */ 20, 19, 18,
     /* nav_up nav_down    */ -1, -1,
     /* joy_x joy_y        */ 44, 45,
@@ -47,6 +51,7 @@ board_pins_t g_pins = {
 board_pins_t g_pins = {
     /* up down left right */ 10, 11, 12, 13,
     /* fire fire2 fire3 fire4 */ 14, -1, -1, -1,
+    /* fireb fireb2 fireb3 */ -1, -1, -1,
     /* start coin menu    */ 15, 16, 17,
     /* nav_up nav_down    */ -1, -1,
     /* joy_x joy_y        */ -1, -1,
@@ -70,6 +75,9 @@ static const PinKey KEYS[] = {
     { "fire2",     &g_pins.fire2,     "extra fire button" },
     { "fire3",     &g_pins.fire3,     "extra fire button" },
     { "fire4",     &g_pins.fire4,     "extra fire button" },
+    { "fire_b",    &g_pins.fireb,     "second fire button (bomb), optional; if -1, fire does both" },
+    { "fire_b2",   &g_pins.fireb2,    "extra second fire button, optional" },
+    { "fire_b3",   &g_pins.fireb3,    "extra second fire button, optional" },
     { "start",     &g_pins.start,     "START (hold START+COIN in a game = game list)" },
     { "coin",      &g_pins.coin,      "COIN / insert credit" },
     { "menu",      &g_pins.menu,      "MENU: tap = back, hold in a game = game list, hold at power-on = ROM drive" },
@@ -173,7 +181,7 @@ extern "C" void board_pins_load(void) {
 }
 
 extern "C" const char *board_default_ini(void) {
-    static char buf[1400];
+    static char buf[2048];
     int n = snprintf(buf, sizeof(buf),
         "; Pico Galagino arcade - pin configuration\r\n"
         "; GPIO numbers; -1 = not connected. Buttons/directions are switches to GND\r\n"

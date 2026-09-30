@@ -24,6 +24,7 @@
 #  define ENABLE_DIGDUG
 #  define ENABLE_INVADERS
 #  define ENABLE_SCOBRA
+#  define ENABLE_SCRAMBLE     /* needs ENABLE_SCOBRA (shared driver) */
 #endif
 
 #if !defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) \

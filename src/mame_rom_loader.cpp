@@ -956,16 +956,32 @@ extern "C" signed char *load_digdug_wavetable_from_zip(const uint8_t *zip, size_
 
 /* ============================== SUPER COBRA ============================== */
 
-/* CPU1: 6 x 4 KB at 0x0000-0x5FFF, padded to the 32 KB the fetch mask covers. */
-extern "C" unsigned char *load_scobra_rom_cpu1_from_zip(const uint8_t *zip, size_t sz) {
-    static const char *names[6] = { "epr1265.2c", "2e", "epr1267.2f", "2h", "epr1269.2j", "2l" };
+/* Super Cobra and Scramble share these loaders; the set picks the files.
+ * gfx: MAME loads the MSB plane first (Galaxian layout) — 5h on Super
+ * Cobra, c2.5f on Scramble. */
+struct ScobraSet {
+    const char *cpu1[8]; int n1; size_t sz1;   /* main CPU chunks */
+    const char *cpu2[3];                       /* sound CPU, 3 x 2 KB */
+    const char *gfx_lsb, *gfx_msb, *prom;
+};
+static const ScobraSet SCOBRA_SET = {
+    { "epr1265.2c", "2e", "epr1267.2f", "2h", "epr1269.2j", "2l" }, 6, 4096,
+    { "5c", "5d", "5e" }, "epr1273.5f", "epr1274.5h", "82s123.6e" };
+static const ScobraSet SCRAMBLE_SET = {
+    { "s1.2d", "s2.2e", "s3.2f", "s4.2h", "s5.2j", "s6.2l", "s7.2m", "s8.2p" }, 8, 2048,
+    { "ot1.5c", "ot2.5d", "ot3.5e" }, "c1.5h", "c2.5f", "c01s.6e" };
+static const ScobraSet *scobra_set(bool scramble) { return scramble ? &SCRAMBLE_SET : &SCOBRA_SET; }
+
+/* CPU1: the chunks from 0x0000, padded to the 32 KB the fetch mask covers. */
+extern "C" unsigned char *load_scobra_rom_cpu1_from_zip(const uint8_t *zip, size_t sz, bool scramble) {
+    const ScobraSet *set = scobra_set(scramble);
     unsigned char *out = (unsigned char *)malloc(0x8000);
     if (!out) return nullptr;
     memset(out, 0xff, 0x8000);
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < set->n1; i++) {
         size_t got = 0;
-        if (!zip_extract(zip, sz, names[i], out + (size_t)i * 4096, 4096, &got) || got != 4096) {
-            Serial.printf("[loader] scobra cpu1 %s failed\n", names[i]);
+        if (!zip_extract(zip, sz, set->cpu1[i], out + (size_t)i * set->sz1, set->sz1, &got) || got != set->sz1) {
+            Serial.printf("[loader] scobra cpu1 %s failed\n", set->cpu1[i]);
             free(out); return nullptr;
         }
     }
@@ -973,34 +989,34 @@ extern "C" unsigned char *load_scobra_rom_cpu1_from_zip(const uint8_t *zip, size
 }
 
 /* CPU2 (sound): 3 x 2 KB, padded to 8 KB. */
-extern "C" unsigned char *load_scobra_rom_cpu2_from_zip(const uint8_t *zip, size_t sz) {
-    static const char *names[3] = { "5c", "5d", "5e" };
+extern "C" unsigned char *load_scobra_rom_cpu2_from_zip(const uint8_t *zip, size_t sz, bool scramble) {
+    const ScobraSet *set = scobra_set(scramble);
     unsigned char *out = (unsigned char *)malloc(0x2000);
     if (!out) return nullptr;
     memset(out, 0xff, 0x2000);
     for (int i = 0; i < 3; i++) {
         size_t got = 0;
-        if (!zip_extract(zip, sz, names[i], out + (size_t)i * 2048, 2048, &got) || got != 2048) {
-            Serial.printf("[loader] scobra cpu2 %s failed\n", names[i]);
+        if (!zip_extract(zip, sz, set->cpu2[i], out + (size_t)i * 2048, 2048, &got) || got != 2048) {
+            Serial.printf("[loader] scobra cpu2 %s failed\n", set->cpu2[i]);
             free(out); return nullptr;
         }
     }
     return out;
 }
 
-/* Galaxian-style gfx: 5h is bit plane 1 (MSB), 5f plane 0. The Frogger
- * decoders put their first file in plane 0, so pass 5f first. */
-static bool scobra_gfx(const uint8_t *zip, size_t sz, uint8_t *p0, uint8_t *p1) {
+/* The Frogger decoders put their first file in plane 0 (LSB). */
+static bool scobra_gfx(const uint8_t *zip, size_t sz, bool scramble, uint8_t *p0, uint8_t *p1) {
+    const ScobraSet *set = scobra_set(scramble);
     size_t got = 0;
-    return zip_extract(zip, sz, "epr1273.5f", p0, 2048, &got) && got == 2048 &&
-           zip_extract(zip, sz, "epr1274.5h", p1, 2048, &got) && got == 2048;
+    return zip_extract(zip, sz, set->gfx_lsb, p0, 2048, &got) && got == 2048 &&
+           zip_extract(zip, sz, set->gfx_msb, p1, 2048, &got) && got == 2048;
 }
 
 /* 256 chars x 8 rows, 2bpp. */
-extern "C" unsigned short *load_scobra_tilemap_from_zip(const uint8_t *zip, size_t sz) {
+extern "C" unsigned short *load_scobra_tilemap_from_zip(const uint8_t *zip, size_t sz, bool scramble) {
     RomScratch p0(2048); if (!p0) return nullptr;
     RomScratch p1(2048); if (!p1) return nullptr;
-    if (!scobra_gfx(zip, sz, p0, p1)) return nullptr;
+    if (!scobra_gfx(zip, sz, scramble, p0, p1)) return nullptr;
     unsigned short *out = (unsigned short *)malloc(256 * 8 * sizeof(unsigned short));
     if (!out) return nullptr;
     for (int c = 0; c < 256; c++) decode_tile_frogger(&p0[8 * c], &p1[8 * c], &out[c * 8]);
@@ -1008,10 +1024,10 @@ extern "C" unsigned short *load_scobra_tilemap_from_zip(const uint8_t *zip, size
 }
 
 /* 64 sprites 16x16 x 4 flip variants (none, y, x, xy) = 16 KB. */
-extern "C" unsigned long *load_scobra_spritemap_from_zip(const uint8_t *zip, size_t sz) {
+extern "C" unsigned long *load_scobra_spritemap_from_zip(const uint8_t *zip, size_t sz, bool scramble) {
     RomScratch p0(2048); if (!p0) return nullptr;
     RomScratch p1(2048); if (!p1) return nullptr;
-    if (!scobra_gfx(zip, sz, p0, p1)) return nullptr;
+    if (!scobra_gfx(zip, sz, scramble, p0, p1)) return nullptr;
     unsigned long *out = (unsigned long *)malloc(4 * 64 * 16 * sizeof(unsigned long));
     if (!out) return nullptr;
     const bool flip_x[4] = { false, false, true, true };
@@ -1028,12 +1044,12 @@ extern "C" unsigned long *load_scobra_spritemap_from_zip(const uint8_t *zip, siz
     return out;
 }
 
-/* 82s123.6e: 32 x bbgggrrr through the Galaxian resistor network,
+/* Colour PROM: 32 x bbgggrrr through the Galaxian resistor network,
  * 8 palettes x 4 colours, byte-swapped RGB565. */
-extern "C" unsigned short *load_scobra_cmap_from_zip(const uint8_t *zip, size_t sz) {
+extern "C" unsigned short *load_scobra_cmap_from_zip(const uint8_t *zip, size_t sz, bool scramble) {
     uint8_t prom[32];
     size_t got = 0;
-    if (!zip_extract(zip, sz, "82s123.6e", prom, 32, &got) || got != 32) return nullptr;
+    if (!zip_extract(zip, sz, scobra_set(scramble)->prom, prom, 32, &got) || got != 32) return nullptr;
     unsigned short *out = (unsigned short *)malloc(32 * sizeof(unsigned short));
     if (!out) return nullptr;
     for (int i = 0; i < 32; i++) {

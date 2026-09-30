@@ -64,7 +64,6 @@ static inline unsigned char invaders_InZ80(unsigned short Port) {
       unsigned char keymask = buttons_get();
       unsigned char retval = 0x08;           /* bit 3 always set */
       if(keymask & BUTTON_COIN)  retval |= 0x01;
-      if(keymask & BUTTON_EXTRA) retval |= 0x02;   /* P2 start */
       if(keymask & BUTTON_START) retval |= 0x04;   /* P1 start */
       if(keymask & BUTTON_FIRE)  retval |= 0x10;
       if(keymask & BUTTON_LEFT)  retval |= 0x20;

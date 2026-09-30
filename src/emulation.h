@@ -19,6 +19,9 @@ extern unsigned char dkong_audio_rptr, dkong_audio_wptr;
 #define BUTTON_START 0x20
 #define BUTTON_COIN  0x40
 #define BUTTON_EXTRA 0x80
+// second fire button (B), reported only while a two-button game runs
+// (g_two_fire, pico_input.cpp) — e.g. Super Cobra / Scramble bomb
+#define BUTTON_FIRE2 BUTTON_EXTRA
 
 #ifndef SINGLE_MACHINE
 enum {
@@ -49,6 +52,9 @@ enum {
 #endif
 #ifdef ENABLE_SCOBRA
       MCH_SCOBRA,
+#endif
+#ifdef ENABLE_SCRAMBLE
+      MCH_SCRAMBLE,
 #endif
       MCH_LAST
 };
@@ -184,8 +190,13 @@ enum {
   #define INVADERS_END    }
 #endif
 #ifdef ENABLE_SCOBRA
-  #define MACHINE_IS_SCOBRA  (machine == MCH_SCOBRA)
-  #define SCOBRA_BEGIN  else if(machine == MCH_SCOBRA) {
+  /* Super Cobra and Scramble share the driver (scobra.h) */
+  #ifdef ENABLE_SCRAMBLE
+    #define MACHINE_IS_SCOBRA  (machine == MCH_SCOBRA || machine == MCH_SCRAMBLE)
+  #else
+    #define MACHINE_IS_SCOBRA  (machine == MCH_SCOBRA)
+  #endif
+  #define SCOBRA_BEGIN  else if(MACHINE_IS_SCOBRA) {
   #define SCOBRA_END    }
 #endif
 
@@ -363,6 +374,10 @@ static inline byte OpZ80_INL(register word Addr) {
     rom_table[MCH_SCOBRA][0] = scobra_rom_cpu1;
     rom_table[MCH_SCOBRA][1] = scobra_rom_cpu2;
 #endif
+#ifdef ENABLE_SCRAMBLE
+    rom_table[MCH_SCRAMBLE][0] = scobra_rom_cpu1;
+    rom_table[MCH_SCRAMBLE][1] = scobra_rom_cpu2;
+#endif
     /* Add 1942 assignments as their loaders land. */
     rom_table_ready = 1;
   }
@@ -403,7 +418,7 @@ static inline byte OpZ80_INL(register word Addr) {
 #endif
 #ifdef ENABLE_SCOBRA
   /* Super Cobra cpu1 padded to 32K, cpu2 to 8K. */
-  if (machine == MCH_SCOBRA) addr_mask = current_cpu ? 0x1FFFu : 0x7FFFu;
+  if (MACHINE_IS_SCOBRA) addr_mask = current_cpu ? 0x1FFFu : 0x7FFFu;
 #endif
 #ifdef ENABLE_DIGDUG
   /* Digdug cpu0=16K, cpu1=8K, cpu2=4K. digdug_StepZ80 has its own masks;

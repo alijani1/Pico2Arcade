@@ -42,6 +42,7 @@ static const HsRange HS_DKONG[]   = { {0x6100, 0xaa, 0x94, 0x76}, {0x60b8, 0x03,
 static const HsRange HS_DIGDUG[]  = { {0x89a0, 0x25, 0x01, 0x01} };
 static const HsRange HS_INVADERS[] = { {0x20f4, 0x02, 0x00, 0x00} };
 static const HsRange HS_SCOBRA[]  = { {0x8200, 0x1e, 0x00, 0x01}, {0x80a8, 0x03, 0x00, 0x01} };
+static const HsRange HS_SCRAMBLE[] = { {0x4200, 0x1e, 0x00, 0x01}, {0x40a8, 0x03, 0x00, 0x01} };
 
 #define HS(m, base, t) { m, base, t, (uint8_t)(sizeof(t) / sizeof(t[0])) }
 /* Slot order = index in the save store; never reorder (saved data). */
@@ -83,6 +84,11 @@ static const HsGame GAMES[] = {
 #endif
 #ifdef ENABLE_SCOBRA
     HS(MCH_SCOBRA,   0x8000, HS_SCOBRA),
+#else
+    { -1, 0, nullptr, 0 },
+#endif
+#ifdef ENABLE_SCRAMBLE
+    HS(MCH_SCRAMBLE, 0x4000, HS_SCRAMBLE),
 #else
     { -1, 0, nullptr, 0 },
 #endif
