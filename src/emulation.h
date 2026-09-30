@@ -44,6 +44,9 @@ enum {
 #ifdef ENABLE_1942
       MCH_1942,
 #endif
+#ifdef ENABLE_INVADERS
+      MCH_INVADERS,
+#endif
       MCH_LAST
 };
 
@@ -148,12 +151,8 @@ enum {
     #define MACHINE_IS_DIGDUG  (machine == MCH_DIGDUG)
     // digdug is not the first if pacman, galaga, dkong or frogger are enabled
     #if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_DKONG) || defined(ENABLE_FROGGER)
-      // 1942 may come afterwards
-      #if defined(ENABLE_1942)
-        #define DIGDUG_BEGIN  else if(machine == MCH_DIGDUG) {
-      #else
-        #define DIGDUG_BEGIN  else {
-      #endif
+      // 1942 and the GalaginoPlus ports may come afterwards
+      #define DIGDUG_BEGIN  else if(machine == MCH_DIGDUG) {
     #else
       #define DIGDUG_BEGIN  if(machine == MCH_DIGDUG) {
     #endif
@@ -172,6 +171,14 @@ enum {
     #define _1942_BEGIN  else {
     #define _1942_END    }
   #endif
+#endif
+
+/* Games ported from GalaginoPlus: multi-machine only, never first in the
+ * chain (Pac-Man always comes before), so a plain else-if. */
+#ifdef ENABLE_INVADERS
+  #define MACHINE_IS_INVADERS  (machine == MCH_INVADERS)
+  #define INVADERS_BEGIN  else if(machine == MCH_INVADERS) {
+  #define INVADERS_END    }
 #endif
 
 #if defined(__cplusplus)
@@ -265,6 +272,13 @@ extern unsigned char *digdug_rom_cpu1;
 extern unsigned char *digdug_rom_cpu2;
 extern unsigned char *digdug_rom_cpu3;
 #endif
+#ifdef ENABLE_INVADERS
+#ifdef __cplusplus
+extern "C" unsigned char *invaders_rom;
+#else
+extern unsigned char *invaders_rom;
+#endif
+#endif
 #ifdef ENABLE_1942
 extern unsigned char _1942_bank;
 extern const unsigned char _1942_rom_cpu1[];
@@ -301,10 +315,10 @@ static inline byte OpZ80_INL(register word Addr) {
   /* Multi-machine mode with runtime-loaded ROMs. Static const initializer
      doesn't work (pointers aren't compile-time constants), so we init
      the table on first call from the live runtime pointers. */
-  static unsigned char *rom_table[7][3];   /* [MCH_MENU..MCH_1942][cpu0..2] */
+  static unsigned char *rom_table[MCH_LAST][3];   /* [machine][cpu0..2] */
   static int rom_table_ready = 0;   /* int not bool — this header included from C */
   if (!rom_table_ready) {
-    for (int m = 0; m < 7; m++)
+    for (int m = 0; m < MCH_LAST; m++)
       for (int c = 0; c < 3; c++) rom_table[m][c] = 0;
 #ifdef ENABLE_PACMAN
     rom_table[MCH_PACMAN][0] = pacman_rom;
@@ -342,6 +356,13 @@ static inline byte OpZ80_INL(register word Addr) {
    * pacman_rom based on the runtime decode flag. */
   extern unsigned char mspacman_fetch(unsigned short Addr);
   if(machine == MCH_MSPACMAN) return mspacman_fetch(Addr);
+#endif
+#ifdef ENABLE_INVADERS
+  /* 8 KB ROM, then RAM (14 address bits, mirrored above 0x4000) */
+  if(machine == MCH_INVADERS) {
+    Addr &= 0x3FFF;
+    return (Addr < 0x2000) ? invaders_rom[Addr] : memory[Addr - 0x2000];
+  }
 #endif
 #ifdef ENABLE_1942
   if(machine == MCH_1942 && (Addr & 0x8000))

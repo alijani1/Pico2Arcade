@@ -22,6 +22,7 @@
 #  define ENABLE_FROGGER
 #  define ENABLE_DKONG
 #  define ENABLE_DIGDUG
+#  define ENABLE_INVADERS
 #endif
 
 #if !defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) \

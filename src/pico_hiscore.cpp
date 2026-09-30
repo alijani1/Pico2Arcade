@@ -40,6 +40,7 @@ static const HsRange HS_DKONG[]   = { {0x6100, 0xaa, 0x94, 0x76}, {0x60b8, 0x03,
                                       {0x7601, 0x01, 0x07, 0x07}, {0x75e1, 0x01, 0x06, 0x06},
                                       {0x75c1, 0x01, 0x05, 0x05}, {0x75a1, 0x01, 0x00, 0x00} };
 static const HsRange HS_DIGDUG[]  = { {0x89a0, 0x25, 0x01, 0x01} };
+static const HsRange HS_INVADERS[] = { {0x20f4, 0x02, 0x00, 0x00} };
 
 #define HS(m, base, t) { m, base, t, (uint8_t)(sizeof(t) / sizeof(t[0])) }
 /* Slot order = index in the save store; never reorder (saved data). */
@@ -74,17 +75,26 @@ static const HsGame GAMES[] = {
 #else
     { -1, 0, nullptr, 0 },
 #endif
+#ifdef ENABLE_INVADERS
+    HS(MCH_INVADERS, 0x2000, HS_INVADERS),
+#else
+    { -1, 0, nullptr, 0 },
+#endif
 };
 static const int NGAMES = sizeof(GAMES) / sizeof(GAMES[0]);
 
-/* Saved store: a 256-byte header page + one 256-byte page per game
- * (7 x 256 = 1792 bytes, programmed as whole flash pages). */
+/* Saved store: a 256-byte header page + one 256-byte page per game, up to
+ * 15 games = exactly one 4 KB flash sector. Stores written by older builds
+ * held 6 slots (1792 bytes); the slots past them read back as erased flash
+ * (or are missing from the SD file) and are cleared on load. */
 static const uint32_t HS_MAGIC = 0x48495343u;          /* "CSIH" */
 static const int SLOT_DATA = 252;
 struct HsSlot  { uint8_t len, valid, pad[2]; uint8_t data[SLOT_DATA]; };
-struct HsStore { uint32_t magic, version; uint8_t pad[248]; HsSlot slot[6]; };
-static_assert(sizeof(HsStore) == 1792, "store must be whole 256-byte pages");
-static_assert(sizeof(GAMES) / sizeof(GAMES[0]) == 6, "one slot per game");
+static const int HS_SLOTS = 15;
+static const size_t HS_OLD_SIZE = 256 + 6 * 256;       /* 6-slot stores */
+struct HsStore { uint32_t magic, version; uint8_t pad[248]; HsSlot slot[HS_SLOTS]; };
+static_assert(sizeof(HsStore) == 4096, "store must fill exactly one flash sector");
+static_assert(sizeof(GAMES) / sizeof(GAMES[0]) <= HS_SLOTS, "one slot per game");
 
 static HsStore s_store;                                 /* core 0 owns it (load/save) */
 
@@ -164,6 +174,22 @@ static bool table_ready(const HsGame &g) {
     return true;
 }
 
+#ifdef ENABLE_INVADERS
+/* Space Invaders draws HI-SCORE into its bitmap once at power-on, right after
+ * copying its RAM defaults (0x2000-0x20FF, high score at 0x20F4) from ROM
+ * 0x1B00. Restoring RAM later leaves 0000 on screen, so the saved score is
+ * put into that copy source instead: the game then loads and shows it itself.
+ * Only if the ROM's init is the expected one (JMP 18D4; LXI SP,2400;
+ * MVI B,0; CALL 01E6 -> copy 256 bytes from 1B00) and the default is 0000. */
+static void invaders_seed_rom(const uint8_t *table) {
+    static const uint8_t init[] = { 0x31, 0x00, 0x24, 0x06, 0x00, 0xcd, 0xe6, 0x01 };
+    if (!invaders_rom || memcmp(invaders_rom + 0x18d4, init, sizeof(init)) != 0) return;
+    if (invaders_rom[0x1bf4] || invaders_rom[0x1bf5]) return;
+    invaders_rom[0x1bf4] = table[0];
+    invaders_rom[0x1bf5] = table[1];
+}
+#endif
+
 extern "C" void pico_hiscore_load(void) {
     memset(&s_store, 0, sizeof(s_store));
 #ifdef PICO_BOARD_TABLE
@@ -173,11 +199,15 @@ extern "C" void pico_hiscore_load(void) {
 #else
     File f = SD.open("/gal_hi.bin", FILE_READ);
     if (f) {
-        if (f.read((uint8_t *)&s_store, sizeof(s_store)) != sizeof(s_store) || s_store.magic != HS_MAGIC)
+        int got = f.read((uint8_t *)&s_store, sizeof(s_store));
+        if (got < (int)HS_OLD_SIZE || s_store.magic != HS_MAGIC)
             memset(&s_store, 0, sizeof(s_store));
         f.close();
     }
 #endif
+    for (int i = 0; i < HS_SLOTS; i++)       /* erased flash / never saved */
+        if (s_store.slot[i].valid != 1 || s_store.slot[i].len > SLOT_DATA)
+            memset(&s_store.slot[i], 0, sizeof(HsSlot));
     s_game = -1;
     for (int i = 0; i < NGAMES; i++) if (GAMES[i].mch == machine && GAMES[i].n) s_game = i;
     if (s_game >= 0) {
@@ -187,6 +217,9 @@ extern "C" void pico_hiscore_load(void) {
         const HsSlot &sl = s_store.slot[s_game];
         Serial.printf("[hiscore] slot %d: %s\n", s_game,
                       (sl.valid && sl.len == s_len) ? "saved table" : "none yet");
+#ifdef ENABLE_INVADERS
+        if (machine == MCH_INVADERS && sl.valid && sl.len == s_len) invaders_seed_rom(sl.data);
+#endif
     }
 }
 

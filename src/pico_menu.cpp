@@ -31,6 +31,7 @@ extern "C" bool runtime_load_galaga(void);
 extern "C" bool runtime_load_frogger(void);
 extern "C" bool runtime_load_dkong(void);
 extern "C" bool runtime_load_digdug(void);
+extern "C" bool runtime_load_invaders(void);
 extern "C" unsigned char buttons_get(void);
 /* Gate that setup1() polls before starting the emulator on core 1.
  * Defined in pico_core1.cpp. */
@@ -106,6 +107,9 @@ static const GameEntry games[] = {
       MCH_DIGDUG,
 #  endif
       runtime_load_digdug },
+#endif
+#ifdef ENABLE_INVADERS
+    { "Space Invaders", "/roms/invaders.zip", MCH_INVADERS, runtime_load_invaders },
 #endif
     /* Add per game as its runtime loader lands. */
 };

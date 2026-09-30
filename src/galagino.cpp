@@ -75,6 +75,10 @@ unsigned short *frame_buffer;
 #include "1942.h"
 #endif
 
+#ifdef ENABLE_INVADERS
+#include "invaders.h"
+#endif
+
 #ifndef SINGLE_MACHINE
 signed char machine = MCH_MENU;   // start with menu
 #endif
@@ -305,6 +309,12 @@ _1942_BEGIN
   _1942_render_row(row);
 _1942_END
 #endif
+
+#ifdef ENABLE_INVADERS
+INVADERS_BEGIN
+  invaders_render_row(row);
+INVADERS_END
+#endif
 }
   
 #ifdef ENABLE_GALAGA
@@ -371,6 +381,10 @@ void snd_render_buffer(void) {
       ay_period[ay][3] = soundregs[ay_off+6] & 0x1f;
     }
   }
+#endif
+
+#ifdef ENABLE_INVADERS
+  if(MACHINE_IS_INVADERS) invaders_sound_regs();
 #endif
 
   // render first buffer contents
@@ -490,6 +504,10 @@ DKONG_END
     }
     }
 #endif
+#ifdef ENABLE_INVADERS
+    if(MACHINE_IS_INVADERS) v = invaders_sound_sample();
+#endif
+
     // v is now in the range of +/- 512, so expand to +/- 15 bit
     v = v*MASTER_VOLUME;
 
@@ -738,6 +756,12 @@ DIGDUG_END
 _1942_BEGIN
   _1942_prepare_frame();
 _1942_END
+#endif
+
+#ifdef ENABLE_INVADERS
+INVADERS_BEGIN
+  invaders_prepare_frame();
+INVADERS_END
 #endif
 
   // max possible video rate:

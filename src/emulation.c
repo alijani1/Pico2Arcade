@@ -84,6 +84,10 @@ unsigned char frogger_snd_ay_port;
 unsigned long frogger_snd_icnt;
 #endif
 
+#ifdef ENABLE_INVADERS
+unsigned char invaders_snd[2] = { 0, 0 };   /* OUT 3 / OUT 5 sound latches */
+#endif
+
 #ifdef ENABLE_DIGDUG
 unsigned char namco_command = 0;
 unsigned char namco_mode = 0;
@@ -241,6 +245,10 @@ unsigned char namco_read_dd(unsigned short Addr) {
 #include "1942.h"
 #endif
 
+#ifdef ENABLE_INVADERS
+#include "invaders.h"
+#endif
+
 
 void OutZ80(unsigned short Port, unsigned char Value) {
 #ifdef ENABLE_PACMAN
@@ -256,12 +264,24 @@ void OutZ80(unsigned short Port, unsigned char Value) {
     return;
   }
 #endif
+
+#ifdef ENABLE_INVADERS
+  if(MACHINE_IS_INVADERS) {
+    invaders_OutZ80(Port, Value);
+    return;
+  }
+#endif
 }
   
 unsigned char InZ80(unsigned short Port) {
 #ifdef ENABLE_FROGGER
   if(MACHINE_IS_FROGGER)
     return frogger_InZ80(Port);
+#endif
+
+#ifdef ENABLE_INVADERS
+  if(MACHINE_IS_INVADERS)
+    return invaders_InZ80(Port);
 #endif
 
  return 0; 
@@ -378,6 +398,14 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
 #endif
 #ifndef SINGLE_MACHINE
       break;
+#endif
+
+#ifdef ENABLE_INVADERS
+    case MCH_INVADERS:
+      invaders_WrZ80(Addr, Value);
+      return;
+#endif
+#ifndef SINGLE_MACHINE
   }
 #endif
 #endif
@@ -482,6 +510,13 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
 #endif
 #ifndef SINGLE_MACHINE
       break;
+#endif
+
+#ifdef ENABLE_INVADERS
+    case MCH_INVADERS:
+      return invaders_RdZ80(Addr);
+#endif
+#ifndef SINGLE_MACHINE
   }
   return 0xff;
 #endif
@@ -689,6 +724,12 @@ _1942_BEGIN
   _1942_run_frame();
 _1942_END 
 #endif  
+
+#ifdef ENABLE_INVADERS
+INVADERS_BEGIN
+  invaders_run_frame();
+INVADERS_END
+#endif
 
   sof = micros() - sof;
   g_emu_frames++;
