@@ -114,14 +114,16 @@ static void hs_locate(void) {
 }
 #endif
 
+static void park_core1(void);
+static volatile bool s_parkReq = false, s_parked = false;   /* core 1 parking (see below) */
+
 /* ── core 1 state ── */
 enum { HS_OFF, HS_WAIT, HS_RUN };
 static int      s_state = HS_OFF;
 static int      s_game = -1;                            /* index into GAMES */
 static uint32_t s_frames = 0;
-static uint8_t  s_saved[SLOT_DATA], s_prev[SLOT_DATA];  /* last saved / last seen */
+static uint8_t  s_saved[SLOT_DATA];                     /* table as last restored / saved */
 static uint8_t  s_len = 0;
-static uint32_t s_stableFrames = 0;
 static uint32_t s_initFrames = 0;                       /* consecutive frames the init pattern held */
 /* core 1 -> core 0 */
 static uint8_t           s_pending[SLOT_DATA];
@@ -133,12 +135,9 @@ static const uint32_t WAIT_FRAMES   = 60 * 60;          /* give up restoring aft
  * table goes in — guards against transient matches while the game boots
  * (RAM tests, cleared RAM). */
 static const uint32_t INIT_STABLE_FRAMES = 30;
-static const uint32_t CHECK_EVERY   = 30;               /* compare twice a second */
-static const uint32_t STABLE_FRAMES = 60 * 10;          /* unchanged for 10 s -> save */
-/* At most one automatic save per minute (each save pauses the game briefly);
- * leaving the game always saves. */
-static const uint32_t MIN_SAVE_GAP  = 60 * 60;
-static uint32_t s_lastSaveFrame = 0;
+/* No saving during play: a flash write pauses the emulator (and restarts the
+ * audio). The table stays in the game's RAM and is saved once, when leaving
+ * the game (hold MENU / START+COIN) — pico_hiscore_exit_to_list(). */
 
 static uint8_t table_len(const HsGame &g) {
     uint8_t n = 0;
@@ -192,6 +191,7 @@ extern "C" void pico_hiscore_load(void) {
 }
 
 extern "C" void pico_hiscore_frame(void) {
+    if (s_parkReq) park_core1();             /* core 0 is writing flash (safe point: between frames) */
 #ifdef Z80_BENCH
     return;                                  /* benchmark runs must stay identical */
 #endif
@@ -204,31 +204,45 @@ extern "C" void pico_hiscore_frame(void) {
             const HsSlot &sl = s_store.slot[s_game];
             if (sl.valid && sl.len == s_len) table_write(g, sl.data);
             table_read(g, s_saved);
-            memcpy(s_prev, s_saved, s_len);
-            s_stableFrames = 0;
             s_state = HS_RUN; g_hs_state = 'R';
             return;
         }
-        if (s_frames > WAIT_FRAMES)
-            s_state = HS_OFF; g_hs_state = '-';   /* table never showed up: leave it alone */
-        return;
+        if (s_frames > WAIT_FRAMES) {        /* table never showed up: leave it alone */
+            s_state = HS_OFF; g_hs_state = '-';
+        }
     }
-    if (s_frames % CHECK_EVERY) return;
-    uint8_t cur[SLOT_DATA];
-    table_read(g, cur);
-    if (memcmp(cur, s_prev, s_len) != 0) {   /* still changing (a game in progress) */
-        memcpy(s_prev, cur, s_len);
-        s_stableFrames = 0;
-        return;
+}
+
+/* ── Parking core 1 for a flash write ──────────────────────────────────
+ * Core 1 (the emulator) runs from flash and pushes audio samples. It must be
+ * stopped at a SAFE point — between frames, never inside an audio call —
+ * because the audio object is torn down and rebuilt around the write
+ * (pico_audio_suspend/resume). An arbitrary-point stop (rp2040.idleOtherCore)
+ * could leave core 1 mid-way through PWMAudio::write on the old object:
+ * after the write it froze with the speaker buzzing. So core 1 parks itself
+ * from pico_hiscore_frame(), spinning in RAM with its interrupts off. */
+extern "C" void __pico_notify_give(void);   /* one vblank pulse for core 1 (pico_freertos_stubs.c) */
+
+static void __not_in_flash_func(park_core1)(void) {
+    uint32_t irq = save_and_disable_interrupts();
+    s_parked = true;
+    while (s_parkReq) __asm volatile("nop");
+    s_parked = false;
+    restore_interrupts(irq);
+}
+
+/* Core 0: ask core 1 to park and wait for it. Core 1 may be waiting for a
+ * vblank pulse from us to finish its frame, so keep pulsing meanwhile.
+ * False (request withdrawn) if it doesn't park within half a second. */
+static bool park_other_core(void) {
+    s_parkReq = true;
+    unsigned long t0 = millis();
+    while (!s_parked) {
+        if (millis() - t0 > 500) { s_parkReq = false; return false; }
+        __pico_notify_give();
+        delay(8);
     }
-    s_stableFrames += CHECK_EVERY;
-    if (s_stableFrames >= STABLE_FRAMES && memcmp(cur, s_saved, s_len) != 0 && !s_saveReq &&
-        (s_lastSaveFrame == 0 || s_frames - s_lastSaveFrame >= MIN_SAVE_GAP)) {
-        s_lastSaveFrame = s_frames;
-        memcpy(s_pending, cur, s_len);
-        memcpy(s_saved, cur, s_len);
-        s_saveReq = true;                    /* core 0 writes it */
-    }
+    return true;
 }
 
 static void store_write(void) {
@@ -239,14 +253,12 @@ static void store_write(void) {
     s_store.magic = HS_MAGIC;
     s_store.version = 1;
 #ifdef PICO_BOARD_TABLE
-    rp2040.idleOtherCore();                  /* core 1 (emulator) runs from flash */
     pico_audio_suspend();                    /* else its DMA desyncs: clicks + slowdown */
     uint32_t irq = save_and_disable_interrupts();
     flash_range_erase(s_phys, FLASH_SECTOR_SIZE);
     flash_range_program(s_phys, (const uint8_t *)&s_store, sizeof(s_store));
     restore_interrupts(irq);
     pico_audio_resume();
-    rp2040.resumeOtherCore();
     g_hs_saves++;
 #else
     SD.remove("/gal_hi.bin");
@@ -259,8 +271,12 @@ static void store_write(void) {
 
 extern "C" void pico_hiscore_service(void) {
     if (s_saveReq) {
+#ifdef PICO_BOARD_TABLE
+        if (!s_parked && !park_other_core()) return;     /* retry on the next loop */
+#endif
         store_write();
         s_saveReq = false;
+        if (!s_exitReq) s_parkReq = false;               /* let core 1 carry on */
     }
     if (s_exitReq) handoff_relaunch_arcade();
 }
@@ -278,9 +294,11 @@ extern "C" void pico_hiscore_exit_to_list(void) {
     if (s_saveReq) {
         if (get_core_num() == 0) {           /* called on core 0: save right here */
             pico_hiscore_service();
-        } else {                             /* core 1: let core 0 save, then relaunch */
-            s_exitReq = true;
-            for (;;) tight_loop_contents();
+        } else {                             /* core 1: park (safe point: not in audio code), */
+            s_exitReq = true;                /* core 0 saves, then relaunches */
+            s_parkReq = true;
+            park_core1();
+            for (;;) {}
         }
     }
     handoff_relaunch_arcade();

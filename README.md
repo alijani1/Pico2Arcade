@@ -137,9 +137,9 @@ list shows a red warning naming the first bad line.
 
 **High scores are kept** across power cycles, like MAME's hiscore plugin:
 once a game has set up its high-score table after starting, the saved one is
-put back, and the table is saved again after it changes and then stays the
-same for 10 seconds (for example after entering your initials), or when you
-leave the game. Saving pauses the game for a split second.
+put back. New scores are saved when you **leave the game** (hold MENU, or
+START + COIN), never during play. Switching the power off without leaving
+the game loses that session's new scores.
 
 Settings (display orientation, FPS overlay, volume) are saved in flash on
 the standalone board. On the Quad the Quad keeps them; on the PicoCartReader
