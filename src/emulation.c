@@ -94,6 +94,11 @@ unsigned char invaders_snd[2] = { 0, 0 };   /* OUT 3 / OUT 5 sound latches */
 unsigned char scobra_background = 0, scobra_stars_on = 0;
 #endif
 
+#ifdef ENABLE_XEVIOUS
+unsigned short xevious_scroll[4];     /* bg x, fg x, bg y, fg y */
+unsigned char xevious_boom = 0;       /* 54xx explosion request for the audio side */
+#endif
+
 #ifdef ENABLE_TIMEPLT
 unsigned char timeplt_video_enable = 0;
 unsigned char timeplt_mux_bank0[0x100], timeplt_mux_bank1[0x100];   /* first sprite set of a frame */
@@ -125,7 +130,7 @@ unsigned long master_attract_timeout = 0;
 
 #endif
 
-#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT)
+#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT) || defined(ENABLE_XEVIOUS)
 // mirror of sounds registers
 unsigned char soundregs[32] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
@@ -270,6 +275,10 @@ unsigned char namco_read_dd(unsigned short Addr) {
 
 #ifdef ENABLE_TIMEPLT
 #include "timeplt.h"
+#endif
+
+#ifdef ENABLE_XEVIOUS
+#include "xevious.h"
 #endif
 
 
@@ -456,6 +465,11 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
       timeplt_WrZ80(Addr, Value);
       return;
 #endif
+#ifdef ENABLE_XEVIOUS
+    case MCH_XEVIOUS:
+      xevious_WrZ80(Addr, Value);
+      return;
+#endif
 #ifdef ENABLE_SCRAMBLE
     case MCH_SCRAMBLE:
       scramble_WrZ80(Addr, Value);
@@ -590,6 +604,10 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
     case MCH_TIMEPLT:
       return timeplt_RdZ80(Addr);
 #endif
+#ifdef ENABLE_XEVIOUS
+    case MCH_XEVIOUS:
+      return xevious_RdZ80(Addr);
+#endif
 #ifdef ENABLE_SCRAMBLE
     case MCH_SCRAMBLE:
       return scramble_RdZ80(Addr);
@@ -689,6 +707,8 @@ unsigned char i8048_xdm_read(struct i8048_state_S *state, unsigned char addr) {
 
 #ifdef ENABLE_1942
 #define RAMSIZE   (8192 + 1024 + 128)
+#elif defined(ENABLE_XEVIOUS)
+#define RAMSIZE   (16384)     /* Xevious: 8 RAM windows of 2 KB */
 #else
 #define RAMSIZE   (8192)
 #endif
@@ -833,6 +853,12 @@ POOYAN_END
 TIMEPLT_BEGIN
   timeplt_run_frame();
 TIMEPLT_END
+#endif
+
+#ifdef ENABLE_XEVIOUS
+XEVIOUS_BEGIN
+  xevious_run_frame();
+XEVIOUS_END
 #endif
 
   sof = micros() - sof;

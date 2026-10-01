@@ -1,16 +1,26 @@
 # PicoGalagino
 
 A port of Till Harbaum's [Galagino](https://github.com/harbaum/galagino) ESP32
-arcade emulator to the Raspberry Pi **RP2350**. Six classic arcade games run
-from the original **MAME ROM zips** — no Python tools, no ROM conversion, no
-rebuild per game:
+arcade emulator to the Raspberry Pi **RP2350**. Fourteen classic arcade games
+run from the original **MAME ROM zips** — no Python tools, no ROM conversion,
+no rebuild per game:
 
 - Pac-Man
 - Ms. Pac-Man (with the Midway F2 aux board emulated)
 - Galaga
 - Frogger
 - Donkey Kong
+- Donkey Kong Jr. (US or Japan set)
 - Dig Dug
+- Xevious
+- Space Invaders
+- Super Cobra
+- Scramble
+- Pooyan
+- Time Pilot
+
+The last seven (and DK Jr.) are ported from
+[GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus).
 
 The simplest way to play is a **standard Raspberry Pi Pico 2**, an ST7789
 display, a few switches and a speaker. Flash one UF2, copy your ROM zips onto
@@ -134,6 +144,13 @@ list shows a red warning naming the first bad line.
 **In a game**
 
 - Joystick + FIRE; START and COIN as on the cabinet.
+- Two-button games (Super Cobra and Scramble: laser / bomb; Xevious:
+  zapper / bomb) use **A** for the first and **B** for the second. A
+  one-button joystick (PicoCartReader external stick, Quad DB9) fires both.
+  On the Quad / Duo 5200 the device buttons follow GameAdapterRGBPico:
+  Red (button 0) and Blue = A, Green (button 1) and Yellow = B; the Duo
+  5200 controller's Fire A / Fire B are A / B. Standalone: `fire_b` in
+  `ARCADE.INI`.
 - **Hold MENU for one second** (or hold START + COIN) to go back to the game
   list.
 
@@ -152,9 +169,16 @@ they're on the SD card (volume: kept by the CartReader).
 ## ROM sets
 
 One MAME set per game: the **parent set, non-merged** (the zip holds every
-file the game needs, including files shared with a parent). Merged sets that
-also contain clones work too, but they are larger and may not fit the Quad's
-256 KB drive.
+file the game needs, including files shared with a parent). Older or newer
+MAME versions that renamed a ROM file are fine: a file missing under its
+name is found by its CRC32. **Merged** sets (with every clone inside) are
+not supported: the whole zip is read into RAM, and they're too big.
+
+**Quad / Duo 5200: the ROM drive holds about 251 KB.** All the zips together
+are larger than that (the 14 parent sets are ~300 KB), so copy the games you
+want until the drive is full; the game list shows whichever zips are there.
+The standalone Pico 2 (1 MB drive) and the PicoCartReader (SD card) hold
+them all.
 
 | Game | Zip | Files the loader reads |
 |---|---|---|
@@ -164,6 +188,14 @@ also contain clones work too, but they are larger and may not fit the Quad's
 | Frogger | `frogger.zip` | `frogger.26` `frogger.27` `frsm3.7`, `frogger.606` … `frogger.610`, `pr-91.6l` |
 | Donkey Kong | `dkong.zip` (US set 1) | `c_5at_g.bin` `c_5bt_g.bin` `c_5ct_g.bin` `c_5et_g.bin`, `s_3i_b.bin` `s_3j_b.bin`, `v_5h_b.bin` `v_3pt.bin`, `l_4m_b.bin` `l_4n_b.bin` `l_4r_b.bin` `l_4s_b.bin`, `c-2j.bpr` `c-2k.bpr` `v-5e.bpr` |
 | Dig Dug | `digdug.zip` | `dd1a.1` … `dd1a.6`, `dd1.7`, `dd1.9`, `dd1.10b`, `dd1.11` … `dd1.15`, `136007.109` … `136007.113` |
+| Donkey Kong Jr. | `dkongjr.zip` (US) | `djr1-c_5b_f-2.5b` `djr1-c_5c_f-2.5c` `djr1-c_5e_f-2.5e`, `djr1-c_3h.3h`, `djr1-v.3n` `djr1-v.3p`, `djr1-v_7c.7c` … `djr1-v_7f.7f`, `djr1-c-2e.2e` `djr1-c-2f.2f` `djr1-v-2n.2n` |
+| Donkey Kong Jr. (Japan) | `dkongjrj.zip` | `c_5ba.bin` `c_5ca.bin` `c_5ea.bin`, `c_3h.bin`, `v_3na.bin` `v_3pa.bin`, `v_7c.bin` … `v_7f.bin`, `c-2e.bpr` `c-2f.bpr` `v-2n.bpr` |
+| Xevious | `xevious.zip` | `xvi_1.3p` … `xvi_7.2c`, `xvi_9.2a` … `xvi_18.4r`, `xvi-2.7n`, `xvi-4.3l` … `xvi-10.6e` (the 50xx/51xx/54xx MCU ROMs aren't needed) |
+| Space Invaders | `invaders.zip` | `invaders.h` `invaders.g` `invaders.f` `invaders.e` |
+| Super Cobra | `scobra.zip` | `epr1265.2c` `2e` `epr1267.2f` `2h` `epr1269.2j` `2l`, `5c` `5d` `5e`, `epr1273.5f` `epr1274.5h`, `82s123.6e` |
+| Scramble | `scramble.zip` | `s1.2d` … `s8.2p`, `ot1.5c` `ot2.5d` `ot3.5e`, `c1.5h` `c2.5f`, `c01s.6e` |
+| Pooyan | `pooyan.zip` | `1.4a` `2.5a` `3.6a` `4.7a`, `xx.7a` `xx.8a`, `8.10g` `7.9g`, `6.9a` `5.8a`, `pooyan.pr1` `pr2` `pr3` |
+| Time Pilot | `timeplt.zip` | `tm1` … `tm7`, `timeplt.b4` `timeplt.b5` `timeplt.e9` `timeplt.e12` |
 
 When the game list opens, each zip is checked: every file above must be
 present with the expected CRC32 (table in
@@ -410,7 +442,12 @@ src/
 - **Till Harbaum** — [Galagino](https://github.com/harbaum/galagino), the
   upstream ESP32 emulator this port is based on.
 - **VirtualClaudioBoy** — [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus)
-  Ms. Pac-Man F2 aux-board decoder and the two gfx patch tables.
+  (GPLv3): Ms. Pac-Man F2 aux-board decoder and the two gfx patch tables;
+  the drivers for Xevious, Donkey Kong Jr., Space Invaders, Super Cobra /
+  Scramble, Pooyan and Time Pilot (reworked here into C, ROMs read from
+  the MAME zips), and the Space Invaders sound samples. GalaginoPlus in
+  turn credits Speckhoiler, Alby1970, SurvivalHacking and galagino/galagino
+  for games it adapted.
 - **Nicolas Allemand (superzazu)** — [z80](https://github.com/superzazu/z80),
   the Z80 CPU core (MIT, see `src/z80_zazu/LICENSE`). It replaced upstream
   Galagino's Z80 core, which is not licensed for commercial use.

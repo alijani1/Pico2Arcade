@@ -56,6 +56,9 @@ enum {
 #ifdef ENABLE_TIMEPLT
       MCH_TIMEPLT,
 #endif
+#ifdef ENABLE_XEVIOUS
+      MCH_XEVIOUS,
+#endif
 #ifdef ENABLE_SCOBRA
       MCH_SCOBRA,
 #endif
@@ -198,6 +201,11 @@ enum {
   #define INVADERS_BEGIN  else if(machine == MCH_INVADERS) {
   #define INVADERS_END    }
 #endif
+#ifdef ENABLE_XEVIOUS
+  #define MACHINE_IS_XEVIOUS  (machine == MCH_XEVIOUS)
+  #define XEVIOUS_BEGIN  else if(machine == MCH_XEVIOUS) {
+  #define XEVIOUS_END    }
+#endif
 #ifdef ENABLE_TIMEPLT
   #define MACHINE_IS_TIMEPLT  (machine == MCH_TIMEPLT)
   #define TIMEPLT_BEGIN  else if(machine == MCH_TIMEPLT) {
@@ -230,7 +238,7 @@ extern char game_started;
 #ifdef ENABLE_GALAGA
 extern unsigned char starcontrol;
 #endif
-#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT)
+#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT) || defined(ENABLE_XEVIOUS)
 extern unsigned char soundregs[32];
 #endif
 #ifndef SINGLE_MACHINE
@@ -315,6 +323,15 @@ extern unsigned char *digdug_rom_cpu3;
 extern "C" unsigned char *invaders_rom;
 #else
 extern unsigned char *invaders_rom;
+#endif
+#endif
+#ifdef ENABLE_XEVIOUS
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char *xevious_rom_cpu1, *xevious_rom_cpu2, *xevious_rom_cpu3;
+#ifdef __cplusplus
+}
 #endif
 #endif
 #ifdef ENABLE_TIMEPLT
@@ -412,6 +429,11 @@ static inline byte OpZ80_INL(register word Addr) {
     rom_table[MCH_DIGDUG][1] = digdug_rom_cpu2;
     rom_table[MCH_DIGDUG][2] = digdug_rom_cpu3;
 #endif
+#ifdef ENABLE_XEVIOUS
+    rom_table[MCH_XEVIOUS][0] = xevious_rom_cpu1;
+    rom_table[MCH_XEVIOUS][1] = xevious_rom_cpu2;
+    rom_table[MCH_XEVIOUS][2] = xevious_rom_cpu3;
+#endif
 #ifdef ENABLE_TIMEPLT
     rom_table[MCH_TIMEPLT][0] = timeplt_rom_cpu1;
     rom_table[MCH_TIMEPLT][1] = timeplt_rom_cpu2;
@@ -468,6 +490,10 @@ static inline byte OpZ80_INL(register word Addr) {
 #endif
 #ifdef ENABLE_DKONGJR
   if (machine == MCH_DKONGJR) addr_mask = 0x7FFFu;
+#endif
+#ifdef ENABLE_XEVIOUS
+  /* Xevious cpu1 16K, cpu2 8K, cpu3 4K. */
+  if (machine == MCH_XEVIOUS) addr_mask = current_cpu == 0 ? 0x3FFFu : current_cpu == 1 ? 0x1FFFu : 0x0FFFu;
 #endif
 #ifdef ENABLE_TIMEPLT
   /* Time Pilot cpu1 24K in a 32K buffer, cpu2 4K. */

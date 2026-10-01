@@ -91,6 +91,10 @@ unsigned short *frame_buffer;
 #include "timeplt.h"
 #endif
 
+#ifdef ENABLE_XEVIOUS
+#include "xevious.h"
+#endif
+
 #ifndef SINGLE_MACHINE
 signed char machine = MCH_MENU;   // start with menu
 #endif
@@ -373,6 +377,12 @@ TIMEPLT_BEGIN
   timeplt_render_row(row);
 TIMEPLT_END
 #endif
+
+#ifdef ENABLE_XEVIOUS
+XEVIOUS_BEGIN
+  xevious_render_row(row);
+XEVIOUS_END
+#endif
 }
   
 #ifdef ENABLE_GALAGA
@@ -471,6 +481,9 @@ void snd_render_buffer(void) {
     #ifdef ENABLE_DIGDUG
         || (machine == MCH_DIGDUG)
     #endif
+    #ifdef ENABLE_XEVIOUS
+        || (machine == MCH_XEVIOUS)
+    #endif
     )
   #endif
     {
@@ -485,6 +498,9 @@ void snd_render_buffer(void) {
         if(snd_boom_cnt & 1) snd_boom_ptr++;
         snd_boom_cnt--;
       }
+  #endif
+  #ifdef ENABLE_XEVIOUS
+      if(MACHINE_IS_XEVIOUS) v += xevious_boom_sample();
   #endif
     }
 #endif    
@@ -618,6 +634,9 @@ void audio_namco_waveregs_parse(void) {
 #ifdef ENABLE_DIGDUG    
     MACHINE_IS_DIGDUG ||
 #endif
+#ifdef ENABLE_XEVIOUS
+    MACHINE_IS_XEVIOUS ||
+#endif
   0) 
 #endif  
   {
@@ -661,6 +680,11 @@ void audio_namco_waveregs_parse(void) {
 #if defined(ENABLE_DIGDUG)
         if(machine == MCH_DIGDUG) {
           snd_wave[ch] = digdug_wavetable[soundregs[ch * 5 + 0x05] & 0x0f];
+        }
+#endif
+#if defined(ENABLE_XEVIOUS)
+        if(machine == MCH_XEVIOUS) {
+          snd_wave[ch] = xevious_wavetable[soundregs[ch * 5 + 0x05] & 0x07];
         }
 #endif
       }
@@ -840,6 +864,12 @@ POOYAN_END
 TIMEPLT_BEGIN
   timeplt_prepare_frame();
 TIMEPLT_END
+#endif
+
+#ifdef ENABLE_XEVIOUS
+XEVIOUS_BEGIN
+  xevious_prepare_frame();
+XEVIOUS_END
 #endif
 
   // max possible video rate:

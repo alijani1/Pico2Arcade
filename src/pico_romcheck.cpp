@@ -212,10 +212,38 @@ static const RomFile timeplt_files[] = {
     { "tm7", 0xd66da813u },
 };
 
+static const RomFile xevious_files[] = {
+    { "xvi-10.6e", 0x3cb60975u },
+    { "xvi-2.7n", 0x550f06bcu },
+    { "xvi-4.3l", 0xfd8b9d91u },
+    { "xvi-5.3m", 0xbf906d82u },
+    { "xvi-6.4f", 0x3a7599f0u },
+    { "xvi-7.4h", 0x22d98032u },
+    { "xvi-8.6a", 0x5cc2727fu },
+    { "xvi-9.6d", 0x5c8796ccu },
+    { "xvi_1.3p", 0x09964ddau },
+    { "xvi_10.2b", 0xae3ba9e5u },
+    { "xvi_11.2c", 0x31e244ddu },
+    { "xvi_12.3b", 0x088c8b26u },
+    { "xvi_13.3c", 0xde60ba25u },
+    { "xvi_14.3d", 0x535cdbbcu },
+    { "xvi_15.4m", 0xdc2c0ecbu },
+    { "xvi_16.4n", 0x605ca889u },
+    { "xvi_17.4p", 0xdfb587ceu },
+    { "xvi_18.4r", 0x02417d19u },
+    { "xvi_2.3m", 0x60ecce84u },
+    { "xvi_3.2m", 0x79754b7du },
+    { "xvi_4.2l", 0xc7d4bbf0u },
+    { "xvi_5.3f", 0xc85b703fu },
+    { "xvi_6.3j", 0xe18cdaadu },
+    { "xvi_7.2c", 0xdd35cf1cu },
+    { "xvi_9.2a", 0x57ed9879u },
+};
+
 struct RomSet { const char *zip; const RomFile *files; int n; };
 #define SET(z) { "/roms/" #z ".zip", z##_files, (int)(sizeof(z##_files) / sizeof(z##_files[0])) }
 static const RomSet SETS[] = {
-    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj), SET(pooyan), SET(timeplt),
+    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj), SET(pooyan), SET(timeplt), SET(xevious),
 };
 
 static inline uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }

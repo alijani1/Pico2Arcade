@@ -70,7 +70,9 @@ extern "C" bool pico_input_menu_tapped(void) {
 static const int PIN_JOY_X  = 44;
 static const int PIN_JOY_Y  = 45;
 #endif
-static const int JOY_THRESHOLD = 900;   /* ~22% of 12-bit range */
+/* A direction triggers at 25% of the stick's travel from centre (2048 =
+ * full deflection), so diagonals come easily. */
+static const int JOY_THRESHOLD = 512;
 static int joy_center_x = 2048;
 static int joy_center_y = 2048;
 
@@ -83,7 +85,8 @@ static int joy_center_y = 2048;
  * over the stick's travel (the host's PIO counts ~3335 at 2.5 MHz). Blocks
  * for up to 2 ms, so it runs at most every 16 ms and only on core 0.
  * Directions are digital: the range is learned from the min/max seen (the
- * nominal range until the stick has moved), with a 40 % deadzone. */
+ * nominal range until the stick has moved); a direction triggers at 25 %
+ * of the travel, so diagonals come easily. */
 static const uint32_t RC_TIMEOUT_US = 2000;     /* no controller / pot beyond range */
 static const uint32_t RC_NOMINAL_US = 1334;     /* full travel, nominal */
 static volatile unsigned char s_stickDirs = 0;  /* BUTTON_UP/DOWN/LEFT/RIGHT from the stick */
@@ -129,7 +132,7 @@ static void rc_stick_read(void) {
         int32_t center, half;
         if (range >= RC_NOMINAL_US / 2) { center = (int32_t)(lo[a] + hi[a]) / 2; half = (int32_t)range / 2; }
         else                            { center = RC_NOMINAL_US / 2;           half = RC_NOMINAL_US / 2; }
-        int32_t d = (int32_t)t[a] - center, thr = half * 4 / 10;
+        int32_t d = (int32_t)t[a] - center, thr = half / 4;
         if (d >  thr) dirs |= (a == 0) ? BUTTON_RIGHT : BUTTON_DOWN;
         if (d < -thr) dirs |= (a == 0) ? BUTTON_LEFT  : BUTTON_UP;
     }

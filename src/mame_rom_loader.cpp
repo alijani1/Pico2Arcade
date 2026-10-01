@@ -1352,3 +1352,158 @@ extern "C" unsigned short *load_timeplt_colors_from_zip(const uint8_t *zip, size
     for (int i = 0; i < 256; i++) out[128 + i] = pal[e9[i] & 0x0f];
     return out;
 }
+
+/* ============================== XEVIOUS ============================== */
+/* Formats as GalaginoPlus's converter (romconv/xevious), from MAME
+ * galaga.cpp / xevious.cpp: MAME gfx layouts decoded, then rotated for
+ * portrait (out[y][x] = mame[N-1-x][y]). */
+
+/* One pixel of a MAME gfx layout: planes / x / y as absolute bit offsets. */
+static inline uint8_t xev_pixel(const uint8_t *d, uint32_t base, const uint32_t *planes, int np,
+                                uint32_t xo, uint32_t yo) {
+    uint8_t v = 0;
+    for (int p = 0; p < np; p++) {
+        uint32_t off = base + yo + xo + planes[p];
+        v = (uint8_t)((v << 1) | ((d[off >> 3] >> (7 - (off & 7))) & 1));
+    }
+    return v;
+}
+
+extern "C" unsigned char *load_xevious_rom_from_zip(const uint8_t *zip, size_t sz, int cpu) {
+    static const char *c1[4] = { "xvi_1.3p", "xvi_2.3m", "xvi_3.2m", "xvi_4.2l" };
+    static const char *c2[2] = { "xvi_5.3f", "xvi_6.3j" };
+    static const char *c3[1] = { "xvi_7.2c" };
+    if (cpu == 0) return load_concat(zip, sz, c1, 4, 4096, "xevious cpu1");
+    if (cpu == 1) return load_concat(zip, sz, c2, 2, 4096, "xevious cpu2");
+    return load_concat(zip, sz, c3, 1, 4096, "xevious cpu3");
+}
+
+/* Planet map, 16 KB as MAME's gfx4: 2A @0, 2B @0x1000, 2C @0x3000. */
+extern "C" unsigned char *load_xevious_planetmap_from_zip(const uint8_t *zip, size_t sz) {
+    unsigned char *out = (unsigned char *)malloc(0x4000);
+    if (!out) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "xvi_9.2a",  out,          0x1000, &got) || got != 0x1000 ||
+        !zip_extract(zip, sz, "xvi_10.2b", out + 0x1000, 0x2000, &got) || got != 0x2000 ||
+        !zip_extract(zip, sz, "xvi_11.2c", out + 0x3000, 0x1000, &got) || got != 0x1000) {
+        free(out); return nullptr;
+    }
+    return out;
+}
+
+/* Text chars: 512 x 8x8 1bpp; byte y, bit x = rotated pixel. */
+extern "C" unsigned char *load_xevious_fgtiles_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch d(4096); if (!d) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "xvi_12.3b", d, 4096, &got) || got != 4096) return nullptr;
+    unsigned char *out = (unsigned char *)malloc(512 * 8);
+    if (!out) return nullptr;
+    static const uint32_t pl[1] = { 0 };
+    for (int t = 0; t < 512; t++)
+        for (int y = 0; y < 8; y++) {
+            uint8_t v = 0;
+            for (int x = 0; x < 8; x++)   /* rotated: mame[7-x][y] */
+                v |= xev_pixel(d, t * 64, pl, 1, y, (7 - x) * 8) << x;
+            out[t * 8 + y] = v;
+        }
+    return out;
+}
+
+/* Ground tiles: 512 x 8x8 2bpp (planes 13.3c, 14.3d); 2 bits per pixel. */
+extern "C" unsigned short *load_xevious_bgtiles_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch d(8192); if (!d) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "xvi_13.3c", d,        4096, &got) || got != 4096) return nullptr;
+    if (!zip_extract(zip, sz, "xvi_14.3d", d + 4096, 4096, &got) || got != 4096) return nullptr;
+    unsigned short *out = (unsigned short *)malloc(512 * 8 * sizeof(unsigned short));
+    if (!out) return nullptr;
+    static const uint32_t pl[2] = { 0, 0x1000 * 8 };
+    for (int t = 0; t < 512; t++)
+        for (int y = 0; y < 8; y++) {
+            uint16_t v = 0;
+            for (int x = 0; x < 8; x++)
+                v |= (uint16_t)(xev_pixel(d, t * 64, pl, 2, y, (7 - x) * 8) << (2 * x));
+            out[t * 8 + y] = v;
+        }
+    return out;
+}
+
+/* Sprites: MAME's gfx3 region rebuilt as init_xevious() does (0xA000 bytes:
+ * 15.4m, 17.4p, 16.4n, 18.4r, 18.4r >> 4, zeros), 320 sprites 16x16 3bpp,
+ * rotated, stored 4 bits per pixel: 2 words per row, pixel x at bits 4x. */
+extern "C" unsigned long *load_xevious_sprites_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch d(0xa000); if (!d) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "xvi_15.4m", d,          0x2000, &got) || got != 0x2000) return nullptr;
+    if (!zip_extract(zip, sz, "xvi_17.4p", d + 0x2000, 0x2000, &got) || got != 0x2000) return nullptr;
+    if (!zip_extract(zip, sz, "xvi_16.4n", d + 0x4000, 0x1000, &got) || got != 0x1000) return nullptr;
+    if (!zip_extract(zip, sz, "xvi_18.4r", d + 0x5000, 0x2000, &got) || got != 0x2000) return nullptr;
+    for (int i = 0; i < 0x2000; i++) d[0x7000 + i] = d[0x5000 + i] >> 4;
+    unsigned long *out = (unsigned long *)malloc(320 * 32 * sizeof(unsigned long));
+    if (!out) return nullptr;
+    const uint32_t half = 0xa000 * 8 / 2;
+    const uint32_t pl[3] = { half + 4, 0, 4 };
+    for (int s = 0; s < 320; s++)
+        for (int y = 0; y < 16; y++) {
+            uint32_t lo = 0, hi = 0;
+            for (int x = 0; x < 16; x++) {
+                int my = 15 - x, mx = y;           /* rotated: mame[15-x][y] */
+                uint32_t xo = (uint32_t)((mx & 3) + (mx >> 2) * 64);
+                uint32_t yo = (uint32_t)((my & 7) * 8 + (my >> 3) * 256);
+                uint32_t v = xev_pixel(d, (uint32_t)s * 512, pl, 3, xo, yo);
+                if (x < 8) lo |= v << (4 * x); else hi |= v << (4 * (x - 8));
+            }
+            out[s * 32 + y * 2]     = lo;
+            out[s * 32 + y * 2 + 1] = hi;
+        }
+    return out;
+}
+
+/* Colours (MAME xevious_palette): R/G/B PROMs through 0x0e/0x1f/0x43/0x8f.
+ * Output: fg 64 x 2, bg 128 x 4, sprites 64 x 8; black is nudged to 0x2000
+ * so that 0 can mean transparent. */
+static int xev_comp(uint8_t v) {
+    return ((v & 1) ? 0x0e : 0) + ((v & 2) ? 0x1f : 0) + ((v & 4) ? 0x43 : 0) + ((v & 8) ? 0x8f : 0);
+}
+extern "C" unsigned short *load_xevious_colors_from_zip(const uint8_t *zip, size_t sz) {
+    /* 2.8 KB of PROMs: on the heap, not the stack. Core 0's stack is only a
+     * few KB and zip_extract's inflate state takes another 1.2 KB of it. */
+    RomScratch proms(3 * 256 + 4 * 512); if (!proms) return nullptr;
+    uint8_t *r = proms, *g = r + 256, *b = g + 256;
+    uint8_t *bglo = b + 256, *bghi = bglo + 512, *splo = bghi + 512, *sphi = splo + 512;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "xvi-8.6a",  r, 256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, "xvi-9.6d",  g, 256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, "xvi-10.6e", b, 256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, "xvi-7.4h", bglo, 512, &got) || got != 512) return nullptr;
+    if (!zip_extract(zip, sz, "xvi-6.4f", bghi, 512, &got) || got != 512) return nullptr;
+    if (!zip_extract(zip, sz, "xvi-4.3l", splo, 512, &got) || got != 512) return nullptr;
+    if (!zip_extract(zip, sz, "xvi-5.3m", sphi, 512, &got) || got != 512) return nullptr;
+    uint16_t pal[128];
+    for (int i = 0; i < 128; i++) {
+        int R = xev_comp(r[i]), G = xev_comp(g[i]), B = xev_comp(b[i]);
+        uint16_t c = (uint16_t)(((R * 31 / 255) << 11) | ((G * 63 / 255) << 5) | (B * 31 / 255));
+        c = (uint16_t)((c >> 8) | (c << 8));
+        pal[i] = c ? c : 0x2000;
+    }
+    unsigned short *out = (unsigned short *)malloc((128 + 512 + 512) * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int i = 0; i < 64; i++) { out[2 * i] = 0; out[2 * i + 1] = pal[i]; }
+    for (int i = 0; i < 512; i++) out[128 + i] = pal[((bglo[i] & 15) | ((bghi[i] & 15) << 4)) & 0x7f];
+    for (int i = 0; i < 512; i++) {
+        int c = (splo[i] & 15) | ((sphi[i] & 15) << 4);
+        out[640 + i] = (c & 0x80) ? pal[c & 0x7f] : 0;
+    }
+    return out;
+}
+
+/* WSG waveforms: 8 x 32 nibbles from xvi-2.7n, centred. */
+extern "C" signed char *load_xevious_wavetable_from_zip(const uint8_t *zip, size_t sz) {
+    uint8_t raw[256];
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "xvi-2.7n", raw, 256, &got) || got != 256) return nullptr;
+    signed char *out = (signed char *)malloc(256);
+    if (!out) return nullptr;
+    for (int i = 0; i < 256; i++) out[i] = (signed char)((raw[i] & 0x0f) - 8);
+    return out;
+}

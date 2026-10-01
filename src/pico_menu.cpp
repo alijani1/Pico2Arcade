@@ -37,6 +37,7 @@ extern "C" bool runtime_load_invaders(void);
 extern "C" bool runtime_load_scobra(void);
 extern "C" bool runtime_load_pooyan(void);
 extern "C" bool runtime_load_timeplt(void);
+extern "C" bool runtime_load_xevious(void);
 extern "C" bool runtime_load_scramble(void);
 extern "C" unsigned char buttons_get(void);
 /* Gate that setup1() polls before starting the emulator on core 1.
@@ -131,6 +132,9 @@ static const GameEntry games[] = {
 #endif
 #ifdef ENABLE_TIMEPLT
     { "Time Pilot", "/roms/timeplt.zip", MCH_TIMEPLT, runtime_load_timeplt },
+#endif
+#ifdef ENABLE_XEVIOUS
+    { "Xevious", "/roms/xevious.zip", MCH_XEVIOUS, runtime_load_xevious, true },   /* zapper / bomb */
 #endif
 #ifdef ENABLE_SCOBRA
     { "Super Cobra", "/roms/scobra.zip", MCH_SCOBRA, runtime_load_scobra, true },
