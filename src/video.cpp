@@ -197,6 +197,24 @@ void Video::begin(void) {
                 GAME_W, GAME_H, TFT_X_OFFSET, TFT_Y_OFFSET);
 }
 
+/* The finished frame is sent in bands with the audio topped up between
+ * them. Sent in one go, a portrait frame blocks core 0 for ~10 ms at
+ * 100 MHz SPI but ~21 ms at 50 MHz (ILI9341 build) — as long as the audio
+ * queued ahead, so the PWM output ran dry every few frames. PWMAudio then
+ * plays an unscaled "silence" level (full duty), so each underrun was a
+ * click, even muted. */
+extern void snd_transmit();
+static const int PUSH_BANDS = 6;
+
+static void push_banded(int x, int y, int w, int h, uint16_t *buf) {
+  int band = (h + PUSH_BANDS - 1) / PUSH_BANDS;
+  for (int y0 = 0; y0 < h; y0 += band) {
+    int n = (h - y0 < band) ? h - y0 : band;
+    tft.pushImage(x, y + y0, w, n, buf + (size_t)y0 * w);
+    snd_transmit();
+  }
+}
+
 void Video::write(uint16_t *colors, uint32_t len) {
   int rows = (int)(len / GAME_W);
   if (rows <= 0) return;
@@ -209,12 +227,12 @@ void Video::write(uint16_t *colors, uint32_t len) {
 #ifdef PICO_GALAGINO_LANDSCAPE
     if (is_landscape_locked) {
       downscale_288_to_240(frame_buf, scaled_buf);
-      tft.pushImage(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
+      push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
     } else {
-      tft.pushImage(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
+      push_banded(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
     }
 #else
-    tft.pushImage(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
+    push_banded(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
 #endif
     cur_row = 0;
     fps_stats_tick();

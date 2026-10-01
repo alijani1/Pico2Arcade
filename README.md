@@ -22,8 +22,8 @@ no rebuild per game:
 The last seven (and DK Jr.) are ported from
 [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus).
 
-The simplest way to play is a **standard Raspberry Pi Pico 2**, an ST7789
-display, a few switches and a speaker. Flash one UF2, copy your ROM zips onto
+The simplest way to play is a **standard Raspberry Pi Pico 2**, an ST7789 or
+ILI9341 display, a few switches and a speaker. Flash one UF2, copy your ROM zips onto
 the USB drive it shows up as, and play. Buttons, joystick and audio pins are
 set in a text file on that drive.
 
@@ -31,7 +31,7 @@ The same code also runs as the arcade mode of two other boards:
 
 | Target | Env | ROMs live on | Controls |
 |---|---|---|---|
-| **Standalone Pico 2** | `pico2_std` | 1 MB USB drive in the Pico's flash | your wiring (`ARCADE.INI`) |
+| **Standalone Pico 2** | `pico2_std` (ST7789) / `pico2_std_ili9341` | 1 MB USB drive in the Pico's flash | your wiring (`ARCADE.INI`) |
 | **Quad Ultimate CX** (iCode) | `quad` | 256 KB USB drive in flash | built-in profile |
 | **Duo 5200 Ultimate** (iCode) | `duo5200` | 256 KB USB drive in flash | built-in profile + the port 1 Atari 5200 controller (analog stick, fire buttons) |
 | **PicoCartReader** | `pico2_arcade` | `/roms/` on the SD card | PCA9539 expander + JoyCon |
@@ -46,7 +46,11 @@ We do **not** distribute ROMs. Use ROM sets you are entitled to.
 
 - Raspberry Pi **Pico 2** (RP2350A, 4 MB flash). The original Pico (RP2040)
   does not have enough RAM.
-- **ST7789 240×320 SPI display** (the common 2.0"–2.8" modules).
+- **240×320 SPI display** with an **ST7789** or an **ILI9341** controller
+  (the common 2.0"–2.8" modules; the controller is printed on the module or
+  in the listing). Each needs its own firmware: `pico2_std` for the ST7789,
+  `pico2_std_ili9341` for the ILI9341. With the wrong one the screen stays
+  white.
 - A joystick or four direction switches, plus buttons for FIRE, START, COIN
   and MENU. All are simple switches to GND; the Pico's internal pull-ups are
   used.
@@ -77,8 +81,8 @@ mapped.
 
 ### 3. Flash the firmware
 
-Hold **BOOTSEL** while plugging the Pico 2 into USB, then copy
-`firmware.uf2` onto the `RP2350` drive that appears. To build it yourself, see
+Hold **BOOTSEL** while plugging the Pico 2 into USB, then copy the UF2 for
+your display (ST7789 or ILI9341) onto the `RP2350` drive that appears. To build it yourself, see
 [Build](#build).
 
 ### 4. Copy the ROMs and set the pins
@@ -219,11 +223,13 @@ core; `platformio.ini` pulls both in).
 ```bash
 pio run -e pico2_std                 # standalone Pico 2 -> .pio/build/pico2_std/firmware.uf2
 pio run -e pico2_std -t upload       # flash it (picotool)
+pio run -e pico2_std_ili9341 -t upload   # the same with an ILI9341 display
 ```
 
 | Env | Board | Notes |
 |---|---|---|
 | `pico2_std` | Raspberry Pi Pico 2 | standalone; TinyUSB for the ROM drive |
+| `pico2_std_ili9341` | Raspberry Pi Pico 2 | as `pico2_std`, ILI9341 display (SPI 50 MHz) |
 | `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x360000, ≤ 380 KB); `-t upload` writes only that slot |
 | `duo5200` | Duo 5200 Ultimate | chain-booted by the Duo 5200 firmware (1.1+) from its arcade slot (0x340000, ≤ 380 KB); `-t upload` writes only that slot |
 | `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
@@ -404,7 +410,7 @@ reboots into it.
 ## Directory layout
 
 ```
-platformio.ini           PIO build config (envs: pico2_std, quad, pico2_arcade, pico2, bench)
+platformio.ini           PIO build config (envs: pico2_std, pico2_std_ili9341, quad, duo5200, pico2_arcade, pico2, bench)
 tft_overlay.py           installs the custom ST7789 init into TFT_eSPI (pre-build)
 arcade_upload.py         `-t upload` into a host's arcade slot (quad / pico2_arcade)
 src/
