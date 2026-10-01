@@ -55,8 +55,8 @@ We do **not** distribute ROMs. Use ROM sets you are entitled to.
   and MENU. All are simple switches to GND; the Pico's internal pull-ups are
   used.
 - A speaker with a small amplifier (for example a PAM8302A class-D board).
-  The Pico outputs PWM audio; a simple RC low-pass filter (for example
-  1 kΩ + 10 nF) between the pin and the amplifier input smooths it.
+  The Pico outputs PWM audio; wire the audio pin straight to the amplifier
+  input (A+, with A− to GND) — the amplifier module filters the PWM itself.
 
 ### 2. Wiring (defaults)
 

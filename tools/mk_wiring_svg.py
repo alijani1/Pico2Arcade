@@ -61,13 +61,13 @@ for p, n in R.items():
     text(BX1-12, y+4, n, 11, 'end', '#ffffff' if u else '#a7f3d0', '600' if u else '400')
     text(BX1+9, y-7, str(p), 9, 'start', '#6b7280')
 
-# ── Display (ST7789 240x320 SPI) ──
+# ── Display (ST7789 or ILI9341, 240x320 SPI) ──
 DX0, DX1 = 60, 250
 dpins = [('BL', None), ('VCC', None), ('GND', 3), ('CS', 7), ('SCL', 9), ('SDA', 10), ('DC', 11), ('RES', 12)]
 dy0 = 190
 a('<rect x="%d" y="150" width="%d" height="250" rx="8" fill="#1e3a8a" stroke="#1e40af" stroke-width="2"/>' % (DX0, DX1-DX0))
 a('<rect x="%d" y="170" width="118" height="160" rx="3" fill="#0b1020" stroke="#93c5fd"/>' % (DX0+18))
-text(DX0+77, 245, 'ST7789', 13, 'middle', '#bfdbfe', '700')
+text(DX0+77, 245, 'ST7789 / ILI9341', 12, 'middle', '#bfdbfe', '700')
 text(DX0+77, 263, '240×320 SPI', 11, 'middle', '#bfdbfe')
 text(DX0+77, 380, 'Display', 15, 'middle', '#ffffff', '700')
 # lanes chosen so no display wires cross (top display pin -> rightmost lane)
@@ -137,19 +137,10 @@ text(708, 170, 'VBUS 5 V', 10.5, 'start', '#991b1b', '600')
 wire([(BX1, ry(38)), (720, ry(38)), (720, 203), (AX0, 203)], C_GND)
 # A- -> GND
 wire([(AX0, 259), (852, 259), (852, 272)], C_GND); gnd(852, 272)
-# A+ <- RC filter <- GP22 (pin 29)
+# A+ <- GP22 (pin 29), straight in: PAM8302A modules filter the PWM themselves
 y22 = ry(29)
-wire([(BX1, y22), (700, y22)], C_AUD)
-a('<rect x="700" y="%d" width="44" height="14" fill="#fff" stroke="%s" stroke-width="2"/>' % (y22-7, C_AUD))
-text(722, y22-12, '1 kΩ', 10.5, 'middle', '#9a3412', '600')
-wire([(744, y22), (840, y22), (840, 231), (AX0, 231)], C_AUD)
-dot(790, y22, C_AUD)
-wire([(790, y22), (790, y22+18)], C_AUD)
-a('<g stroke="%s" stroke-width="3"><line x1="778" y1="%d" x2="802" y2="%d"/><line x1="778" y1="%d" x2="802" y2="%d"/></g>'
-  % (C_AUD, y22+18, y22+18, y22+25, y22+25))
-text(808, y22+26, '10 nF', 10.5, 'start', '#9a3412', '600')
-wire([(790, y22+25), (790, y22+36)], C_GND); gnd(790, y22+36)
-text(700, y22+74, 'RC low-pass smooths the PWM', 10.5, 'start', '#4b5563')
+wire([(BX1, y22), (840, y22), (840, 231), (AX0, 231)], C_AUD)
+text(708, y22-8, 'GP22 audio', 10.5, 'start', '#9a3412', '600')
 # outputs -> speaker
 for n, y in [('+', 190), ('−', 230)]:
     a('<circle cx="%d" cy="%d" r="5" fill="#fbbf24" stroke="#78350f"/>' % (AX1, y))
