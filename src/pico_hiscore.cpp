@@ -29,7 +29,9 @@
 extern volatile int g_menu_done;
 
 struct HsRange { uint16_t addr; uint8_t len, first, last; };
-struct HsGame  { signed char mch; uint16_t base; const HsRange *r; uint8_t n; };
+struct HsGame  { signed char mch; uint16_t base; const HsRange *r; uint8_t n; uint8_t variant; };
+/* ROM set variant of the running machine (pico_menu sets it; 0 = parent set) */
+extern "C" { unsigned char pico_hiscore_variant = 0; }
 
 /* Pac-Man / Ms. Pac-Man (same hardware): score, then the displayed digits. */
 static const HsRange HS_PACMAN[]  = { {0x4e88, 0x04, 0x00, 0x00}, {0x43ed, 0x06, 0x40, 0x40}, {0x43d1, 0x01, 0x48, 0x48} };
@@ -40,6 +42,18 @@ static const HsRange HS_DKONG[]   = { {0x6100, 0xaa, 0x94, 0x76}, {0x60b8, 0x03,
                                       {0x7601, 0x01, 0x07, 0x07}, {0x75e1, 0x01, 0x06, 0x06},
                                       {0x75c1, 0x01, 0x05, 0x05}, {0x75a1, 0x01, 0x00, 0x00} };
 static const HsRange HS_DIGDUG[]  = { {0x89a0, 0x25, 0x01, 0x01} };
+/* DK Jr.: the same table in both sets, but the Japan set boots with a
+ * different default high score (hiscore.dat entries dkongjr / dkongjrj). */
+static const HsRange HS_DKONGJR[]  = { {0x6105, 0x9e, 0x10, 0x10}, {0x60b8, 0x03, 0x50, 0x00},
+                                       {0x7661, 0x01, 0x10, 0x10}, {0x7641, 0x01, 0x00, 0x00},
+                                       {0x7621, 0x01, 0x00, 0x00}, {0x7601, 0x01, 0x07, 0x07},
+                                       {0x75e1, 0x01, 0x06, 0x06}, {0x75c1, 0x01, 0x05, 0x05},
+                                       {0x75a1, 0x01, 0x00, 0x00} };
+static const HsRange HS_DKONGJRJ[] = { {0x6105, 0x9e, 0x10, 0x10}, {0x60b8, 0x03, 0x00, 0x01},
+                                       {0x7661, 0x01, 0x10, 0x10}, {0x7641, 0x01, 0x00, 0x00},
+                                       {0x7621, 0x01, 0x01, 0x01}, {0x7601, 0x01, 0x01, 0x01},
+                                       {0x75e1, 0x01, 0x08, 0x08}, {0x75c1, 0x01, 0x00, 0x00},
+                                       {0x75a1, 0x01, 0x00, 0x00} };
 static const HsRange HS_INVADERS[] = { {0x20f4, 0x02, 0x00, 0x00} };
 static const HsRange HS_SCOBRA[]  = { {0x8200, 0x1e, 0x00, 0x01}, {0x80a8, 0x03, 0x00, 0x01} };
 static const HsRange HS_SCRAMBLE[] = { {0x4200, 0x1e, 0x00, 0x01}, {0x40a8, 0x03, 0x00, 0x01} };
@@ -90,6 +104,13 @@ static const HsGame GAMES[] = {
 #ifdef ENABLE_SCRAMBLE
     HS(MCH_SCRAMBLE, 0x4000, HS_SCRAMBLE),
 #else
+    { -1, 0, nullptr, 0 },
+#endif
+#ifdef ENABLE_DKONGJR
+    HS(MCH_DKONGJR,  0x6000, HS_DKONGJR),
+    { MCH_DKONGJR, 0x6000, HS_DKONGJRJ, (uint8_t)(sizeof(HS_DKONGJRJ) / sizeof(HS_DKONGJRJ[0])), 1 },
+#else
+    { -1, 0, nullptr, 0 },
     { -1, 0, nullptr, 0 },
 #endif
 };
@@ -221,7 +242,8 @@ extern "C" void pico_hiscore_load(void) {
         if (s_store.slot[i].valid != 1 || s_store.slot[i].len > SLOT_DATA)
             memset(&s_store.slot[i], 0, sizeof(HsSlot));
     s_game = -1;
-    for (int i = 0; i < NGAMES; i++) if (GAMES[i].mch == machine && GAMES[i].n) s_game = i;
+    for (int i = 0; i < NGAMES; i++)
+        if (GAMES[i].mch == machine && GAMES[i].n && GAMES[i].variant == pico_hiscore_variant) s_game = i;
     if (s_game >= 0) {
         s_len = table_len(GAMES[s_game]);
         s_initFrames = 0;

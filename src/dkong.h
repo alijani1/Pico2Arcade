@@ -1,4 +1,9 @@
-/* dkong.h */
+/* dkong.h — Donkey Kong, and Donkey Kong Jr. (US parent set dkongjr, or the
+ * Japan set dkongjrj) on the same board. DK Jr. (after GalaginoPlus,
+ * VirtualClaudioBoy, GPLv3) differs in: 24 KB of scrambled main ROM, 512
+ * tiles (bank select 0x7C80), sound command not inverted, sprites rotated
+ * 180 deg against the tiles, and its sound-effect ports (0x7D00-0x7D07,
+ * 0x7D81). Both load into the same runtime pointers. */
 
 /* Runtime-loaded pointers — see dkong_runtime.cpp. */
 #ifdef __cplusplus
@@ -10,6 +15,8 @@ extern unsigned short (*v_5h_b_bin)[8];
 extern unsigned long  (*dkong_sprites)[128][16];
 extern unsigned short (*dkong_colormap)[256][4];
 extern unsigned short (*dkong_colormap_sprite)[16][4];
+extern unsigned char dkong_gfx_bank;           /* DK Jr. tile bank (0 on DK), emulation.c */
+extern unsigned char dkongjr_flip;             /* DK Jr. flip screen latch, emulation.c */
 #ifdef __cplusplus
 }
 #endif
@@ -117,6 +124,42 @@ static inline void dkong_WrZ80(unsigned short Addr, unsigned char Value) {
   }
 }
 
+#ifdef ENABLE_DKONGJR
+static inline unsigned char dkongjr_RdZ80(unsigned short Addr) {
+  if(Addr < 0x6000) return dkong_rom_cpu1[Addr];
+  return dkong_RdZ80(Addr);                  /* RAM and inputs as on DK */
+}
+
+static inline void dkongjr_WrZ80(unsigned short Addr, unsigned char Value) {
+  if(((Addr & 0xf000) == 0x6000) || ((Addr & 0xf800) == 0x7000)) {
+    memory[Addr - 0x6000] = Value;
+    return;
+  }
+  if((Addr & 0xfe00) == 0x7800) return;      /* DMA controller */
+
+  switch(Addr) {
+    case 0x7c00: dkong_sfx_index = Value; return;         /* tune select */
+    case 0x7c80: dkong_gfx_bank = Value & 1; return;
+    /* climb / jump / land: DK's walk / jump / stomp samples (as
+     * GalaginoPlus). Roar (0x7d03), snap jaw (0x7d06) and fall (0x7d81)
+     * would need samples we don't carry. */
+    case 0x7d00: case 0x7d01: case 0x7d02:
+      if(Value) dkong_trigger_sound(Addr & 3);
+      return;
+    case 0x7d04: cpu_8048.T1 = !(Value & 1); return;
+    case 0x7d05: cpu_8048.T0 = !(Value & 1); return;
+    case 0x7d80: cpu_8048.notINT = !(Value & 1); return;  /* death */
+    case 0x7d82: dkongjr_flip = Value & 1; return;
+    case 0x7d84: irq_enable[0] = Value & 1; return;
+    case 0x7d85:                             /* DRQ: sprites 0x6900 -> 0x7000 */
+      if(Value & 1) memcpy(memory + 0x1000, memory + 0x900, 384);
+      return;
+    case 0x7d86: colortable_select = (colortable_select & ~1) | (Value & 1); return;
+    case 0x7d87: colortable_select = (colortable_select & ~2) | ((Value << 1) & 2); return;
+  }
+}
+#endif
+
 static inline void dkong_run_frame(void) {
   game_started = 1; // TODO: make this from some graphic thing
     
@@ -167,6 +210,19 @@ static inline void dkong_prepare_frame(void) {
     spr.flags =  ((sprite_base_ptr[2] & 0x80)?1:0) |
       ((sprite_base_ptr[1] & 0x80)?2:0);
 
+#ifdef ENABLE_DKONGJR
+    if(machine == MCH_DKONGJR) {
+      // DK Jr.: sprite layer rotated 180 deg (as GalaginoPlus, checked on
+      // their hardware); flip screen (cocktail) turns it back
+      if(!sprite_base_ptr[0]) continue;
+      if(!dkongjr_flip) {
+        spr.x = 208 - spr.x;
+        spr.y = 208 - spr.y;
+        spr.flags ^= 3;
+      }
+    }
+#endif
+
     // save sprite in list of active sprites
     if((spr.y > -16) && (spr.y < 288) &&
        (spr.x > -16) && (spr.x < 224))
@@ -181,7 +237,7 @@ static inline void dkong_blit_tile(short row, char col) {
   if((row < 2) || (row >= 34)) return;    
   // skip blank dkong tiles (0x10) in rendering  
   if(memory[0x1400 + addr] == 0x10) return;   
-  const unsigned short *tile = v_5h_b_bin[memory[0x1400 + addr]];
+  const unsigned short *tile = v_5h_b_bin[memory[0x1400 + addr] + 256 * dkong_gfx_bank];
   // donkey kong has some sort of global color table
   const unsigned short *colors = dkong_colormap[colortable_select][row-2 + 32*(col/4)];
 
@@ -209,6 +265,13 @@ static inline void dkong_blit_sprite(short row, unsigned char s) {
   unsigned long mask = 0xffffffff;
   if(sprite[s].x < 0)      mask <<= -2*sprite[s].x;
   if(sprite[s].x > 224-16) mask >>= 2*(sprite[s].x-224-16);    
+
+#ifdef ENABLE_DKONGJR
+  // (the DK line above shifts by a negative count; DK never places a sprite
+  // there, but DK Jr.'s mirrored coordinates do)
+  if(machine == MCH_DKONGJR && sprite[s].x > 224-16)
+    mask = 0xffffffff >> (2*(sprite[s].x-(224-16)));
+#endif
 
   short y_offset = sprite[s].y - 8*row;
 

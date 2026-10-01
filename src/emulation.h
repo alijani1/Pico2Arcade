@@ -56,6 +56,9 @@ enum {
 #ifdef ENABLE_SCRAMBLE
       MCH_SCRAMBLE,
 #endif
+#ifdef ENABLE_DKONGJR
+      MCH_DKONGJR,
+#endif
       MCH_LAST
 };
 
@@ -113,17 +116,17 @@ enum {
     #define DKONG_BEGIN
     #define DKONG_END
   #else
-    #define MACHINE_IS_DKONG  (machine == MCH_DKONG)
+    /* Donkey Kong Jr. runs on the DK code (dkong.h) */
+    #ifdef ENABLE_DKONGJR
+      #define MACHINE_IS_DKONG  (machine == MCH_DKONG || machine == MCH_DKONGJR)
+    #else
+      #define MACHINE_IS_DKONG  (machine == MCH_DKONG)
+    #endif
     // dkong is not the first if pacman or galaga are enabled
     #if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA)
-      // frogger, digdug or 1942 may come afterwards
-      #if defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942)
-        #define DKONG_BEGIN  else if(machine == MCH_DKONG) {
-      #else
-        #define DKONG_BEGIN  else {
-      #endif
+      #define DKONG_BEGIN  else if(MACHINE_IS_DKONG) {
     #else
-      #define DKONG_BEGIN  if(machine == MCH_DKONG) {
+      #define DKONG_BEGIN  if(MACHINE_IS_DKONG) {
     #endif
     #define DKONG_END    }
   #endif
@@ -364,6 +367,9 @@ static inline byte OpZ80_INL(register word Addr) {
 #ifdef ENABLE_DKONG
     /* DKong Z80 (cpu1) — cpu2 is i8048 handled via i8048.c, not rom_table. */
     rom_table[MCH_DKONG][0] = dkong_rom_cpu1;
+#ifdef ENABLE_DKONGJR
+    rom_table[MCH_DKONGJR][0] = dkong_rom_cpu1;   /* 32 KB buffer, 24 KB used */
+#endif
 #endif
 #ifdef ENABLE_DIGDUG
     rom_table[MCH_DIGDUG][0] = digdug_rom_cpu1;
@@ -415,6 +421,9 @@ static inline byte OpZ80_INL(register word Addr) {
 #ifdef ENABLE_FROGGER
   /* Frogger cpu1 padded to 16K, cpu2 padded to 8K. */
   if (machine == MCH_FROGGER && current_cpu == 1) addr_mask = 0x1FFFu;
+#endif
+#ifdef ENABLE_DKONGJR
+  if (machine == MCH_DKONGJR) addr_mask = 0x7FFFu;
 #endif
 #ifdef ENABLE_SCOBRA
   /* Super Cobra cpu1 padded to 32K, cpu2 to 8K. */

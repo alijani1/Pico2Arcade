@@ -564,7 +564,7 @@ DKONG_END
   
 #ifdef ENABLE_DKONG
   #ifndef SINGLE_MACHINE
-  if(machine == MCH_DKONG)
+  if(MACHINE_IS_DKONG)
   #endif
   {
 #ifdef WORKAROUND_I2S_APLL_PROBLEM

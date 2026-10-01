@@ -30,6 +30,8 @@ extern "C" bool runtime_load_mspacman(void);
 extern "C" bool runtime_load_galaga(void);
 extern "C" bool runtime_load_frogger(void);
 extern "C" bool runtime_load_dkong(void);
+extern "C" bool runtime_load_dkongjr(void);
+extern "C" bool runtime_load_dkongjrj(void);
 extern "C" bool runtime_load_digdug(void);
 extern "C" bool runtime_load_invaders(void);
 extern "C" bool runtime_load_scobra(void);
@@ -54,7 +56,9 @@ struct GameEntry {
     signed char mch;
     bool (*loader)(void);
     bool two_fire;       /* separate A / B fire buttons (pico_input.cpp) */
+    unsigned char variant;   /* ROM set variant of the same machine (own high-score slot) */
 };
+extern "C" unsigned char pico_hiscore_variant;
 extern "C" volatile int g_two_fire;
 
 static const GameEntry games[] = {
@@ -114,6 +118,11 @@ static const GameEntry games[] = {
 #endif
 #ifdef ENABLE_INVADERS
     { "Space Invaders", "/roms/invaders.zip", MCH_INVADERS, runtime_load_invaders },
+#endif
+#ifdef ENABLE_DKONGJR
+    /* MAME parent (US) set; the Japan set is listed if that's the zip there */
+    { "Donkey Kong Jr.", "/roms/dkongjr.zip", MCH_DKONGJR, runtime_load_dkongjr },
+    { "Donkey Kong Jr. (J)", "/roms/dkongjrj.zip", MCH_DKONGJR, runtime_load_dkongjrj, false, 1 },
 #endif
 #ifdef ENABLE_SCOBRA
     { "Super Cobra", "/roms/scobra.zip", MCH_SCOBRA, runtime_load_scobra, true },
@@ -545,13 +554,18 @@ extern "C" void pico_menu_pick_and_load(void) {
     }
 
     SET_MACHINE(games[g].mch);
+    pico_hiscore_variant = games[g].variant;
     pico_hiscore_load();         /* saved high scores for this game (needs `machine`) */
 #ifdef ENABLE_DKONG
     /* DKong's i8048 audio CPU produces 11765 Hz samples; other games
      * feed the DAC at 24000 Hz. Upstream's MCH_MENU handler switches
      * rate on game pick — since we bypass it, do it here or the ring
      * buffer starves and ticks. */
-    audio_dkong_bitrate(games[g].mch == MCH_DKONG);
+    audio_dkong_bitrate(games[g].mch == MCH_DKONG
+#ifdef ENABLE_DKONGJR
+                        || games[g].mch == MCH_DKONGJR
+#endif
+                        );
     g_two_fire = games[g].two_fire;
 #endif
     tft.fillScreen(TFT_BLACK);

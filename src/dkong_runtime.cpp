@@ -20,6 +20,12 @@ extern "C" unsigned long  *load_dkong_spritemap_from_zip    (const uint8_t*, siz
 extern "C" unsigned short *load_dkong_cmap_from_zip         (const uint8_t*, size_t);
 extern "C" unsigned short *load_dkong_cmap_sprite_from_zip  (const uint8_t*, size_t);
 
+extern "C" unsigned char  *load_dkongjr_rom_cpu1_from_zip  (const uint8_t*, size_t, bool);
+extern "C" unsigned char  *load_dkongjr_rom_cpu2_from_zip  (const uint8_t*, size_t, bool);
+extern "C" unsigned short *load_dkongjr_tilemap_from_zip   (const uint8_t*, size_t, bool);
+extern "C" unsigned long  *load_dkongjr_spritemap_from_zip (const uint8_t*, size_t, bool);
+extern "C" unsigned short *load_dkongjr_cmap_from_zip      (const uint8_t*, size_t, bool);
+
 static bool sd_slurp(const char *path, uint8_t **out, size_t *out_sz) {
     return romfs_slurp(path, out, out_sz);
 }
@@ -47,3 +53,26 @@ extern "C" bool runtime_load_dkong(void) {
     Serial.printf("[dkong] runtime load %s\n", ok ? "OK" : "FAILED");
     return ok;
 }
+
+/* Donkey Kong Jr.: same pointers, DK Jr. files (512 tiles, 24 KB main ROM
+ * in a 32 KB buffer). US parent set or the Japan set. */
+static bool load_dkongjr_set(const char *path, bool japan) {
+    uint8_t *zip = nullptr; size_t zip_sz = 0;
+    if (!sd_slurp(path, &zip, &zip_sz)) { Serial.printf("[dkongjr] can't read %s\n", path); return false; }
+
+    dkong_rom_cpu1        = load_dkongjr_rom_cpu1_from_zip(zip, zip_sz, japan);
+    dkong_rom_cpu2        = load_dkongjr_rom_cpu2_from_zip(zip, zip_sz, japan);
+    v_5h_b_bin            = (unsigned short (*)[8])load_dkongjr_tilemap_from_zip(zip, zip_sz, japan);
+    dkong_sprites         = (unsigned long  (*)[128][16])load_dkongjr_spritemap_from_zip(zip, zip_sz, japan);
+    dkong_colormap        = (unsigned short (*)[256][4])load_dkongjr_cmap_from_zip(zip, zip_sz, japan);
+    /* shares the palette the cmap loader just built */
+    dkong_colormap_sprite = (unsigned short (*)[16][4])load_dkong_cmap_sprite_from_zip(zip, zip_sz);
+    free(zip);
+
+    bool ok = dkong_rom_cpu1 && dkong_rom_cpu2 && v_5h_b_bin && dkong_sprites
+           && dkong_colormap && dkong_colormap_sprite;
+    Serial.printf("[dkongjr] runtime load %s\n", ok ? "OK" : "FAILED");
+    return ok;
+}
+extern "C" bool runtime_load_dkongjr(void)  { return load_dkongjr_set("/roms/dkongjr.zip", false); }
+extern "C" bool runtime_load_dkongjrj(void) { return load_dkongjr_set("/roms/dkongjrj.zip", true); }

@@ -21,6 +21,7 @@
 extern "C" {
 #include "uzlib.h"
 }
+#include "pico_romcheck.h"   /* romcheck_crcs_for: find renamed ROM files by CRC */
 
 /* Pre-baked headers no longer #included — the game now reads via
  * runtime pointers populated by runtime_load_pacman(). */
@@ -37,16 +38,20 @@ static bool sd_slurp(const char *path, uint8_t **out_buf, size_t *out_size) {
 }
 
 /* Extract one entry by name into `dst`. Returns true on success.
- * Handles STORED (memcpy) and DEFLATE (uzlib). */
-static bool zip_extract(const uint8_t *zip, size_t zip_size,
-                        const char *want_name,
-                        uint8_t *dst, size_t dst_capacity,
-                        size_t *out_size) {
+ * Handles STORED (memcpy) and DEFLATE (uzlib). If no entry has that name,
+ * the entry whose CRC32 is one the ROM check expects for the name is used
+ * instead: MAME renames ROM files between versions (e.g. dkongjr's dkj.5b
+ * vs djr1-c_5b_f-2.5b), the contents stay the same. */
+static bool zip_extract_one(const uint8_t *zip, size_t zip_size,
+                            const char *want_name, const uint32_t *want_crc, int ncrc,
+                            uint8_t *dst, size_t dst_capacity,
+                            size_t *out_size) {
     const uint8_t *p = zip;
     const uint8_t *end = zip + zip_size;
     while (p + 30 <= end) {
         if (rd32(p) != 0x04034b50u) return false;
         uint16_t method  = rd16(p + 8);
+        uint32_t crc     = rd32(p + 14);
         uint32_t csize   = rd32(p + 18);
         uint32_t usize   = rd32(p + 22);
         uint16_t nlen    = rd16(p + 26);
@@ -59,7 +64,9 @@ static bool zip_extract(const uint8_t *zip, size_t zip_size,
         int nl = nlen < (int)sizeof(nbuf) - 1 ? nlen : (int)sizeof(nbuf) - 1;
         memcpy(nbuf, name, nl); nbuf[nl] = 0;
 
-        if (strcmp(nbuf, want_name) == 0) {
+        bool match = want_name ? (strcmp(nbuf, want_name) == 0) : false;
+        for (int i = 0; !match && i < ncrc; i++) match = (crc == want_crc[i]);
+        if (match) {
             if (usize > dst_capacity) return false;
             if (method == 0) {
                 if (csize != usize) return false;
@@ -78,16 +85,31 @@ static bool zip_extract(const uint8_t *zip, size_t zip_size,
                 uzlib_uncompress_init(&d, NULL, 0);
                 int rc = uzlib_uncompress(&d);
                 if (rc != 0 && rc != TINF_DONE) {
-                    Serial.printf("[loader] uzlib rc=%d for %s\n", rc, want_name);
+                    Serial.printf("[loader] uzlib rc=%d for %s\n", rc, nbuf);
                     return false;
                 }
                 if (out_size) *out_size = usize;
                 return true;
             }
-            Serial.printf("[loader] unsupported method %u for %s\n", method, want_name);
+            Serial.printf("[loader] unsupported method %u for %s\n", method, nbuf);
             return false;
         }
         p = data + csize;
+    }
+    return false;
+}
+
+static bool zip_extract(const uint8_t *zip, size_t zip_size,
+                        const char *want_name,
+                        uint8_t *dst, size_t dst_capacity,
+                        size_t *out_size) {
+    if (zip_extract_one(zip, zip_size, want_name, nullptr, 0, dst, dst_capacity, out_size))
+        return true;
+    uint32_t crcs[4];
+    int n = romcheck_crcs_for(want_name, crcs, 4);
+    if (n && zip_extract_one(zip, zip_size, nullptr, crcs, n, dst, dst_capacity, out_size)) {
+        Serial.printf("[loader] %s: found by CRC under another name\n", want_name);
+        return true;
     }
     return false;
 }
@@ -663,10 +685,9 @@ extern "C" unsigned short *load_dkong_tilemap_from_zip(const uint8_t *zip, size_
 
 /* Sprites: 4 files of 2K, parts of each 16x16 sprite spread across ALL four.
  * 128 sprites × 4 flip variants × 16 rows × 4 bytes = 32 KB. */
-extern "C" unsigned long *load_dkong_spritemap_from_zip(const uint8_t *zip, size_t sz) {
+static unsigned long *load_dk_sprites(const uint8_t *zip, size_t sz, const char *const names[4]) {
     RomScratch rbuf(8192); if (!rbuf) return nullptr;
     uint8_t (*r)[2048] = (uint8_t (*)[2048])(uint8_t *)rbuf;
-    static const char *names[4] = { "l_4m_b.bin", "l_4n_b.bin", "l_4r_b.bin", "l_4s_b.bin" };
     size_t got = 0;
     for (int i = 0; i < 4; i++) {
         if (!zip_extract(zip, sz, names[i], r[i], 2048, &got) || got != 2048) {
@@ -701,6 +722,11 @@ extern "C" unsigned long *load_dkong_spritemap_from_zip(const uint8_t *zip, size
     return out;
 }
 
+extern "C" unsigned long *load_dkong_spritemap_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *const names[4] = { "l_4m_b.bin", "l_4n_b.bin", "l_4r_b.bin", "l_4s_b.bin" };
+    return load_dk_sprites(zip, sz, names);
+}
+
 /* Cmap: 2 4-bit palette PROMs + 1 lookup PROM. Produces TWO output
  * arrays: dkong_colormap[4][256][4] and dkong_colormap_sprite[4][16][4].
  * Palette uses inverted rrrgggbb encoding (higher = darker on real HW). */
@@ -716,12 +742,12 @@ static void build_dkong_palette(const uint8_t *low4, const uint8_t *high4) {
     }
 }
 
-extern "C" unsigned short *load_dkong_cmap_from_zip(const uint8_t *zip, size_t sz) {
+static unsigned short *load_dk_cmap(const uint8_t *zip, size_t sz, const char *low, const char *high, const char *lut) {
     uint8_t plow[256], phigh[256], lookup[256];
     size_t got = 0;
-    if (!zip_extract(zip, sz, "c-2k.bpr", plow,   256, &got) || got != 256) return nullptr;
-    if (!zip_extract(zip, sz, "c-2j.bpr", phigh,  256, &got) || got != 256) return nullptr;
-    if (!zip_extract(zip, sz, "v-5e.bpr", lookup, 256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, low,  plow,   256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, high, phigh,  256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, lut,  lookup, 256, &got) || got != 256) return nullptr;
     build_dkong_palette(plow, phigh);
     /* [4 screens][256 groups][4 shorts] */
     unsigned short *out = (unsigned short *)malloc(4 * 256 * 4 * sizeof(unsigned short));
@@ -733,6 +759,10 @@ extern "C" unsigned short *load_dkong_cmap_from_zip(const uint8_t *zip, size_t s
                 out[s*256*4 + g*4 + j] = dkong_palette[4*idx + j];
         }
     return out;
+}
+
+extern "C" unsigned short *load_dkong_cmap_from_zip(const uint8_t *zip, size_t sz) {
+    return load_dk_cmap(zip, sz, "c-2k.bpr", "c-2j.bpr", "v-5e.bpr");
 }
 
 extern "C" unsigned short *load_dkong_cmap_sprite_from_zip(const uint8_t *zip, size_t sz) {
@@ -765,6 +795,78 @@ extern "C" unsigned short *load_frogger_cmap_from_zip(const uint8_t *zip, size_t
         out[i] = (uint16_t)(((rgb & 0xff00) >> 8) | ((rgb & 0xff) << 8));
     }
     return out;
+}
+
+/* ============================== DK JR. ============================== */
+/* US parent set (dkongjr) or Japan set (dkongjrj): same layout, different
+ * file names (and program / tile contents). Loads into the DK pointers. */
+struct DkjrSet {
+    const char *cpu1[3], *snd, *tile[2], *spr[4], *pal_low, *pal_high, *lut;
+};
+static const DkjrSet DKJR_US = {
+    { "djr1-c_5b_f-2.5b", "djr1-c_5c_f-2.5c", "djr1-c_5e_f-2.5e" }, "djr1-c_3h.3h",
+    { "djr1-v.3n", "djr1-v.3p" }, { "djr1-v_7c.7c", "djr1-v_7d.7d", "djr1-v_7e.7e", "djr1-v_7f.7f" },
+    "djr1-c-2e.2e", "djr1-c-2f.2f", "djr1-v-2n.2n" };
+static const DkjrSet DKJR_JP = {
+    { "c_5ba.bin", "c_5ca.bin", "c_5ea.bin" }, "c_3h.bin",
+    { "v_3na.bin", "v_3pa.bin" }, { "v_7c.bin", "v_7d.bin", "v_7e.bin", "v_7f.bin" },
+    "c-2e.bpr", "c-2f.bpr", "v-2n.bpr" };
+static const DkjrSet *dkjr_set(bool japan) { return japan ? &DKJR_JP : &DKJR_US; }
+
+/* Main CPU: 3 x 8 KB chips, each spread over the 24 KB map in 2 / 4 KB
+ * pieces (MAME ROM_LOAD + ROM_CONTINUE). 32 KB buffer = fetch mask. */
+extern "C" unsigned char *load_dkongjr_rom_cpu1_from_zip(const uint8_t *zip, size_t sz, bool japan) {
+    static const struct { uint16_t dst[4]; uint16_t len; } map[3] = {
+        { { 0x0000, 0x3000, 0xffff, 0xffff }, 0x1000 },
+        { { 0x2000, 0x4800, 0x1000, 0x5800 }, 0x0800 },
+        { { 0x4000, 0x2800, 0x5000, 0x1800 }, 0x0800 },
+    };
+    RomScratch chip(8192); if (!chip) return nullptr;
+    unsigned char *out = (unsigned char *)malloc(0x8000);
+    if (!out) return nullptr;
+    memset(out, 0xff, 0x8000);
+    for (int c = 0; c < 3; c++) {
+        const char *name = dkjr_set(japan)->cpu1[c];
+        size_t got = 0;
+        if (!zip_extract(zip, sz, name, chip, 8192, &got) || got != 8192) {
+            Serial.printf("[loader] dkongjr cpu1 %s failed\n", name);
+            free(out); return nullptr;
+        }
+        for (int p = 0; p < 4 && map[c].dst[p] != 0xffff; p++)
+            memcpy(out + map[c].dst[p], chip + p * map[c].len, map[c].len);
+    }
+    return out;
+}
+
+/* i8048: one 4 KB ROM (same layout as DK's two 2 KB halves). */
+extern "C" unsigned char *load_dkongjr_rom_cpu2_from_zip(const uint8_t *zip, size_t sz, bool japan) {
+    unsigned char *out = (unsigned char *)malloc(4096);
+    if (!out) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, dkjr_set(japan)->snd, out, 4096, &got) || got != 4096) { free(out); return nullptr; }
+    return out;
+}
+
+/* 512 tiles (2 banks) from 2 x 4 KB planes. */
+extern "C" unsigned short *load_dkongjr_tilemap_from_zip(const uint8_t *zip, size_t sz, bool japan) {
+    RomScratch raw0(4096); if (!raw0) return nullptr;
+    RomScratch raw1(4096); if (!raw1) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, dkjr_set(japan)->tile[0], raw0, 4096, &got) || got != 4096) return nullptr;
+    if (!zip_extract(zip, sz, dkjr_set(japan)->tile[1], raw1, 4096, &got) || got != 4096) return nullptr;
+    unsigned short *out = (unsigned short *)malloc(512 * 8 * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int c = 0; c < 512; c++) decode_tile_frogger(&raw0[8 * c], &raw1[8 * c], &out[c * 8]);
+    return out;
+}
+
+/* Sprites, palette and lookup: DK's decoders with DK Jr.'s files. */
+extern "C" unsigned long *load_dkongjr_spritemap_from_zip(const uint8_t *zip, size_t sz, bool japan) {
+    return load_dk_sprites(zip, sz, dkjr_set(japan)->spr);
+}
+extern "C" unsigned short *load_dkongjr_cmap_from_zip(const uint8_t *zip, size_t sz, bool japan) {
+    const DkjrSet *s = dkjr_set(japan);
+    return load_dk_cmap(zip, sz, s->pal_low, s->pal_high, s->lut);
 }
 
 /* ============================== DIGDUG ============================== */

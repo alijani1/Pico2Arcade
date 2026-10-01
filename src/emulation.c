@@ -75,6 +75,8 @@ struct i8048_state_S cpu_8048;
 
 // sound effects register between 8048 and z80
 unsigned char dkong_sfx_index = 0x00;
+unsigned char dkong_gfx_bank = 0;     // DK Jr. tile bank
+unsigned char dkongjr_flip = 0;       // DK Jr. flip screen
 #endif
 
 #ifdef ENABLE_FROGGER
@@ -436,6 +438,11 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
       scramble_WrZ80(Addr, Value);
       return;
 #endif
+#ifdef ENABLE_DKONGJR
+    case MCH_DKONGJR:
+      dkongjr_WrZ80(Addr, Value);
+      return;
+#endif
 #ifndef SINGLE_MACHINE
   }
 #endif
@@ -556,6 +563,10 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
     case MCH_SCRAMBLE:
       return scramble_RdZ80(Addr);
 #endif
+#ifdef ENABLE_DKONGJR
+    case MCH_DKONGJR:
+      return dkongjr_RdZ80(Addr);
+#endif
 #ifndef SINGLE_MACHINE
   }
   return 0xff;
@@ -627,9 +638,13 @@ unsigned char i8048_port_read(struct i8048_state_S *state, unsigned char port) {
 void i8048_xdm_write(struct i8048_state_S *state, unsigned char addr, unsigned char data) { }
 
 unsigned char i8048_xdm_read(struct i8048_state_S *state, unsigned char addr) {
-  // inverted Z80 MUS register
-  if(state->p2_state & 0x40)
+  // inverted Z80 MUS register (not inverted on DK Jr.)
+  if(state->p2_state & 0x40) {
+#ifdef ENABLE_DKONGJR
+    if(machine == MCH_DKONGJR) return dkong_sfx_index;
+#endif
     return dkong_sfx_index ^ 0x0f;
+  }
   
   return dkong_rom_cpu2[2048 + addr + 256 * (state->p2_state & 7)];
 }

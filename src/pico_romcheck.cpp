@@ -151,15 +151,64 @@ static const RomFile scramble_files[] = {
     { "s8.2p", 0x6a5740e5u },
 };
 
+static const RomFile dkongjr_files[] = {    /* MAME dkongjr (US, parent) */
+    { "djr1-c-2e.2e", 0x463dc7adu },
+    { "djr1-c-2f.2f", 0x47ba0042u },
+    { "djr1-c_3h.3h", 0x715da5f8u },
+    { "djr1-c_5b_f-2.5b", 0xdea28158u },
+    { "djr1-c_5c_f-2.5c", 0x6fb5faf6u },
+    { "djr1-c_5e_f-2.5e", 0xd042b6a8u },
+    { "djr1-v-2n.2n", 0xdbf185bfu },
+    { "djr1-v.3n", 0x8d51aca9u },
+    { "djr1-v.3p", 0x4ef64ba5u },
+    { "djr1-v_7c.7c", 0xdc7f4164u },
+    { "djr1-v_7d.7d", 0x0ce7dcf6u },
+    { "djr1-v_7e.7e", 0x24d1ff17u },
+    { "djr1-v_7f.7f", 0x0f8c083fu },
+};
+static const RomFile dkongjrj_files[] = {   /* MAME dkongjrj (Japan) */
+    { "c-2e.bpr", 0x463dc7adu },
+    { "c-2f.bpr", 0x47ba0042u },
+    { "c_3h.bin", 0x715da5f8u },
+    { "c_5ba.bin", 0x50a015ceu },
+    { "c_5ca.bin", 0xc0a18f0du },
+    { "c_5ea.bin", 0xa81dd00cu },
+    { "v-2n.bpr", 0xdbf185bfu },
+    { "v_3na.bin", 0xa95c4c63u },
+    { "v_3pa.bin", 0x4974ffefu },
+    { "v_7c.bin", 0xdc7f4164u },
+    { "v_7d.bin", 0x0ce7dcf6u },
+    { "v_7e.bin", 0x24d1ff17u },
+    { "v_7f.bin", 0x0f8c083fu },
+};
+
 struct RomSet { const char *zip; const RomFile *files; int n; };
 #define SET(z) { "/roms/" #z ".zip", z##_files, (int)(sizeof(z##_files) / sizeof(z##_files[0])) }
 static const RomSet SETS[] = {
-    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble),
+    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj),
 };
 
 static inline uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static inline uint32_t rd32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+extern "C" int romcheck_crcs_for(const char *name, uint32_t *crcs, int max) {
+    int n = 0;
+    for (const RomSet &s : SETS)
+        for (int i = 0; i < s.n && n < max; i++)
+            if (strcmp(s.files[i].name, name) == 0) crcs[n++] = s.files[i].crc;
+    return n;
+}
+
+/* Is there an entry with this CRC32 in the zip (under any name)? */
+static bool zip_has_crc(const uint8_t *zip, size_t size, uint32_t crc) {
+    const uint8_t *p = zip, *end = zip + size;
+    while (p + 30 <= end && rd32(p) == 0x04034b50u) {
+        if (rd32(p + 14) == crc) return true;
+        p += 30 + rd16(p + 26) + rd16(p + 28) + rd32(p + 18);
+    }
+    return false;
 }
 
 /* CRC32 of `name` from the zip's local headers (the same walk the loader's
@@ -191,8 +240,12 @@ extern "C" bool romcheck_zip(const char *zipPath, char *why, size_t whyLen) {
     const char *first = nullptr;
     for (int i = 0; i < set->n; i++) {
         uint32_t crc;
-        if (!zip_crc(zip, size, set->files[i].name, &crc)) { if (!first) first = set->files[i].name; missing++; ok = false; }
-        else if (crc != set->files[i].crc) { if (!first) first = set->files[i].name; wrong++; ok = false; }
+        bool named = zip_crc(zip, size, set->files[i].name, &crc);
+        if (named && crc == set->files[i].crc) continue;
+        if (zip_has_crc(zip, size, set->files[i].crc)) continue;     /* same ROM, other name */
+        if (!first) first = set->files[i].name;
+        if (named) wrong++; else missing++;
+        ok = false;
     }
     free(zip);
     if (!ok) {
