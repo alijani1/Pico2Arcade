@@ -501,14 +501,26 @@ extern "C" void pico_menu_pick_and_load(void) {
                 vol_shown = pico_audio_get_volume_pct();
                 draw_volume(tft);
             }
-            /* Edge-detect direction/fire — react on press, not on hold. */
-            if ((m & BUTTON_UP) && !(prev_mask & BUTTON_UP)) {
-                if (--sel < 0) sel = menu_rows() - 1;
-                draw_menu(tft, sel);
-            }
-            if ((m & BUTTON_DOWN) && !(prev_mask & BUTTON_DOWN)) {
-                if (++sel >= menu_rows()) sel = 0;
-                draw_menu(tft, sel);
+            /* UP / DOWN: a press moves one row (wrapping at the ends); held,
+             * it repeats after 400 ms every 120 ms, stopping at the first /
+             * last row so it doesn't race round the list. */
+            {
+                static unsigned long repeat_at = 0;
+                const unsigned char dirs = BUTTON_UP | BUTTON_DOWN;
+                unsigned char d = m & dirs;
+                int step = 0;
+                bool fresh = d && !(prev_mask & d);
+                if (fresh) repeat_at = millis() + 400;
+                else if (d && (long)(millis() - repeat_at) >= 0) repeat_at = millis() + 120;
+                else d = 0;
+                if (d & BUTTON_UP)   step = -1;
+                if (d & BUTTON_DOWN) step = +1;
+                if (step) {
+                    int n = sel + step;
+                    if (fresh) n = (n + menu_rows()) % menu_rows();
+                    else if (n < 0 || n >= menu_rows()) n = sel;
+                    if (n != sel) { sel = n; draw_menu(tft, sel); }
+                }
             }
             /* Volume row: LEFT/RIGHT step it in place. */
             if (row_kind(sel) == ROW_VOLUME) {
