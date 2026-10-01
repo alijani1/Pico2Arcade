@@ -24,6 +24,7 @@
 #  define ENABLE_DIGDUG
 #  define ENABLE_DKONGJR      /* needs ENABLE_DKONG (shared driver) */
 #  define ENABLE_INVADERS
+#  define ENABLE_POOYAN
 #  define ENABLE_SCOBRA
 #  define ENABLE_SCRAMBLE     /* needs ENABLE_SCOBRA (shared driver) */
 #endif

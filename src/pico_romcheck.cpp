@@ -182,10 +182,26 @@ static const RomFile dkongjrj_files[] = {   /* MAME dkongjrj (Japan) */
     { "v_7f.bin", 0x0f8c083fu },
 };
 
+static const RomFile pooyan_files[] = {
+    { "1.4a", 0xbb319c63u },
+    { "2.5a", 0xa1463d98u },
+    { "3.6a", 0xfe1a9e08u },
+    { "4.7a", 0x9e0f9bccu },
+    { "5.8a", 0x1097c2b6u },
+    { "6.9a", 0xb2d8c121u },
+    { "7.9g", 0xbbe6d6e4u },
+    { "8.10g", 0x931b29ebu },
+    { "pooyan.pr1", 0xa06a6d0eu },
+    { "pooyan.pr2", 0x82748c0bu },
+    { "pooyan.pr3", 0x8cd4cd60u },
+    { "xx.7a", 0xfbe2b368u },
+    { "xx.8a", 0xe1795b3du },
+};
+
 struct RomSet { const char *zip; const RomFile *files; int n; };
 #define SET(z) { "/roms/" #z ".zip", z##_files, (int)(sizeof(z##_files) / sizeof(z##_files[0])) }
 static const RomSet SETS[] = {
-    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj),
+    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj), SET(pooyan),
 };
 
 static inline uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }

@@ -218,4 +218,10 @@
 #define SCRAMBLE_DIP_IN1  0xfc
 #define SCRAMBLE_DIP_IN2  0x00
 
+// Pooyan (MAME defaults): DSW0 = coinage (1 coin 1 credit both slots);
+// DSW1 bits 0-1 lives (11 = 3), 2 cabinet (0 = upright), 3 bonus (1 = 50K 80K+),
+// 4-6 difficulty (111 = 1, easy), 7 demo sounds (0 = on)
+#define POOYAN_DSW0  0xff
+#define POOYAN_DSW1  0x7b
+
 #endif // _DIP_SWITCHES_H_

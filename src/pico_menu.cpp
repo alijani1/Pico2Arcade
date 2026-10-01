@@ -35,6 +35,7 @@ extern "C" bool runtime_load_dkongjrj(void);
 extern "C" bool runtime_load_digdug(void);
 extern "C" bool runtime_load_invaders(void);
 extern "C" bool runtime_load_scobra(void);
+extern "C" bool runtime_load_pooyan(void);
 extern "C" bool runtime_load_scramble(void);
 extern "C" unsigned char buttons_get(void);
 /* Gate that setup1() polls before starting the emulator on core 1.
@@ -123,6 +124,9 @@ static const GameEntry games[] = {
     /* MAME parent (US) set; the Japan set is listed if that's the zip there */
     { "Donkey Kong Jr.", "/roms/dkongjr.zip", MCH_DKONGJR, runtime_load_dkongjr },
     { "Donkey Kong Jr. (J)", "/roms/dkongjrj.zip", MCH_DKONGJR, runtime_load_dkongjrj, false, 1 },
+#endif
+#ifdef ENABLE_POOYAN
+    { "Pooyan", "/roms/pooyan.zip", MCH_POOYAN, runtime_load_pooyan },
 #endif
 #ifdef ENABLE_SCOBRA
     { "Super Cobra", "/roms/scobra.zip", MCH_SCOBRA, runtime_load_scobra, true },

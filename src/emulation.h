@@ -50,6 +50,9 @@ enum {
 #ifdef ENABLE_INVADERS
       MCH_INVADERS,
 #endif
+#ifdef ENABLE_POOYAN
+      MCH_POOYAN,
+#endif
 #ifdef ENABLE_SCOBRA
       MCH_SCOBRA,
 #endif
@@ -192,6 +195,11 @@ enum {
   #define INVADERS_BEGIN  else if(machine == MCH_INVADERS) {
   #define INVADERS_END    }
 #endif
+#ifdef ENABLE_POOYAN
+  #define MACHINE_IS_POOYAN  (machine == MCH_POOYAN)
+  #define POOYAN_BEGIN  else if(machine == MCH_POOYAN) {
+  #define POOYAN_END    }
+#endif
 #ifdef ENABLE_SCOBRA
   /* Super Cobra and Scramble share the driver (scobra.h) */
   #ifdef ENABLE_SCRAMBLE
@@ -214,7 +222,7 @@ extern char game_started;
 #ifdef ENABLE_GALAGA
 extern unsigned char starcontrol;
 #endif
-#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA)
+#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN)
 extern unsigned char soundregs[32];
 #endif
 #ifndef SINGLE_MACHINE
@@ -301,6 +309,16 @@ extern "C" unsigned char *invaders_rom;
 extern unsigned char *invaders_rom;
 #endif
 #endif
+#ifdef ENABLE_POOYAN
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char *pooyan_rom_cpu1;
+extern unsigned char *pooyan_rom_cpu2;
+#ifdef __cplusplus
+}
+#endif
+#endif
 #ifdef ENABLE_SCOBRA
 #ifdef __cplusplus
 extern "C" {
@@ -376,6 +394,10 @@ static inline byte OpZ80_INL(register word Addr) {
     rom_table[MCH_DIGDUG][1] = digdug_rom_cpu2;
     rom_table[MCH_DIGDUG][2] = digdug_rom_cpu3;
 #endif
+#ifdef ENABLE_POOYAN
+    rom_table[MCH_POOYAN][0] = pooyan_rom_cpu1;
+    rom_table[MCH_POOYAN][1] = pooyan_rom_cpu2;
+#endif
 #ifdef ENABLE_SCOBRA
     rom_table[MCH_SCOBRA][0] = scobra_rom_cpu1;
     rom_table[MCH_SCOBRA][1] = scobra_rom_cpu2;
@@ -424,6 +446,10 @@ static inline byte OpZ80_INL(register word Addr) {
 #endif
 #ifdef ENABLE_DKONGJR
   if (machine == MCH_DKONGJR) addr_mask = 0x7FFFu;
+#endif
+#ifdef ENABLE_POOYAN
+  /* Pooyan cpu1 32K, cpu2 8K. */
+  if (machine == MCH_POOYAN) addr_mask = current_cpu ? 0x1FFFu : 0x7FFFu;
 #endif
 #ifdef ENABLE_SCOBRA
   /* Super Cobra cpu1 padded to 32K, cpu2 to 8K. */

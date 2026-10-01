@@ -120,7 +120,7 @@ unsigned long master_attract_timeout = 0;
 
 #endif
 
-#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA)
+#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN)
 // mirror of sounds registers
 unsigned char soundregs[32] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
@@ -257,6 +257,10 @@ unsigned char namco_read_dd(unsigned short Addr) {
 
 #ifdef ENABLE_SCOBRA
 #include "scobra.h"
+#endif
+
+#ifdef ENABLE_POOYAN
+#include "pooyan.h"
 #endif
 
 
@@ -433,6 +437,11 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
       scobra_WrZ80(Addr, Value);
       return;
 #endif
+#ifdef ENABLE_POOYAN
+    case MCH_POOYAN:
+      pooyan_WrZ80(Addr, Value);
+      return;
+#endif
 #ifdef ENABLE_SCRAMBLE
     case MCH_SCRAMBLE:
       scramble_WrZ80(Addr, Value);
@@ -558,6 +567,10 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
 #ifdef ENABLE_SCOBRA
     case MCH_SCOBRA:
       return scobra_RdZ80(Addr);
+#endif
+#ifdef ENABLE_POOYAN
+    case MCH_POOYAN:
+      return pooyan_RdZ80(Addr);
 #endif
 #ifdef ENABLE_SCRAMBLE
     case MCH_SCRAMBLE:
@@ -790,6 +803,12 @@ INVADERS_END
 SCOBRA_BEGIN
   scobra_run_frame();
 SCOBRA_END
+#endif
+
+#ifdef ENABLE_POOYAN
+POOYAN_BEGIN
+  pooyan_run_frame();
+POOYAN_END
 #endif
 
   sof = micros() - sof;

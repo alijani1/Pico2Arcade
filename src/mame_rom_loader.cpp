@@ -1164,3 +1164,96 @@ extern "C" unsigned short *load_scobra_cmap_from_zip(const uint8_t *zip, size_t 
     }
     return out;
 }
+
+/* ============================== POOYAN ============================== */
+
+extern "C" unsigned char *load_pooyan_rom_cpu1_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *names[4] = { "1.4a", "2.5a", "3.6a", "4.7a" };
+    return load_concat(zip, sz, names, 4, 8192, "pooyan cpu1");
+}
+extern "C" unsigned char *load_pooyan_rom_cpu2_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *names[2] = { "xx.7a", "xx.8a" };
+    return load_concat(zip, sz, names, 2, 4096, "pooyan cpu2");
+}
+
+/* MAME char/sprite layout: 4 planes { half2+4, half2+0, 4, 0 } (MSB first),
+ * bits read MSB-first: for x in 0..3 within a byte pair. */
+static inline uint8_t pooyan_pixel4(const uint8_t *h1, const uint8_t *h2, int off, int xo) {
+    uint8_t b1 = h1[off], b2 = h2[off];
+    return (uint8_t)((((b2 >> (3 - xo)) & 1) << 3) | (((b2 >> (7 - xo)) & 1) << 2) |
+                     (((b1 >> (3 - xo)) & 1) << 1) |  ((b1 >> (7 - xo)) & 1));
+}
+
+/* 256 tiles 8x8, rotated 90 deg CW for portrait, 8 nibbles per row. */
+extern "C" unsigned long *load_pooyan_tiles_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch h1(4096); if (!h1) return nullptr;
+    RomScratch h2(4096); if (!h2) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "8.10g", h1, 4096, &got) || got != 4096) return nullptr;
+    if (!zip_extract(zip, sz, "7.9g",  h2, 4096, &got) || got != 4096) return nullptr;
+    unsigned long *out = (unsigned long *)malloc(256 * 8 * sizeof(unsigned long));
+    if (!out) return nullptr;
+    for (int t = 0; t < 256; t++) {
+        uint8_t land[8][8];
+        for (int row = 0; row < 8; row++)
+            for (int col = 0; col < 8; col++)
+                land[row][col] = pooyan_pixel4(h1, h2, t * 16 + row + (col >= 4 ? 8 : 0), col & 3);
+        for (int py = 0; py < 8; py++) {
+            uint32_t v = 0;
+            for (int px = 0; px < 8; px++) v |= (uint32_t)land[7 - px][py] << (px * 4);
+            out[t * 8 + py] = v;
+        }
+    }
+    return out;
+}
+
+/* 64 sprites 16x16, landscape, one pen per byte (flips are done while drawing). */
+extern "C" unsigned char *load_pooyan_sprites_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch h1(4096); if (!h1) return nullptr;
+    RomScratch h2(4096); if (!h2) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "6.9a", h1, 4096, &got) || got != 4096) return nullptr;
+    if (!zip_extract(zip, sz, "5.8a", h2, 4096, &got) || got != 4096) return nullptr;
+    unsigned char *out = (unsigned char *)malloc(64 * 16 * 16);
+    if (!out) return nullptr;
+    for (int s = 0; s < 64; s++)
+        for (int row = 0; row < 16; row++) {
+            int rb = row < 8 ? row : 24 + row;
+            for (int col = 0; col < 16; col++)
+                out[(s * 16 + row) * 16 + col] = pooyan_pixel4(h1, h2, s * 64 + rb + (col >> 2) * 8, col & 3);
+        }
+    return out;
+}
+
+/* pr1: 32-colour palette (R/G 1k-470-220, B 470-220). pr3: char lookup
+ * (| 0x10), pr2: sprite lookup. Output: 16x16 char colours, 16x16 sprite
+ * colours, 16 sprite transparency masks (pen transparent if its lookup is 0). */
+extern "C" unsigned short *load_pooyan_colors_from_zip(const uint8_t *zip, size_t sz) {
+    uint8_t pr1[32], pr2[256], pr3[256];
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "pooyan.pr1", pr1, 32, &got)  || got != 32)  return nullptr;
+    if (!zip_extract(zip, sz, "pooyan.pr2", pr2, 256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, "pooyan.pr3", pr3, 256, &got) || got != 256) return nullptr;
+    uint16_t pal[32];
+    for (int i = 0; i < 32; i++) {
+        uint8_t v = pr1[i];
+        int r = 33 * ((v >> 0) & 1) + 71 * ((v >> 1) & 1) + 151 * ((v >> 2) & 1);
+        int g = 33 * ((v >> 3) & 1) + 71 * ((v >> 4) & 1) + 151 * ((v >> 5) & 1);
+        int b = 81 * ((v >> 6) & 1) + 174 * ((v >> 7) & 1);
+        if (r > 255) r = 255;
+        if (g > 255) g = 255;
+        if (b > 255) b = 255;
+        uint16_t c = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        pal[i] = (uint16_t)((c >> 8) | (c << 8));
+    }
+    unsigned short *out = (unsigned short *)malloc((256 + 256 + 16) * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int i = 0; i < 256; i++) out[i]       = pal[(pr3[i] & 0x0f) | 0x10];
+    for (int i = 0; i < 256; i++) out[256 + i] = pal[pr2[i] & 0x0f];
+    for (int g = 0; g < 16; g++) {
+        uint16_t m = 0;
+        for (int p = 0; p < 16; p++) if ((pr2[g * 16 + p] & 0x0f) == 0) m |= 1 << p;
+        out[512 + g] = m;
+    }
+    return out;
+}

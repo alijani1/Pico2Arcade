@@ -54,6 +54,8 @@ static const HsRange HS_DKONGJRJ[] = { {0x6105, 0x9e, 0x10, 0x10}, {0x60b8, 0x03
                                        {0x7621, 0x01, 0x01, 0x01}, {0x7601, 0x01, 0x01, 0x01},
                                        {0x75e1, 0x01, 0x08, 0x08}, {0x75c1, 0x01, 0x00, 0x00},
                                        {0x75a1, 0x01, 0x00, 0x00} };
+static const HsRange HS_POOYAN[]   = { {0x89c0, 0x1e, 0x00, 0x00}, {0x8a00, 0x1e, 0x00, 0x01},
+                                       {0x8e00, 0x1e, 0x00, 0x00}, {0x88a8, 0x03, 0x00, 0x01} };
 static const HsRange HS_INVADERS[] = { {0x20f4, 0x02, 0x00, 0x00} };
 static const HsRange HS_SCOBRA[]  = { {0x8200, 0x1e, 0x00, 0x01}, {0x80a8, 0x03, 0x00, 0x01} };
 static const HsRange HS_SCRAMBLE[] = { {0x4200, 0x1e, 0x00, 0x01}, {0x40a8, 0x03, 0x00, 0x01} };
@@ -111,6 +113,11 @@ static const HsGame GAMES[] = {
     { MCH_DKONGJR, 0x6000, HS_DKONGJRJ, (uint8_t)(sizeof(HS_DKONGJRJ) / sizeof(HS_DKONGJRJ[0])), 1 },
 #else
     { -1, 0, nullptr, 0 },
+    { -1, 0, nullptr, 0 },
+#endif
+#ifdef ENABLE_POOYAN
+    HS(MCH_POOYAN,   0x8000, HS_POOYAN),
+#else
     { -1, 0, nullptr, 0 },
 #endif
 };
@@ -223,6 +230,17 @@ static void invaders_seed_rom(const uint8_t *table) {
 }
 #endif
 
+/* After a saved table went in: games that draw the high score only once
+ * at boot get it redrawn. */
+#ifdef ENABLE_POOYAN
+extern "C" void pooyan_hiscore_restored(void);
+#endif
+static void hiscore_restored(void) {
+#ifdef ENABLE_POOYAN
+    if (machine == MCH_POOYAN) pooyan_hiscore_restored();
+#endif
+}
+
 extern "C" void pico_hiscore_load(void) {
     memset(&s_store, 0, sizeof(s_store));
 #ifdef PICO_BOARD_TABLE
@@ -269,7 +287,10 @@ extern "C" void pico_hiscore_frame(void) {
         if (!table_ready(g)) s_initFrames = 0;
         else if (++s_initFrames >= INIT_STABLE_FRAMES) {
             const HsSlot &sl = s_store.slot[s_game];
-            if (sl.valid && sl.len == s_len) table_write(g, sl.data);
+            if (sl.valid && sl.len == s_len) {
+                table_write(g, sl.data);
+                hiscore_restored();
+            }
             table_read(g, s_saved);
             s_state = HS_RUN; g_hs_state = 'R';
             return;

@@ -83,6 +83,10 @@ unsigned short *frame_buffer;
 #include "scobra.h"
 #endif
 
+#ifdef ENABLE_POOYAN
+#include "pooyan.h"
+#endif
+
 #ifndef SINGLE_MACHINE
 signed char machine = MCH_MENU;   // start with menu
 #endif
@@ -105,7 +109,7 @@ unsigned short dkong_sample_cnt[3] = { 0,0,0 };
 const signed char *dkong_sample_ptr[3];
 #endif
 
-#if defined(ENABLE_FROGGER) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA)
+#if defined(ENABLE_FROGGER) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN)
 #define AY_EMULATION
 int ay_period[2][4] = {{0,0,0,0}, {0,0,0,0}};
 int ay_volume[2][3] = {{0,0,0}, {0,0,0}};
@@ -353,6 +357,12 @@ SCOBRA_BEGIN
   scobra_render_row(row);
 SCOBRA_END
 #endif
+
+#ifdef ENABLE_POOYAN
+POOYAN_BEGIN
+  pooyan_render_row(row);
+POOYAN_END
+#endif
 }
   
 #ifdef ENABLE_GALAGA
@@ -391,6 +401,9 @@ void snd_render_buffer(void) {
 #endif
 #ifdef ENABLE_SCOBRA
   if(MACHINE_IS_SCOBRA)  { AY = 2; AY_INC = 9; AY_VOL = 5; ay_env_on = true; }
+#endif
+#ifdef ENABLE_POOYAN
+  if(MACHINE_IS_POOYAN)  { AY = 2; AY_INC = 9; AY_VOL = 5; ay_env_on = true; }   // 1.79 MHz
 #endif
 
   if(AY) {
@@ -802,6 +815,12 @@ INVADERS_END
 SCOBRA_BEGIN
   scobra_prepare_frame();
 SCOBRA_END
+#endif
+
+#ifdef ENABLE_POOYAN
+POOYAN_BEGIN
+  pooyan_prepare_frame();
+POOYAN_END
 #endif
 
   // max possible video rate:
