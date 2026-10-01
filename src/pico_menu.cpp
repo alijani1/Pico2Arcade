@@ -36,6 +36,7 @@ extern "C" bool runtime_load_digdug(void);
 extern "C" bool runtime_load_invaders(void);
 extern "C" bool runtime_load_scobra(void);
 extern "C" bool runtime_load_pooyan(void);
+extern "C" bool runtime_load_timeplt(void);
 extern "C" bool runtime_load_scramble(void);
 extern "C" unsigned char buttons_get(void);
 /* Gate that setup1() polls before starting the emulator on core 1.
@@ -127,6 +128,9 @@ static const GameEntry games[] = {
 #endif
 #ifdef ENABLE_POOYAN
     { "Pooyan", "/roms/pooyan.zip", MCH_POOYAN, runtime_load_pooyan },
+#endif
+#ifdef ENABLE_TIMEPLT
+    { "Time Pilot", "/roms/timeplt.zip", MCH_TIMEPLT, runtime_load_timeplt },
 #endif
 #ifdef ENABLE_SCOBRA
     { "Super Cobra", "/roms/scobra.zip", MCH_SCOBRA, runtime_load_scobra, true },
@@ -315,26 +319,32 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
         } else {
             tft.setTextColor(fg, TFT_BLACK);
         }
-        tft.setCursor(14, y);
+        char label[40];
         switch (row_kind(i)) {
-          case ROW_GAME: tft.print(games[avail[i]].label); break;
+          case ROW_GAME: snprintf(label, sizeof(label), "%s", games[avail[i]].label); break;
 #ifdef MENU_DISPLAY_TOGGLE
           case ROW_DISPLAY:
-            tft.printf("Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
+            snprintf(label, sizeof(label), "Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
             break;
 #endif
           case ROW_FPS:
-            tft.printf("Show FPS: %s", g_show_fps ? "On" : "Off");
+            snprintf(label, sizeof(label), "Show FPS: %s", g_show_fps ? "On" : "Off");
             break;
-          case ROW_DRIVE: tft.print("ROM Drive (USB)"); break;
+          case ROW_DRIVE: snprintf(label, sizeof(label), "ROM Drive (USB)"); break;
           case ROW_VOLUME: {
             int v = pico_audio_get_volume_pct();
-            if (v <= 0) tft.print("Volume: < Mute >");
-            else        tft.printf("Volume: < %d%% >", v);
+            if (v <= 0) snprintf(label, sizeof(label), "Volume: < Mute >");
+            else        snprintf(label, sizeof(label), "Volume: < %d%% >", v);
             break;
           }
-          default: tft.print("Exit"); break;
+          default: snprintf(label, sizeof(label), "Exit"); break;
         }
+        /* crop to what fits (12 px per size-2 char), leaving room for the
+         * scroll arrows — a longer label would wrap onto the next row */
+        int fit = (W - 14 - 20) / 12;
+        if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
+        tft.setCursor(14, y);
+        tft.print(label);
         y += step;
     }
     /* more rows above / below */

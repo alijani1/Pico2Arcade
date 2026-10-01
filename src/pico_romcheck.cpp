@@ -198,10 +198,24 @@ static const RomFile pooyan_files[] = {
     { "xx.8a", 0xe1795b3du },
 };
 
+static const RomFile timeplt_files[] = {
+    { "timeplt.b4", 0x34c91839u },
+    { "timeplt.b5", 0x463b2b07u },
+    { "timeplt.e12", 0xf7b7663eu },
+    { "timeplt.e9", 0x4bbb2150u },
+    { "tm1", 0x1551f1b9u },
+    { "tm2", 0x58636cb5u },
+    { "tm3", 0xff4e0d83u },
+    { "tm4", 0x7e437c3eu },
+    { "tm5", 0xe8ca87b9u },
+    { "tm6", 0xc2507f40u },
+    { "tm7", 0xd66da813u },
+};
+
 struct RomSet { const char *zip; const RomFile *files; int n; };
 #define SET(z) { "/roms/" #z ".zip", z##_files, (int)(sizeof(z##_files) / sizeof(z##_files[0])) }
 static const RomSet SETS[] = {
-    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj), SET(pooyan),
+    SET(puckman), SET(mspacman), SET(galaga), SET(frogger), SET(dkong), SET(digdug), SET(invaders), SET(scobra), SET(scramble), SET(dkongjr), SET(dkongjrj), SET(pooyan), SET(timeplt),
 };
 
 static inline uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }

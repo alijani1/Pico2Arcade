@@ -1257,3 +1257,98 @@ extern "C" unsigned short *load_pooyan_colors_from_zip(const uint8_t *zip, size_
     }
     return out;
 }
+
+/* ============================== TIME PILOT ============================== */
+
+extern "C" unsigned char *load_timeplt_rom_cpu1_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *names[3] = { "tm1", "tm2", "tm3" };
+    unsigned char *rom = load_concat(zip, sz, names, 3, 8192, "timeplt cpu1");
+    if (!rom) return nullptr;
+    /* 32 KB, so the fetch mask (0x7FFF) stays inside the buffer */
+    unsigned char *out = (unsigned char *)realloc(rom, 0x8000);
+    if (!out) { free(rom); return nullptr; }
+    memset(out + 0x6000, 0xff, 0x2000);
+    return out;
+}
+extern "C" unsigned char *load_timeplt_rom_cpu2_from_zip(const uint8_t *zip, size_t sz) {
+    static const char *names[1] = { "tm7" };
+    return load_concat(zip, sz, names, 1, 4096, "timeplt cpu2");
+}
+
+/* Konami 2bpp layout: planes { 4, 0 }, MSB-first bits; x 4-7 at +8 bytes. */
+static inline uint8_t timeplt_pixel2(uint8_t b, int xo) {
+    return (uint8_t)((((b >> (7 - (xo + 4))) & 1) << 1) | ((b >> (7 - xo)) & 1));
+}
+
+/* tm6: 512 tiles 8x8, rotated 90 deg CW for portrait, 2bpp rows (px at bits px*2). */
+extern "C" unsigned short *load_timeplt_tiles_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch g(8192); if (!g) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "tm6", g, 8192, &got) || got != 8192) return nullptr;
+    unsigned short *out = (unsigned short *)malloc(512 * 8 * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int t = 0; t < 512; t++) {
+        uint8_t land[8][8];
+        for (int row = 0; row < 8; row++)
+            for (int col = 0; col < 8; col++)
+                land[row][col] = timeplt_pixel2(g[t * 16 + row + (col >= 4 ? 8 : 0)], col & 3);
+        for (int py = 0; py < 8; py++) {
+            uint16_t v = 0;
+            for (int px = 0; px < 8; px++) v |= (uint16_t)(land[7 - px][py] << (px * 2));
+            out[t * 8 + py] = v;
+        }
+    }
+    return out;
+}
+
+/* tm4 + tm5: 256 sprites 16x16, landscape, 2bpp rows (column c at bits c*2). */
+extern "C" unsigned long *load_timeplt_sprites_from_zip(const uint8_t *zip, size_t sz) {
+    RomScratch g(16384); if (!g) return nullptr;
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "tm4", g, 8192, &got) || got != 8192) return nullptr;
+    if (!zip_extract(zip, sz, "tm5", g + 8192, 8192, &got) || got != 8192) return nullptr;
+    unsigned long *out = (unsigned long *)malloc(256 * 16 * sizeof(unsigned long));
+    if (!out) return nullptr;
+    for (int s = 0; s < 256; s++)
+        for (int row = 0; row < 16; row++) {
+            int rb = row < 8 ? row : 24 + row;
+            uint32_t v = 0;
+            for (int col = 0; col < 16; col++)
+                v |= (uint32_t)timeplt_pixel2(g[s * 64 + rb + (col >> 2) * 8], col & 3) << (col * 2);
+            out[s * 16 + row] = v;
+        }
+    return out;
+}
+
+/* b4/b5: 32-colour palette, 5 resistors per gun (b5 bits 1-5 red, b5 6-7 +
+ * b4 0-2 green, b4 3-7 blue). e12: char lookup (+0x10), e9: sprite lookup.
+ * Output: 32x4 char colours, then 64x4 sprite colours. */
+extern "C" unsigned short *load_timeplt_colors_from_zip(const uint8_t *zip, size_t sz) {
+    uint8_t b4[32], b5[32], e9[256], e12[256];
+    size_t got = 0;
+    if (!zip_extract(zip, sz, "timeplt.b4", b4, 32, &got) || got != 32) return nullptr;
+    if (!zip_extract(zip, sz, "timeplt.b5", b5, 32, &got) || got != 32) return nullptr;
+    if (!zip_extract(zip, sz, "timeplt.e9", e9, 256, &got) || got != 256) return nullptr;
+    if (!zip_extract(zip, sz, "timeplt.e12", e12, 256, &got) || got != 256) return nullptr;
+    static const int w[5] = { 0x19, 0x24, 0x35, 0x40, 0x4d };
+    uint16_t pal[32];
+    for (int i = 0; i < 32; i++) {
+        int r = 0, g = 0, b = 0;
+        for (int k = 0; k < 5; k++) {
+            r += w[k] * ((b5[i] >> (1 + k)) & 1);
+            b += w[k] * ((b4[i] >> (3 + k)) & 1);
+        }
+        g = w[0] * ((b5[i] >> 6) & 1) + w[1] * ((b5[i] >> 7) & 1) +
+            w[2] * ((b4[i] >> 0) & 1) + w[3] * ((b4[i] >> 1) & 1) + w[4] * ((b4[i] >> 2) & 1);
+        if (r > 255) r = 255;
+        if (g > 255) g = 255;
+        if (b > 255) b = 255;
+        uint16_t c = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        pal[i] = (uint16_t)((c >> 8) | (c << 8));
+    }
+    unsigned short *out = (unsigned short *)malloc((128 + 256) * sizeof(unsigned short));
+    if (!out) return nullptr;
+    for (int i = 0; i < 128; i++) out[i]       = pal[(e12[i] & 0x0f) + 0x10];
+    for (int i = 0; i < 256; i++) out[128 + i] = pal[e9[i] & 0x0f];
+    return out;
+}

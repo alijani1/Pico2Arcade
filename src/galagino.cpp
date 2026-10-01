@@ -87,6 +87,10 @@ unsigned short *frame_buffer;
 #include "pooyan.h"
 #endif
 
+#ifdef ENABLE_TIMEPLT
+#include "timeplt.h"
+#endif
+
 #ifndef SINGLE_MACHINE
 signed char machine = MCH_MENU;   // start with menu
 #endif
@@ -109,7 +113,7 @@ unsigned short dkong_sample_cnt[3] = { 0,0,0 };
 const signed char *dkong_sample_ptr[3];
 #endif
 
-#if defined(ENABLE_FROGGER) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN)
+#if defined(ENABLE_FROGGER) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT)
 #define AY_EMULATION
 int ay_period[2][4] = {{0,0,0,0}, {0,0,0,0}};
 int ay_volume[2][3] = {{0,0,0}, {0,0,0}};
@@ -363,6 +367,12 @@ POOYAN_BEGIN
   pooyan_render_row(row);
 POOYAN_END
 #endif
+
+#ifdef ENABLE_TIMEPLT
+TIMEPLT_BEGIN
+  timeplt_render_row(row);
+TIMEPLT_END
+#endif
 }
   
 #ifdef ENABLE_GALAGA
@@ -404,6 +414,9 @@ void snd_render_buffer(void) {
 #endif
 #ifdef ENABLE_POOYAN
   if(MACHINE_IS_POOYAN)  { AY = 2; AY_INC = 9; AY_VOL = 5; ay_env_on = true; }   // 1.79 MHz
+#endif
+#ifdef ENABLE_TIMEPLT
+  if(MACHINE_IS_TIMEPLT) { AY = 2; AY_INC = 9; AY_VOL = 5; ay_env_on = true; }   // 1.79 MHz
 #endif
 
   if(AY) {
@@ -821,6 +834,12 @@ SCOBRA_END
 POOYAN_BEGIN
   pooyan_prepare_frame();
 POOYAN_END
+#endif
+
+#ifdef ENABLE_TIMEPLT
+TIMEPLT_BEGIN
+  timeplt_prepare_frame();
+TIMEPLT_END
 #endif
 
   // max possible video rate:

@@ -224,4 +224,10 @@
 #define POOYAN_DSW0  0xff
 #define POOYAN_DSW1  0x7b
 
+// Time Pilot (MAME defaults): DSW0 (0xC360) = coinage (1 coin 1 credit both
+// slots); DSW1 (0xC200) bits 0-1 lives (11 = 3), 2 cabinet (0 = upright),
+// 3 bonus (1 = 10K 50K), 4-6 difficulty (100 = 4), 7 demo sounds (0 = on)
+#define TIMEPLT_DSW0  0xff
+#define TIMEPLT_DSW1  0x4b
+
 #endif // _DIP_SWITCHES_H_

@@ -53,6 +53,9 @@ enum {
 #ifdef ENABLE_POOYAN
       MCH_POOYAN,
 #endif
+#ifdef ENABLE_TIMEPLT
+      MCH_TIMEPLT,
+#endif
 #ifdef ENABLE_SCOBRA
       MCH_SCOBRA,
 #endif
@@ -195,6 +198,11 @@ enum {
   #define INVADERS_BEGIN  else if(machine == MCH_INVADERS) {
   #define INVADERS_END    }
 #endif
+#ifdef ENABLE_TIMEPLT
+  #define MACHINE_IS_TIMEPLT  (machine == MCH_TIMEPLT)
+  #define TIMEPLT_BEGIN  else if(machine == MCH_TIMEPLT) {
+  #define TIMEPLT_END    }
+#endif
 #ifdef ENABLE_POOYAN
   #define MACHINE_IS_POOYAN  (machine == MCH_POOYAN)
   #define POOYAN_BEGIN  else if(machine == MCH_POOYAN) {
@@ -222,7 +230,7 @@ extern char game_started;
 #ifdef ENABLE_GALAGA
 extern unsigned char starcontrol;
 #endif
-#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN)
+#if defined(ENABLE_GALAGA) || defined(ENABLE_PACMAN) || defined(ENABLE_DIGDUG) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT)
 extern unsigned char soundregs[32];
 #endif
 #ifndef SINGLE_MACHINE
@@ -307,6 +315,16 @@ extern unsigned char *digdug_rom_cpu3;
 extern "C" unsigned char *invaders_rom;
 #else
 extern unsigned char *invaders_rom;
+#endif
+#endif
+#ifdef ENABLE_TIMEPLT
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char *timeplt_rom_cpu1;
+extern unsigned char *timeplt_rom_cpu2;
+#ifdef __cplusplus
+}
 #endif
 #endif
 #ifdef ENABLE_POOYAN
@@ -394,6 +412,10 @@ static inline byte OpZ80_INL(register word Addr) {
     rom_table[MCH_DIGDUG][1] = digdug_rom_cpu2;
     rom_table[MCH_DIGDUG][2] = digdug_rom_cpu3;
 #endif
+#ifdef ENABLE_TIMEPLT
+    rom_table[MCH_TIMEPLT][0] = timeplt_rom_cpu1;
+    rom_table[MCH_TIMEPLT][1] = timeplt_rom_cpu2;
+#endif
 #ifdef ENABLE_POOYAN
     rom_table[MCH_POOYAN][0] = pooyan_rom_cpu1;
     rom_table[MCH_POOYAN][1] = pooyan_rom_cpu2;
@@ -446,6 +468,10 @@ static inline byte OpZ80_INL(register word Addr) {
 #endif
 #ifdef ENABLE_DKONGJR
   if (machine == MCH_DKONGJR) addr_mask = 0x7FFFu;
+#endif
+#ifdef ENABLE_TIMEPLT
+  /* Time Pilot cpu1 24K in a 32K buffer, cpu2 4K. */
+  if (machine == MCH_TIMEPLT) addr_mask = current_cpu ? 0x0FFFu : 0x7FFFu;
 #endif
 #ifdef ENABLE_POOYAN
   /* Pooyan cpu1 32K, cpu2 8K. */

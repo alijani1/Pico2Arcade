@@ -94,6 +94,11 @@ unsigned char invaders_snd[2] = { 0, 0 };   /* OUT 3 / OUT 5 sound latches */
 unsigned char scobra_background = 0, scobra_stars_on = 0;
 #endif
 
+#ifdef ENABLE_TIMEPLT
+unsigned char timeplt_video_enable = 0;
+unsigned char timeplt_mux_bank0[0x100], timeplt_mux_bank1[0x100];   /* first sprite set of a frame */
+#endif
+
 #ifdef ENABLE_DIGDUG
 unsigned char namco_command = 0;
 unsigned char namco_mode = 0;
@@ -120,7 +125,7 @@ unsigned long master_attract_timeout = 0;
 
 #endif
 
-#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN)
+#if defined(ENABLE_PACMAN) || defined(ENABLE_GALAGA) || defined(ENABLE_FROGGER) || defined(ENABLE_DIGDUG) || defined(ENABLE_1942) || defined(ENABLE_SCOBRA) || defined(ENABLE_POOYAN) || defined(ENABLE_TIMEPLT)
 // mirror of sounds registers
 unsigned char soundregs[32] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
@@ -261,6 +266,10 @@ unsigned char namco_read_dd(unsigned short Addr) {
 
 #ifdef ENABLE_POOYAN
 #include "pooyan.h"
+#endif
+
+#ifdef ENABLE_TIMEPLT
+#include "timeplt.h"
 #endif
 
 
@@ -442,6 +451,11 @@ void __not_in_flash_func(WrZ80)(unsigned short Addr, unsigned char Value) {
       pooyan_WrZ80(Addr, Value);
       return;
 #endif
+#ifdef ENABLE_TIMEPLT
+    case MCH_TIMEPLT:
+      timeplt_WrZ80(Addr, Value);
+      return;
+#endif
 #ifdef ENABLE_SCRAMBLE
     case MCH_SCRAMBLE:
       scramble_WrZ80(Addr, Value);
@@ -571,6 +585,10 @@ unsigned char __not_in_flash_func(RdZ80)(unsigned short Addr) {
 #ifdef ENABLE_POOYAN
     case MCH_POOYAN:
       return pooyan_RdZ80(Addr);
+#endif
+#ifdef ENABLE_TIMEPLT
+    case MCH_TIMEPLT:
+      return timeplt_RdZ80(Addr);
 #endif
 #ifdef ENABLE_SCRAMBLE
     case MCH_SCRAMBLE:
@@ -809,6 +827,12 @@ SCOBRA_END
 POOYAN_BEGIN
   pooyan_run_frame();
 POOYAN_END
+#endif
+
+#ifdef ENABLE_TIMEPLT
+TIMEPLT_BEGIN
+  timeplt_run_frame();
+TIMEPLT_END
 #endif
 
   sof = micros() - sof;
