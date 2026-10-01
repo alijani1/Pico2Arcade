@@ -1,7 +1,7 @@
 # PicoGalagino
 
 A port of Till Harbaum's [Galagino](https://github.com/harbaum/galagino) ESP32
-arcade emulator to the Raspberry Pi **RP2350**. Fourteen classic arcade games
+arcade emulator to the Raspberry Pi **RP2350**. Thirteen classic arcade games
 run from the original **MAME ROM zips** — no Python tools, no ROM conversion,
 no rebuild per game:
 
@@ -179,7 +179,7 @@ name is found by its CRC32. **Merged** sets (with every clone inside) are
 not supported: the whole zip is read into RAM, and they're too big.
 
 **Quad / Duo 5200: the ROM drive holds about 251 KB.** All the zips together
-are larger than that (the 14 parent sets are ~300 KB), so copy the games you
+are larger than that (all 14 zips, DK Jr. Japan included, are ~300 KB), so copy the games you
 want until the drive is full; the game list shows whichever zips are there.
 The standalone Pico 2 (1 MB drive) and the PicoCartReader (SD card) hold
 them all.
