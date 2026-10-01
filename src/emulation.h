@@ -397,68 +397,78 @@ static inline byte OpZ80_INL(register word Addr) {
   return rom[Addr & mask];
 #else
 #ifndef SINGLE_MACHINE
-  /* Multi-machine mode with runtime-loaded ROMs. Static const initializer
-     doesn't work (pointers aren't compile-time constants), so we init
-     the table on first call from the live runtime pointers. */
-  static unsigned char *rom_table[MCH_LAST][3];   /* [machine][cpu0..2] */
-  static int rom_table_ready = 0;   /* int not bool — this header included from C */
-  if (!rom_table_ready) {
-    for (int m = 0; m < MCH_LAST; m++)
-      for (int c = 0; c < 3; c++) rom_table[m][c] = 0;
+  /* Multi-machine mode. Every opcode and operand byte comes through here,
+   * so the hot path is one test and one indexed load: the running machine's
+   * per-CPU ROM pointer and address mask are looked up once, on the first
+   * fetch (`machine` is fixed by then and never changes in a session — the
+   * game list relaunches the firmware). Machines that don't fetch from a
+   * plain ROM (Ms. Pac-Man's aux board, Space Invaders, 1942's banks) take
+   * the slower path. */
+  static unsigned char *fetch_rom[3];
+  static unsigned short fetch_mask[3];
+  static unsigned char fetch_mode = 0xff;        /* 0 = plain ROM, 1 = special, 0xff = not set up */
+  if (fetch_mode == 0) return fetch_rom[(int)current_cpu][Addr & fetch_mask[(int)current_cpu]];
+  if (fetch_mode == 0xff) {
+    fetch_mode = 0;
+    for (int c = 0; c < 3; c++) { fetch_rom[c] = 0; fetch_mask[c] = 0x3FFFu; }
+    switch (machine) {
 #ifdef ENABLE_PACMAN
-    rom_table[MCH_PACMAN][0] = pacman_rom;
+      case MCH_PACMAN: fetch_rom[0] = pacman_rom; break;
 #endif
 #ifdef ENABLE_GALAGA
-    rom_table[MCH_GALAGA][0] = galaga_rom_cpu1;
-    rom_table[MCH_GALAGA][1] = galaga_rom_cpu2;
-    rom_table[MCH_GALAGA][2] = galaga_rom_cpu3;
+      case MCH_GALAGA:     /* cpu1 16K, cpu2 / cpu3 4K */
+        fetch_rom[0] = galaga_rom_cpu1; fetch_rom[1] = galaga_rom_cpu2; fetch_rom[2] = galaga_rom_cpu3;
+        fetch_mask[1] = fetch_mask[2] = 0x0FFFu;
+        break;
 #endif
 #ifdef ENABLE_FROGGER
-    rom_table[MCH_FROGGER][0] = frogger_rom_cpu1;
-    rom_table[MCH_FROGGER][1] = frogger_rom_cpu2;
+      case MCH_FROGGER:    /* cpu1 padded to 16K, cpu2 to 8K */
+        fetch_rom[0] = frogger_rom_cpu1; fetch_rom[1] = frogger_rom_cpu2; fetch_mask[1] = 0x1FFFu;
+        break;
 #endif
 #ifdef ENABLE_DKONG
-    /* DKong Z80 (cpu1) — cpu2 is i8048 handled via i8048.c, not rom_table. */
-    rom_table[MCH_DKONG][0] = dkong_rom_cpu1;
-#ifdef ENABLE_DKONGJR
-    rom_table[MCH_DKONGJR][0] = dkong_rom_cpu1;   /* 32 KB buffer, 24 KB used */
+      case MCH_DKONG: fetch_rom[0] = dkong_rom_cpu1; break;   /* cpu2 is the i8048 */
 #endif
+#ifdef ENABLE_DKONGJR
+      case MCH_DKONGJR: fetch_rom[0] = dkong_rom_cpu1; fetch_mask[0] = 0x7FFFu; break;   /* 24K in 32K */
 #endif
 #ifdef ENABLE_DIGDUG
-    rom_table[MCH_DIGDUG][0] = digdug_rom_cpu1;
-    rom_table[MCH_DIGDUG][1] = digdug_rom_cpu2;
-    rom_table[MCH_DIGDUG][2] = digdug_rom_cpu3;
+      case MCH_DIGDUG:     /* (digdug_StepZ80 fetches itself; kept for safety) */
+        fetch_rom[0] = digdug_rom_cpu1; fetch_rom[1] = digdug_rom_cpu2; fetch_rom[2] = digdug_rom_cpu3;
+        fetch_mask[1] = 0x1FFFu; fetch_mask[2] = 0x0FFFu;
+        break;
 #endif
 #ifdef ENABLE_XEVIOUS
-    rom_table[MCH_XEVIOUS][0] = xevious_rom_cpu1;
-    rom_table[MCH_XEVIOUS][1] = xevious_rom_cpu2;
-    rom_table[MCH_XEVIOUS][2] = xevious_rom_cpu3;
+      case MCH_XEVIOUS:    /* 16K / 8K / 4K */
+        fetch_rom[0] = xevious_rom_cpu1; fetch_rom[1] = xevious_rom_cpu2; fetch_rom[2] = xevious_rom_cpu3;
+        fetch_mask[1] = 0x1FFFu; fetch_mask[2] = 0x0FFFu;
+        break;
 #endif
 #ifdef ENABLE_TIMEPLT
-    rom_table[MCH_TIMEPLT][0] = timeplt_rom_cpu1;
-    rom_table[MCH_TIMEPLT][1] = timeplt_rom_cpu2;
+      case MCH_TIMEPLT:    /* 24K in 32K, 4K */
+        fetch_rom[0] = timeplt_rom_cpu1; fetch_rom[1] = timeplt_rom_cpu2;
+        fetch_mask[0] = 0x7FFFu; fetch_mask[1] = 0x0FFFu;
+        break;
 #endif
 #ifdef ENABLE_POOYAN
-    rom_table[MCH_POOYAN][0] = pooyan_rom_cpu1;
-    rom_table[MCH_POOYAN][1] = pooyan_rom_cpu2;
+      case MCH_POOYAN:     /* 32K, 8K */
+        fetch_rom[0] = pooyan_rom_cpu1; fetch_rom[1] = pooyan_rom_cpu2;
+        fetch_mask[0] = 0x7FFFu; fetch_mask[1] = 0x1FFFu;
+        break;
 #endif
 #ifdef ENABLE_SCOBRA
-    rom_table[MCH_SCOBRA][0] = scobra_rom_cpu1;
-    rom_table[MCH_SCOBRA][1] = scobra_rom_cpu2;
-#endif
+      case MCH_SCOBRA:     /* padded to 32K, 8K */
 #ifdef ENABLE_SCRAMBLE
-    rom_table[MCH_SCRAMBLE][0] = scobra_rom_cpu1;
-    rom_table[MCH_SCRAMBLE][1] = scobra_rom_cpu2;
+      case MCH_SCRAMBLE:
 #endif
-    /* Add 1942 assignments as their loaders land. */
-    rom_table_ready = 1;
+        fetch_rom[0] = scobra_rom_cpu1; fetch_rom[1] = scobra_rom_cpu2;
+        fetch_mask[0] = 0x7FFFu; fetch_mask[1] = 0x1FFFu;
+        break;
+#endif
+      default: fetch_mode = 1; break;   /* Ms. Pac-Man, Space Invaders, 1942 */
+    }
+    if (fetch_mode == 0) return fetch_rom[(int)current_cpu][Addr & fetch_mask[(int)current_cpu]];
   }
-#else
-  static unsigned char *rom_table[3] = { 0, 0, 0 };
-#endif
-#ifndef SINGLE_MACHINE
-  /* leftover close brace from old static-init block — no-op now */
-  ;
 #ifdef ENABLE_MSPACMAN
   /* Ms. Pac-Man opcode fetch routes through the F2 aux-board decoder.
    * It handles ENABLE/DISABLE traps and picks between pacrom/auxrom/
@@ -477,47 +487,9 @@ static inline byte OpZ80_INL(register word Addr) {
   if(machine == MCH_1942 && (Addr & 0x8000))
     return _1942_bank_table[_1942_bank][Addr-0x8000];
 #endif
-  /* Runtime-alloc'd ROMs must be indexed within bounds. Galaga's
-     cpu2/cpu3 are only 4 KB — masking prevents crashes on higher
-     Addr values that the pre-baked flash arrays tolerated. */
-  unsigned int addr_mask = 0x3FFFu;
-#ifdef ENABLE_GALAGA
-  if (machine == MCH_GALAGA && current_cpu != 0) addr_mask = 0x0FFFu;
-#endif
-#ifdef ENABLE_FROGGER
-  /* Frogger cpu1 padded to 16K, cpu2 padded to 8K. */
-  if (machine == MCH_FROGGER && current_cpu == 1) addr_mask = 0x1FFFu;
-#endif
-#ifdef ENABLE_DKONGJR
-  if (machine == MCH_DKONGJR) addr_mask = 0x7FFFu;
-#endif
-#ifdef ENABLE_XEVIOUS
-  /* Xevious cpu1 16K, cpu2 8K, cpu3 4K. */
-  if (machine == MCH_XEVIOUS) addr_mask = current_cpu == 0 ? 0x3FFFu : current_cpu == 1 ? 0x1FFFu : 0x0FFFu;
-#endif
-#ifdef ENABLE_TIMEPLT
-  /* Time Pilot cpu1 24K in a 32K buffer, cpu2 4K. */
-  if (machine == MCH_TIMEPLT) addr_mask = current_cpu ? 0x0FFFu : 0x7FFFu;
-#endif
-#ifdef ENABLE_POOYAN
-  /* Pooyan cpu1 32K, cpu2 8K. */
-  if (machine == MCH_POOYAN) addr_mask = current_cpu ? 0x1FFFu : 0x7FFFu;
-#endif
-#ifdef ENABLE_SCOBRA
-  /* Super Cobra cpu1 padded to 32K, cpu2 to 8K. */
-  if (MACHINE_IS_SCOBRA) addr_mask = current_cpu ? 0x1FFFu : 0x7FFFu;
-#endif
-#ifdef ENABLE_DIGDUG
-  /* Digdug cpu0=16K, cpu1=8K, cpu2=4K. digdug_StepZ80 has its own masks;
-   * OpZ80_INL only sees Digdug when digdug_StepZ80 falls through — still,
-   * be safe. */
-  if (machine == MCH_DIGDUG) {
-    if (current_cpu == 1) addr_mask = 0x1FFFu;
-    else if (current_cpu == 2) addr_mask = 0x0FFFu;
-  }
-#endif
-  return rom_table[machine][current_cpu][Addr & addr_mask];
+  return 0xff;
 #else
+  static unsigned char *rom_table[3] = { 0, 0, 0 };
   return rom_table[current_cpu][Addr];
 #endif
 #endif  /* !(SINGLE_MACHINE && ENABLE_PACMAN) */
