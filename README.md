@@ -231,7 +231,7 @@ pio run -e pico2_std_ili9341 -t upload   # the same with an ILI9341 display
 | `pico2_std` | Raspberry Pi Pico 2 | standalone; TinyUSB for the ROM drive |
 | `pico2_std_ili9341` | Raspberry Pi Pico 2 | as `pico2_std`, ILI9341 display (SPI 50 MHz) |
 | `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x360000, ≤ 380 KB); `-t upload` writes only that slot |
-| `duo5200` | Duo 5200 Ultimate | chain-booted by the Duo 5200 firmware (1.1+) from its arcade slot (0x340000, ≤ 380 KB); `-t upload` writes only that slot |
+| `duo5200` | Duo 5200 Ultimate | chain-booted by the Duo 5200 firmware (1.1+) from its arcade slot (0x300000, ≤ 380 KB; 512 KB ROM drive); `-t upload` writes only that slot |
 | `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
 | `pico2` | PicoCartReader | flashes at offset 0, **replacing** the CartReader firmware |
 | `bench` | PicoCartReader | Z80 benchmark (attract mode, logs to SD) |

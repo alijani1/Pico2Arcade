@@ -86,7 +86,12 @@ static int joy_center_y = 2048;
  * for up to 2 ms, so it runs at most every 16 ms and only on core 0.
  * Directions are digital: the range is learned from the min/max seen (the
  * nominal range until the stick has moved); a direction triggers at 25 %
- * of the travel, so diagonals come easily. */
+ * of the travel, so diagonals come easily.
+ * Centre = where the stick rests at its first reading (like the Joy-Con's
+ * boot calibration), and each side's 25 % is of the travel seen on THAT side
+ * of it. (Assuming the nominal centre made a stick that rests at a longer
+ * charge time read as DOWN at rest — the game list kept scrolling down until
+ * UP widened the learned range.) Unplugged (both axes time out) = start over. */
 static const uint32_t RC_TIMEOUT_US = 2000;     /* no controller / pot beyond range */
 static const uint32_t RC_NOMINAL_US = 1334;     /* full travel, nominal */
 static volatile unsigned char s_stickDirs = 0;  /* BUTTON_UP/DOWN/LEFT/RIGHT from the stick */
@@ -106,6 +111,7 @@ static void rc_stick_read(void) {
     if (g_pins.stick_x < 0 || g_pins.stick_y < 0) return;
     static uint32_t lastUs = 0;
     static uint32_t lo[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu }, hi[2] = { 0, 0 };
+    static int32_t  rest[2] = { -1, -1 };       /* charge time with the stick at rest */
     uint32_t now = time_us_32();
     if (lastUs != 0 && now - lastUs < 16000) return;
     lastUs = now;
@@ -123,18 +129,28 @@ static void rc_stick_read(void) {
     }
     for (int a = 0; a < 2; a++) gpio_set_dir(pins[a], GPIO_OUT);   /* discharge again (pin LOW) */
 
+    if (!t[0] && !t[1]) {                       /* no controller: forget its calibration */
+        for (int a = 0; a < 2; a++) { lo[a] = 0xFFFFFFFFu; hi[a] = 0; rest[a] = -1; }
+        s_stickDirs = 0;
+        return;
+    }
+
     unsigned char dirs = 0;
     for (int a = 0; a < 2; a++) {
         if (!t[a]) continue;                    /* timed out: no controller on this axis */
+        if (rest[a] < 0) rest[a] = (int32_t)t[a];   /* first reading: the stick at rest */
         if (t[a] < lo[a]) lo[a] = t[a];
         if (t[a] > hi[a]) hi[a] = t[a];
-        uint32_t range = hi[a] - lo[a];
-        int32_t center, half;
-        if (range >= RC_NOMINAL_US / 2) { center = (int32_t)(lo[a] + hi[a]) / 2; half = (int32_t)range / 2; }
-        else                            { center = RC_NOMINAL_US / 2;           half = RC_NOMINAL_US / 2; }
-        int32_t d = (int32_t)t[a] - center, thr = half / 4;
-        if (d >  thr) dirs |= (a == 0) ? BUTTON_RIGHT : BUTTON_DOWN;
-        if (d < -thr) dirs |= (a == 0) ? BUTTON_LEFT  : BUTTON_UP;
+        /* 25 % of the travel seen on each side of rest; until a side has
+         * moved at least a quarter of the nominal travel, 25 % of the nominal
+         * half-travel (~167 us) — clear of noise, easy to reach. */
+        const int32_t minSpan = RC_NOMINAL_US / 4, nomThr = RC_NOMINAL_US / 8;
+        int32_t spanNeg = rest[a] - (int32_t)lo[a], spanPos = (int32_t)hi[a] - rest[a];
+        int32_t thrNeg = (spanNeg >= minSpan) ? spanNeg / 4 : nomThr;
+        int32_t thrPos = (spanPos >= minSpan) ? spanPos / 4 : nomThr;
+        int32_t d = (int32_t)t[a] - rest[a];
+        if (d >  thrPos) dirs |= (a == 0) ? BUTTON_RIGHT : BUTTON_DOWN;
+        if (d < -thrNeg) dirs |= (a == 0) ? BUTTON_LEFT  : BUTTON_UP;
     }
     s_stickDirs = dirs;
 }
