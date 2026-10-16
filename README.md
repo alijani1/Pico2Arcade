@@ -51,31 +51,63 @@ is one menu entry away and runs alongside the device's normal job.
 
 <table>
 <tr>
-<th></th><th>Hardware</th><th>What you get</th><th>Get it</th>
+<td width="380" align="center" valign="top">
+<img src="docs/hardware/pico2_breadboard.jpg" width="360" alt="Raspberry Pi Pico 2 build on a breadboard"><br>
+<b>Raspberry Pi Pico 2</b> — do it yourself<br>
+<a href="#standalone-pico-2--quick-start">➜ Build guide below</a>
+</td>
+<td valign="top">
+
+- Any **Raspberry Pi Pico 2**, an **ST7789** or **ILI9341** 240×320 SPI display, a joystick or switches, and a small amplifier and speaker
+- Every pin is set in a text file (`ARCADE.INI`) — wire it the way your build needs
+- ROMs go on a **1 MB USB drive** in the Pico's own flash: copy the zips, eject, play
+- [Watch the build in action](https://youtu.be/qfoUFOv9sbY)
+
+</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/wiring_pico2.svg" width="180" alt="Pico 2 wiring"></td>
-<td><b>Raspberry Pi Pico 2</b><br>(do it yourself)</td>
-<td>Any Pico 2 + an ST7789 or ILI9341 SPI display, a joystick or switches, and a small amplifier and speaker. Pins are set in a text file. ROMs go on a 1 MB USB drive in the Pico's own flash.</td>
-<td><a href="#standalone-pico-2--quick-start">Build guide below</a></td>
+<td width="380" align="center" valign="top">
+<img src="docs/hardware/duo5200_ultimate.jpg" width="360" alt="iCode Duo 5200 Ultimate"><br>
+<b>iCode Duo 5200 Ultimate</b> — Atari 5200 USB adapter<br>
+<a href="https://www.icode.com/product/icode-duo-5200-ultimate-usb-adapter-for-atari-5200-retro-gaming-controllers/">➜ Get it at icode.com</a>
+</td>
+<td valign="top">
+
+- **Arcade Games** in the Mini-Games menu (firmware 1.1 or later), on the built-in color screen with sound
+- Play with your **original Atari 5200 controller** — the analog stick steers, both fire buttons work — or the on-device stick and buttons
+- **512 KB ROM drive** over USB: room for every game
+- Also its everyday job: a two-port USB adapter for Atari 5200 controllers
+
+</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/hardware/quad_ultimate_cx.jpg" width="180" alt="iCode Quad Ultimate CX"></td>
-<td><b>iCode Quad Ultimate CX / CX-W</b><br>4-port Atari USB adapter (CX-W adds Bluetooth)</td>
-<td>The arcade in the Mini-Games menu, on the built-in 2.4" screen. Play with an Atari joystick on port 1 or the on-device thumbstick and buttons. 256 KB ROM drive.</td>
-<td><i>Coming soon at <a href="https://www.icode.com">icode.com</a></i></td>
+<td width="380" align="center" valign="top">
+<img src="docs/hardware/quad_ultimate_cx.jpg" width="360" alt="iCode Quad Ultimate CX"><br>
+<b>iCode Quad Ultimate CX / CX-W</b> — 4-port Atari USB adapter<br>
+<i>➜ Coming soon at <a href="https://www.icode.com">icode.com</a></i>
+</td>
+<td valign="top">
+
+- **Arcade Games** in the Mini-Games menu, on the built-in 2.4" color screen with sound
+- Play with an **Atari joystick** on port 1 or the on-device thumbstick and buttons
+- **256 KB ROM drive** over USB
+- Also its everyday job: a four-player USB adapter for Atari 2600/7800 controllers — the CX-W adds Bluetooth
+
+</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/hardware/duo5200_ultimate.jpg" width="180" alt="iCode Duo 5200 Ultimate"></td>
-<td><b>iCode Duo 5200 Ultimate</b><br>Atari 5200 USB adapter</td>
-<td>The arcade in the Mini-Games menu (firmware 1.1+). Play with your original Atari 5200 controller — analog stick and both fire buttons — or the on-device controls. 512 KB ROM drive: room for every game.</td>
-<td><a href="https://www.icode.com/product/icode-duo-5200-ultimate-usb-adapter-for-atari-5200-retro-gaming-controllers/">icode.com</a></td>
-</tr>
-<tr>
-<td align="center"><img src="docs/hardware/cartreader_player.jpg" width="180" alt="iCode 2600CartReaderPlayer"></td>
-<td><b>iCode 2600CartReaderPlayer</b><br>Plays real Atari 2600 cartridges</td>
-<td>An ARCADE tile next to the cartridge player. ROM zips go in <code>/roms/</code> on its SD card.</td>
-<td><i>Coming soon at <a href="https://www.icode.com">icode.com</a></i></td>
+<td width="380" align="center" valign="top">
+<img src="docs/hardware/cartreader_player.jpg" width="360" alt="iCode 2600CartReaderPlayer"><br>
+<b>iCode 2600CartReaderPlayer</b> — plays real Atari 2600 cartridges<br>
+<i>➜ Coming soon at <a href="https://www.icode.com">icode.com</a></i>
+</td>
+<td valign="top">
+
+- An **ARCADE** tile right next to the cartridge player
+- Play with an Atari joystick or the on-device controls
+- ROM zips go in `/roms/` on its **SD card**
+
+</td>
 </tr>
 </table>
 
