@@ -87,7 +87,7 @@ is one menu entry away and runs alongside the device's normal job.
 <td width="380" align="center" valign="top">
 <img src="docs/hardware/quad_ultimate_cx.jpg" width="360" alt="iCode Quad Ultimate CX"><br>
 <b>iCode Quad Ultimate CX / CX-W</b> — 4-port Atari USB adapter<br>
-<i>➜ Coming soon at <a href="https://www.icode.com">icode.com</a></i>
+<a href="https://www.icode.com/product/icode-quad-usb-ultimate-adapter-for-atari-joysticks-paddles-driving-trackball-keypad-controllers/">➜ Get it at icode.com</a>
 </td>
 <td valign="top">
 
@@ -102,7 +102,7 @@ is one menu entry away and runs alongside the device's normal job.
 <td width="380" align="center" valign="top">
 <img src="docs/hardware/cartreader_player.jpg" width="360" alt="iCode 2600CartReaderPlayer"><br>
 <b>iCode 2600CartReaderPlayer</b> — plays real Atari 2600 cartridges<br>
-<i>➜ Coming soon at <a href="https://www.icode.com">icode.com</a></i>
+<a href="https://www.icode.com/product/icode-vcs-atari-cartridge-reader-tester-and-player-with-joystick-and-paddle-ports-cartreader2600-ultimate/">➜ Get it at icode.com</a>
 </td>
 <td valign="top">
 
