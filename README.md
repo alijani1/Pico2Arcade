@@ -6,22 +6,25 @@ file, copy the zips onto the USB drive it shows up as, and play.
 
 <table>
 <tr>
-<td align="center"><img src="docs/screenshots/pacman.gif" width="112" alt="Pac-Man"><br><sub>Pac-Man</sub></td>
-<td align="center"><img src="docs/screenshots/mspacman.png" width="112" alt="Ms. Pac-Man"><br><sub>Ms. Pac-Man</sub></td>
-<td align="center"><img src="docs/screenshots/galaga.gif" width="112" alt="Galaga"><br><sub>Galaga</sub></td>
-<td align="center"><img src="docs/screenshots/dkong.gif" width="112" alt="Donkey Kong"><br><sub>Donkey Kong</sub></td>
-<td align="center"><img src="docs/screenshots/dkongjr.png" width="112" alt="Donkey Kong Jr."><br><sub>Donkey Kong Jr.</sub></td>
-<td align="center"><img src="docs/screenshots/frogger.png" width="112" alt="Frogger"><br><sub>Frogger</sub></td>
-<td align="center"><img src="docs/screenshots/digdug.png" width="112" alt="Dig Dug"><br><sub>Dig Dug</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/pacman.gif" width="144" height="185" alt="Pac-Man"><br><sub>Pac-Man</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/mspacman.png" width="144" height="185" alt="Ms. Pac-Man"><br><sub>Ms. Pac-Man</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/galaga.gif" width="144" height="185" alt="Galaga"><br><sub>Galaga</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/dkong.gif" width="144" height="185" alt="Donkey Kong"><br><sub>Donkey Kong</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/dkongjr.png" width="144" height="185" alt="Donkey Kong Jr."><br><sub>Donkey Kong Jr.</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="docs/screenshots/xevious.png" width="112" alt="Xevious"><br><sub>Xevious</sub></td>
-<td align="center"><img src="docs/screenshots/invaders.png" width="112" alt="Space Invaders"><br><sub>Space Invaders</sub></td>
-<td align="center"><img src="docs/screenshots/scobra.png" width="112" alt="Super Cobra"><br><sub>Super Cobra</sub></td>
-<td align="center"><img src="docs/screenshots/scramble.png" width="112" alt="Scramble"><br><sub>Scramble</sub></td>
-<td align="center"><img src="docs/screenshots/pooyan.png" width="112" alt="Pooyan"><br><sub>Pooyan</sub></td>
-<td align="center"><img src="docs/screenshots/timeplt.png" width="112" alt="Time Pilot"><br><sub>Time Pilot</sub></td>
-<td></td>
+<td align="center" width="20%"><img src="docs/screenshots/frogger.png" width="144" height="185" alt="Frogger"><br><sub>Frogger</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/digdug.png" width="144" height="185" alt="Dig Dug"><br><sub>Dig Dug</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/xevious.png" width="144" height="185" alt="Xevious"><br><sub>Xevious</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/invaders.png" width="144" height="185" alt="Space Invaders"><br><sub>Space Invaders</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/scobra.png" width="144" height="185" alt="Super Cobra"><br><sub>Super Cobra</sub></td>
+</tr>
+<tr>
+<td align="center" width="20%"><img src="docs/screenshots/scramble.png" width="144" height="185" alt="Scramble"><br><sub>Scramble</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/pooyan.png" width="144" height="185" alt="Pooyan"><br><sub>Pooyan</sub></td>
+<td align="center" width="20%"><img src="docs/screenshots/timeplt.png" width="144" height="185" alt="Time Pilot"><br><sub>Time Pilot</sub></td>
+<td width="20%"></td>
+<td width="20%"></td>
 </tr>
 </table>
 
