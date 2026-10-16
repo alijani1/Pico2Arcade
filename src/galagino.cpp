@@ -7,10 +7,10 @@
  *
  */
 
-#include "pico_compat.h"    /* PicoGalagino port: Arduino.h + ESP32→Pico shims */
+#include "pico_compat.h"    /* Pico2Arcade port: Arduino.h + ESP32→Pico shims */
 #include "config.h"
 
-#include "driver/i2s.h"     /* PicoGalagino: local no-op stub, see src/driver/i2s.h */
+#include "driver/i2s.h"     /* Pico2Arcade: local no-op stub, see src/driver/i2s.h */
 #include "video.h"
 #include "leds.h"
 
@@ -895,7 +895,7 @@ XEVIOUS_END
       snd_transmit();
     } 
  
-    // PicoGalagino: pace each half against an absolute microsecond
+    // Pico2Arcade: pace each half against an absolute microsecond
     // deadline (frame_base + 16667 / + 33333). Upstream waited in whole
     // milliseconds from a truncated elapsed time, and the per-cycle
     // overhead accumulated, so games ran at ~56 fps (screen ~28) instead

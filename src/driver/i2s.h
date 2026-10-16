@@ -1,4 +1,4 @@
-/* driver/i2s.h — PicoGalagino no-op stub
+/* driver/i2s.h — Pico2Arcade no-op stub
  *
  * Galagino uses the ESP32's built-in I2S DAC for audio. This stub lets
  * the upstream sketch compile on the Pico with all I2S calls becoming

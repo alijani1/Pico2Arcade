@@ -1,4 +1,4 @@
-/* pico_input.cpp — PicoGalagino input glue.
+/* pico_input.cpp — Pico2Arcade input glue.
  *
  * Replaces upstream's raw digitalRead(BTN_*_PIN) reads (which target ESP32
  * pins that don't exist on our board) with reads against:

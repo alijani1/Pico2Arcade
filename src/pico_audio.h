@@ -1,4 +1,4 @@
-/* pico_audio.h — Streaming PWM audio for PicoGalagino.
+/* pico_audio.h — Streaming PWM audio for Pico2Arcade.
  *
  * Wraps earlephilhower framework's PWMAudio class (DMA-fed PWM output on
  * GP22, gated by amp-enable on GP4). Exposes a C-linkage push API so the

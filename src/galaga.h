@@ -1,6 +1,6 @@
 /* galaga.h */
 
-/* PicoGalagino runtime-loaded pointers. Definitions in galaga_runtime.cpp,
+/* Pico2Arcade runtime-loaded pointers. Definitions in galaga_runtime.cpp,
  * populated at boot from /roms/galaga.zip. */
 #ifdef __cplusplus
 extern "C" {

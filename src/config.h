@@ -1,4 +1,4 @@
-/* config.h — PicoGalagino port config for RP2350B / PicoCartReader hardware.
+/* config.h — Pico2Arcade port config for RP2350B / PicoCartReader hardware.
  * Replaces upstream's ESP32-specific config. Pin mappings match the PicoCartReader
  * PCB so we can share hardware between the VCS emulator and this Galagino port. */
 

@@ -1,4 +1,4 @@
-/* pico_menu.cpp — PicoGalagino boot-time game picker.
+/* pico_menu.cpp — Pico2Arcade boot-time game picker.
  *
  * A simple text list of playable games (only those with runtime loaders
  * wired). User navigates with the joystick / BTN_A and picks one. We

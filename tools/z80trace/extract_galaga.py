@@ -1,5 +1,5 @@
 """Extract Galaga's three CPU ROMs from a MAME galaga.zip exactly the way
-PicoGalagino's loader does (mame_rom_loader.cpp): cpu1 = 4 chips
+Pico2Arcade's loader does (mame_rom_loader.cpp): cpu1 = 4 chips
 concatenated + the 5 boot patches, cpu2 = gg1_5b.3f, cpu3 = gg1_7b.2c.
 
     python extract_galaga.py path/to/galaga.zip out_dir

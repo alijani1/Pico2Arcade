@@ -1,4 +1,4 @@
-// PicoGalagino: the project builds with -Os; the CPU core is the hottest
+// Pico2Arcade: the project builds with -Os; the CPU core is the hottest
 // code in the emulator, so compile this file for speed instead.
 #ifdef Z80_ZAZU_GALAGINO
 #pragma GCC optimize("O2")
@@ -7,7 +7,7 @@
 #include "zazu_z80.h"
 
 // ---------------------------------------------------------------------------
-// PicoGalagino patches — all behind Z80_ZAZU_GALAGINO; with it undefined this
+// Pico2Arcade patches — all behind Z80_ZAZU_GALAGINO; with it undefined this
 // file behaves like upstream. Upstream: https://github.com/superzazu/z80
 // @ d64fe10a (MIT, see LICENSE; files renamed z80.* -> zazu_z80.* to avoid a
 // case-insensitive clash with a Z80.h on Windows).
@@ -126,7 +126,7 @@ static inline uint16_t popw(z80* const z) {
 }
 
 #ifdef Z80_ZAZU_GALAGINO
-// PicoGalagino: bytes at PC (operands, prefixed opcodes) come from ROM, so
+// Pico2Arcade: bytes at PC (operands, prefixed opcodes) come from ROM, so
 // read them through the same inline fast path the opcode fetch uses
 // (OpZ80_INL: per-machine ROM tables) instead of the full RdZ80 memory
 // dispatch. Defined at the end of this file, after the Galagino headers.
@@ -219,7 +219,7 @@ static inline bool carry(int bit_no, uint16_t a, uint16_t b, bool cy) {
 
 // returns the parity of byte: 0 if number of 1 bits in `val` is odd, else 1
 #ifdef Z80_ZAZU_GALAGINO
-// PicoGalagino: table instead of an 8-iteration bit count (hot: every
+// Pico2Arcade: table instead of an 8-iteration bit count (hot: every
 // logic/rotate/IN instruction). 1 = even parity.
 // Forced into .data (SRAM, copied at boot) instead of flash rodata.
 static const uint8_t __attribute__((section(".data.zazu_parity"))) parity_table[256] = {1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1,1,0,0,1,0,1,1,0,1,0,0,1,0,1,1,0,0,1,1,0,1,0,0,1};
@@ -1855,7 +1855,7 @@ void Z80_HOT(exec_opcode_ed)(z80* const z, uint8_t opcode) {
 #undef GET_BIT
 
 #ifdef Z80_ZAZU_GALAGINO
-// --- PicoGalagino entry points (see z80_galagino.c) ------------------------
+// --- Pico2Arcade entry points (see z80_galagino.c) ------------------------
 
 // Executes one instruction whose first opcode byte the caller has already
 // fetched (and PC advanced past), so each game can use its own fast fetch
@@ -1902,7 +1902,7 @@ void z80_take_int(z80* const z, uint8_t data) {
 #endif
 
 #ifdef Z80_ZAZU_GALAGINO
-// --- PicoGalagino per-instruction entry points ------------------------------
+// --- Pico2Arcade per-instruction entry points ------------------------------
 // Defined here (not in the adapter) so the opcode executor is called
 // directly: one call per emulated instruction instead of three. The opcode
 // fetch uses Galagino's inline fast path (OpZ80_INL: per-machine ROM tables,

@@ -1,4 +1,4 @@
-/* pico_handoff.h — state passed between PicoCartReader and PicoGalagino
+/* pico_handoff.h — state passed between PicoCartReader and Pico2Arcade
  * across the reboot that switches firmwares (arcade mode).
  *
  * Uses RP2350 watchdog scratch registers, which survive a watchdog

@@ -1,4 +1,4 @@
-# Generates docs/wiring_pico2.svg — standalone PicoGalagino default wiring.
+# Generates docs/wiring_pico2.svg — standalone Pico2Arcade default wiring.
 # Usage: python tools/mk_wiring_svg.py docs/wiring_pico2.svg
 import sys
 OUT = sys.argv[1]
@@ -37,7 +37,7 @@ def switch(x, y, label, lx, anchor):
 a('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" '
   'font-family="Segoe UI, Helvetica, Arial, sans-serif">' % (W, H, W, H))
 a('<rect width="%d" height="%d" fill="#ffffff"/>' % (W, H))
-text(40, 44, 'PicoGalagino — standalone Raspberry Pi Pico 2 wiring', 22, 'start', '#111827', '700')
+text(40, 44, 'Pico2Arcade — standalone Raspberry Pi Pico 2 wiring', 22, 'start', '#111827', '700')
 text(40, 68, 'Default pins (buttons and audio can be changed in ARCADE.INI on the ROM drive; display pins are fixed)', 13, 'start', '#4b5563')
 
 # ── Pico 2 board ──

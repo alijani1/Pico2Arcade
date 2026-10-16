@@ -1,40 +1,83 @@
-# PicoGalagino
+# Pico2Arcade
 
-A port of Till Harbaum's [Galagino](https://github.com/harbaum/galagino) ESP32
-arcade emulator to the Raspberry Pi **RP2350**. Thirteen classic arcade games
-run from the original **MAME ROM zips** — no Python tools, no ROM conversion,
-no rebuild per game:
+**Classic arcade games on a Raspberry Pi Pico 2 — straight from your own MAME
+ROM files.** No PC tools, no ROM conversion, no rebuild per game: flash one
+file, copy the zips onto the USB drive it shows up as, and play.
 
-- Pac-Man
-- Ms. Pac-Man (with the Midway F2 aux board emulated)
-- Galaga
-- Frogger
-- Donkey Kong
-- Donkey Kong Jr. (US or Japan set)
-- Dig Dug
-- Xevious
-- Space Invaders
-- Super Cobra
-- Scramble
-- Pooyan
-- Time Pilot
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/pacman.gif" width="112" alt="Pac-Man"><br><sub>Pac-Man</sub></td>
+<td align="center"><img src="docs/screenshots/mspacman.png" width="112" alt="Ms. Pac-Man"><br><sub>Ms. Pac-Man</sub></td>
+<td align="center"><img src="docs/screenshots/galaga.gif" width="112" alt="Galaga"><br><sub>Galaga</sub></td>
+<td align="center"><img src="docs/screenshots/dkong.gif" width="112" alt="Donkey Kong"><br><sub>Donkey Kong</sub></td>
+<td align="center"><img src="docs/screenshots/dkongjr.png" width="112" alt="Donkey Kong Jr."><br><sub>Donkey Kong Jr.</sub></td>
+<td align="center"><img src="docs/screenshots/frogger.png" width="112" alt="Frogger"><br><sub>Frogger</sub></td>
+<td align="center"><img src="docs/screenshots/digdug.png" width="112" alt="Dig Dug"><br><sub>Dig Dug</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/xevious.png" width="112" alt="Xevious"><br><sub>Xevious</sub></td>
+<td align="center"><img src="docs/screenshots/invaders.png" width="112" alt="Space Invaders"><br><sub>Space Invaders</sub></td>
+<td align="center"><img src="docs/screenshots/scobra.png" width="112" alt="Super Cobra"><br><sub>Super Cobra</sub></td>
+<td align="center"><img src="docs/screenshots/scramble.png" width="112" alt="Scramble"><br><sub>Scramble</sub></td>
+<td align="center"><img src="docs/screenshots/pooyan.png" width="112" alt="Pooyan"><br><sub>Pooyan</sub></td>
+<td align="center"><img src="docs/screenshots/timeplt.png" width="112" alt="Time Pilot"><br><sub>Time Pilot</sub></td>
+<td></td>
+</tr>
+</table>
 
-The last seven (and DK Jr.) are ported from
+<sub>Screenshots from [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus) (GPLv3).</sub>
+
+Thirteen games, all at full 60 fps on the RP2350: **Pac-Man**, **Ms. Pac-Man**
+(with the Midway F2 aux board emulated), **Galaga**, **Donkey Kong**,
+**Donkey Kong Jr.** (US or Japan set), **Frogger**, **Dig Dug**, **Xevious**,
+**Space Invaders**, **Super Cobra**, **Scramble**, **Pooyan** and **Time Pilot**.
+Each game keeps its high-score table across power cycles.
+
+Pico2Arcade is a port of Till Harbaum's [Galagino](https://github.com/harbaum/galagino)
+ESP32 arcade emulator, with the later games ported from
 [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus).
 
-The simplest way to play is a **standard Raspberry Pi Pico 2**, an ST7789 or
-ILI9341 display, a few switches and a speaker. Flash one UF2, copy your ROM zips onto
-the USB drive it shows up as, and play. Buttons, joystick and audio pins are
-set in a text file on that drive.
+## See it in action
 
-The same code also runs as the arcade mode of two other boards:
+[![Pico2Arcade wiring and gameplay demo](https://img.youtube.com/vi/qfoUFOv9sbY/hqdefault.jpg)](https://youtu.be/qfoUFOv9sbY)
 
-| Target | Env | ROMs live on | Controls |
-|---|---|---|---|
-| **Standalone Pico 2** | `pico2_std` (ST7789) / `pico2_std_ili9341` | 1 MB USB drive in the Pico's flash | your wiring (`ARCADE.INI`) |
-| **Quad Ultimate CX** (iCode) | `quad` | 256 KB USB drive in flash | built-in profile |
-| **Duo 5200 Ultimate** (iCode) | `duo5200` | 256 KB USB drive in flash | built-in profile + the port 1 Atari 5200 controller (analog stick, fire buttons) |
-| **PicoCartReader** | `pico2_arcade` | `/roms/` on the SD card | PCA9539 expander + JoyCon |
+▶ **[Watch the demo on YouTube](https://youtu.be/qfoUFOv9sbY)** — a Pico 2 wired up to a display, buttons and a speaker, then playing.
+
+## Where it runs
+
+Build your own with a **Raspberry Pi Pico 2**, or play it on iCode hardware
+that already has the screen, controls and speaker built in — there the arcade
+is one menu entry away and runs alongside the device's normal job.
+
+<table>
+<tr>
+<th></th><th>Hardware</th><th>What you get</th><th>Get it</th>
+</tr>
+<tr>
+<td align="center"><img src="docs/wiring_pico2.svg" width="180" alt="Pico 2 wiring"></td>
+<td><b>Raspberry Pi Pico 2</b><br>(do it yourself)</td>
+<td>Any Pico 2 + an ST7789 or ILI9341 SPI display, a joystick or switches, and a small amplifier and speaker. Pins are set in a text file. ROMs go on a 1 MB USB drive in the Pico's own flash.</td>
+<td><a href="#standalone-pico-2--quick-start">Build guide below</a></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/hardware/quad_ultimate_cx.jpg" width="180" alt="iCode Quad Ultimate CX"></td>
+<td><b>iCode Quad Ultimate CX / CX-W</b><br>4-port Atari USB adapter (CX-W adds Bluetooth)</td>
+<td>The arcade in the Mini-Games menu, on the built-in 2.4" screen. Play with an Atari joystick on port 1 or the on-device thumbstick and buttons. 256 KB ROM drive.</td>
+<td><i>Coming soon at <a href="https://www.icode.com">icode.com</a></i></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/hardware/duo5200_ultimate.jpg" width="180" alt="iCode Duo 5200 Ultimate"></td>
+<td><b>iCode Duo 5200 Ultimate</b><br>Atari 5200 USB adapter</td>
+<td>The arcade in the Mini-Games menu (firmware 1.1+). Play with your original Atari 5200 controller — analog stick and both fire buttons — or the on-device controls. 512 KB ROM drive: room for every game.</td>
+<td><a href="https://www.icode.com/product/icode-duo-5200-ultimate-usb-adapter-for-atari-5200-retro-gaming-controllers/">icode.com</a></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/hardware/cartreader_player.jpg" width="180" alt="iCode 2600CartReaderPlayer"></td>
+<td><b>iCode 2600CartReaderPlayer</b><br>Plays real Atari 2600 cartridges</td>
+<td>An ARCADE tile next to the cartridge player. ROM zips go in <code>/roms/</code> on its SD card.</td>
+<td><i>Coming soon at <a href="https://www.icode.com">icode.com</a></i></td>
+</tr>
+</table>
 
 We do **not** distribute ROMs. Use ROM sets you are entitled to.
 
@@ -64,6 +107,8 @@ The display pins are fixed. Everything else is the default and can be changed
 in `ARCADE.INI` (step 4).
 
 ![Pico 2 wiring: display, buttons, amplifier and speaker](docs/wiring_pico2.svg)
+
+▶ **See this wiring in action:** [video demo on YouTube](https://youtu.be/qfoUFOv9sbY).
 
 | Function | GPIO | | Function | GPIO |
 |---|---|---|---|---|
@@ -464,7 +509,7 @@ src/
 
 ## License
 
-PicoGalagino is licensed under the **GNU General Public License v3.0** (see
+Pico2Arcade is licensed under the **GNU General Public License v3.0** (see
 [`LICENSE`](LICENSE)), the same terms as upstream Galagino ("Published under
 GPLv3"). That covers the port glue in `src/pico_*.cpp`, `src/*_runtime.cpp`,
 and `src/mame_rom_loader.cpp`. Upstream Galagino sources retain their

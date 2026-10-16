@@ -1,6 +1,6 @@
 /* z80_core.h — the Z80 CPU core used by the emulator.
  *
- * superzazu/z80 (MIT) with PicoGalagino patches, via the adapter in
+ * superzazu/z80 (MIT) with Pico2Arcade patches, via the adapter in
  * z80_zazu/z80_galagino.h (Z80 type, StepZ80/IntZ80/ResetZ80, INT_*).
  * Built with -DZ80_CORE_ZAZU -DZ80_ZAZU_GALAGINO (platformio.ini).
  *

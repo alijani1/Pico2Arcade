@@ -1,6 +1,6 @@
 # arcade_upload.py - PlatformIO extra script for [env:pico2_arcade].
 #
-# Flashes PicoGalagino into the "arcade" window (0x201000) of the
+# Flashes Pico2Arcade into the "arcade" window (0x201000) of the
 # PicoCartReader board instead of offset 0, so the CartReader firmware
 # (0x000000-0x1FFFFF, incl. its LittleFS) is left intact. The image is
 # still linked at 0x10000000; the CartReader's ARCADE menu launches it

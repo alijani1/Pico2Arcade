@@ -1,4 +1,4 @@
-/* video.h — PicoGalagino: TFT_eSPI-backed video driver
+/* video.h — Pico2Arcade: TFT_eSPI-backed video driver
  *
  * Replaces upstream Galagino's ESP-IDF spi_master driver. Same public API
  * (begin, write) so the game code compiles unchanged; internals use

@@ -1,4 +1,4 @@
-/* video.cpp — PicoGalagino: TFT_eSPI backend for the Video class.
+/* video.cpp — Pico2Arcade: TFT_eSPI backend for the Video class.
  *
  * Galagino streams the game frame as 36 sequential 224x8-pixel strips
  * top-to-bottom via repeated write() calls.

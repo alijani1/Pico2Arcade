@@ -23,7 +23,7 @@ struct z80 {
 
   // flags: sign, zero, yf, half-carry, xf, parity/overflow, negative, carry
 #ifdef Z80_ZAZU_GALAGINO
-  // PicoGalagino: one byte per flag instead of bitfields — every flag
+  // Pico2Arcade: one byte per flag instead of bitfields — every flag
   // update was a read-modify-write of the packed byte (hot path).
   bool sf, zf, yf, hf, xf, pf, nf, cf;
 #else
@@ -51,7 +51,7 @@ void z80_gen_nmi(z80* const z);
 void z80_gen_int(z80* const z, uint8_t data);
 
 #ifdef Z80_ZAZU_GALAGINO
-// PicoGalagino additions — see zazu_z80.c.
+// Pico2Arcade additions — see zazu_z80.c.
 void z80_exec_fetched(z80* const z, uint8_t opcode);
 void z80_take_nmi(z80* const z);
 void z80_take_int(z80* const z, uint8_t data);

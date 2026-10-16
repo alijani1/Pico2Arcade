@@ -1,6 +1,6 @@
 /* pacman.h */
 
-/* PicoGalagino runtime-loaded pointers. Definitions in pacman_runtime.cpp
+/* Pico2Arcade runtime-loaded pointers. Definitions in pacman_runtime.cpp
  * use extern "C" so both C (the Z80 core) and C++ (galagino.cpp) callers get
  * the unmangled symbol. Declarations here mirror that. */
 #ifdef __cplusplus

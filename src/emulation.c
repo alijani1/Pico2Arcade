@@ -1,4 +1,4 @@
-/* PicoGalagino: RdZ80/WrZ80 and the per-game memory handlers are called
+/* Pico2Arcade: RdZ80/WrZ80 and the per-game memory handlers are called
  * for nearly every emulated memory access; compile this file for speed
  * (the project default is -Os). */
 #pragma GCC optimize("O2")
