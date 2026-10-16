@@ -100,8 +100,8 @@ is one menu entry away and runs alongside the device's normal job.
 </tr>
 <tr>
 <td width="380" align="center" valign="top">
-<img src="docs/hardware/cartreader_player.jpg" width="360" alt="iCode 2600CartReaderPlayer"><br>
-<b>iCode 2600CartReaderPlayer</b> — plays real Atari 2600 cartridges<br>
+<img src="docs/hardware/cartreader_player.jpg" width="360" alt="iCode CartReader2600 Ultimate"><br>
+<b>iCode CartReader2600 Ultimate</b> — plays real Atari 2600 cartridges<br>
 <a href="https://www.icode.com/product/icode-vcs-atari-cartridge-reader-tester-and-player-with-joystick-and-paddle-ports-cartreader2600-ultimate/">➜ Get it at icode.com</a>
 </td>
 <td valign="top">
