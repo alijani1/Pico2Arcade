@@ -293,19 +293,25 @@ static bool menu_follow(int sel) {
     return s_first != old;
 }
 
-/* One row, painted over whatever was there (its own background first, then
- * the text on that background), so moving the highlight never blanks the
- * screen. */
+/* One row, composed off-screen in a one-row sprite (~15 KB, freed again)
+ * and pushed in one go, so the panel never shows it half drawn. Only rows
+ * that change are pushed. If the sprite can't be allocated, the row is
+ * drawn straight to the panel (background, then text). */
 static void draw_row(TFT_eSPI &tft, int i, int sel) {
     if (i < s_first || i >= s_first + s_shown) return;
     const int W = tft.width();
-    const int y = s_top + (i - s_first) * s_step;
+    const int x = 4, y = s_top + (i - s_first) * s_step - 1;
+    const int w = W - 22, h = s_step - 1;              /* stops short of the scroll arrows */
     /* Game names in yellow, settings / actions in white. */
     uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
     uint16_t bg = (i == sel) ? TFT_BLUE : TFT_BLACK;
-    tft.fillRect(4, y - 1, W - 22, s_step - 1, bg);   /* stops short of the scroll arrows */
-    tft.setTextSize(2);
-    tft.setTextColor(fg, bg);
+    TFT_eSprite spr(&tft);
+    bool off = spr.createSprite(w, h) != nullptr;
+    TFT_eSPI &gfx = off ? (TFT_eSPI &)spr : tft;
+    const int ox = off ? 0 : x, oy = off ? 0 : y;      /* row origin on gfx */
+    gfx.fillRect(ox, oy, w, h, bg);
+    gfx.setTextSize(2);
+    gfx.setTextColor(fg, bg);
     char label[40];
     switch (row_kind(i)) {
       case ROW_GAME: snprintf(label, sizeof(label), "%s", games[avail[i]].label); break;
@@ -330,8 +336,12 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
      * scroll arrows — a longer label would wrap onto the next row */
     int fit = (W - 14 - 20) / 12;
     if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
-    tft.setCursor(14, y);
-    tft.print(label);
+    gfx.setCursor(ox + 10, oy + 1);
+    gfx.print(label);
+    if (off) {
+        spr.pushSprite(x, y);
+        spr.deleteSprite();
+    }
 }
 
 /* Scroll arrows at the right edge: more rows above / below. */
