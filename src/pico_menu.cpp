@@ -254,34 +254,117 @@ static void draw_volume(TFT_eSPI &tft) {
 static const int MIN_STEP = 18;
 static int s_first = 0;                        /* first row shown */
 
-/* Draw the menu list, highlighting the selected row. Layout comes from
- * the panel's real size (240x320 portrait or 320x240 landscape): drawing
- * past the bottom of a landscape panel wraps onto its top rows. */
-static void draw_menu(TFT_eSPI &tft, int sel) {
-    const int W = tft.width(), H = tft.height();
-    const bool wide = W > H;                   /* landscape: one hint line, list pulled up */
-    const int HINT_H = wide ? 12 : 22;         /* hint lines at the bottom */
+/* Menu layout from the panel's real size (240x320 portrait or 320x240
+ * landscape): drawing past the bottom of a landscape panel wraps onto its
+ * top rows. Recomputed on every full draw. */
+static int s_top, s_step, s_shown;
+static bool s_wide;
+
+static void menu_layout(TFT_eSPI &tft) {
+    const int H = tft.height();
+    s_wide = tft.width() > H;                  /* landscape: one hint line, list pulled up */
+    const int HINT_H = s_wide ? 12 : 22;       /* hint lines at the bottom */
     /* A note line under the title only when there is something to say (no
      * ROMs / ARCADE.INI problem) — otherwise the list starts right below
      * the title, so the rows get more spacing. */
     const bool note = (nAvail == 0) || board_pins_warning()[0];
-    int top = note ? 60 : (wide ? 28 : 40);
+    int top = note ? 60 : (s_wide ? 28 : 40);
     int step = (H - HINT_H - top) / menu_rows();
     if (note && step < 20) {                   /* tight (landscape): pull the list up */
         top = 46;
         step = (H - HINT_H - top) / menu_rows();
     }
     if (step > 24) step = 24;
-    const int rows = menu_rows();
-    int shown = rows;
+    int shown = menu_rows();
     if (step < MIN_STEP) {
         step = MIN_STEP;
         shown = (H - HINT_H - top) / step;
     }
+    s_top = top; s_step = step; s_shown = shown;
+}
+
+/* Scroll the window so `sel` is visible; true if it moved. */
+static bool menu_follow(int sel) {
+    const int rows = menu_rows(), old = s_first;
     if (sel < s_first) s_first = sel;
-    if (sel >= s_first + shown) s_first = sel - shown + 1;
-    if (s_first > rows - shown) s_first = rows - shown;
+    if (sel >= s_first + s_shown) s_first = sel - s_shown + 1;
+    if (s_first > rows - s_shown) s_first = rows - s_shown;
     if (s_first < 0) s_first = 0;
+    return s_first != old;
+}
+
+/* One row, painted over whatever was there (its own background first, then
+ * the text on that background), so moving the highlight never blanks the
+ * screen. */
+static void draw_row(TFT_eSPI &tft, int i, int sel) {
+    if (i < s_first || i >= s_first + s_shown) return;
+    const int W = tft.width();
+    const int y = s_top + (i - s_first) * s_step;
+    /* Game names in yellow, settings / actions in white. */
+    uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
+    uint16_t bg = (i == sel) ? TFT_BLUE : TFT_BLACK;
+    tft.fillRect(4, y - 1, W - 22, s_step - 1, bg);   /* stops short of the scroll arrows */
+    tft.setTextSize(2);
+    tft.setTextColor(fg, bg);
+    char label[40];
+    switch (row_kind(i)) {
+      case ROW_GAME: snprintf(label, sizeof(label), "%s", games[avail[i]].label); break;
+#ifdef MENU_DISPLAY_TOGGLE
+      case ROW_DISPLAY:
+        snprintf(label, sizeof(label), "Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
+        break;
+#endif
+      case ROW_FPS:
+        snprintf(label, sizeof(label), "Show FPS: %s", g_show_fps ? "On" : "Off");
+        break;
+      case ROW_DRIVE: snprintf(label, sizeof(label), "ROM Drive (USB)"); break;
+      case ROW_VOLUME: {
+        int v = pico_audio_get_volume_pct();
+        if (v <= 0) snprintf(label, sizeof(label), "Volume: < Mute >");
+        else        snprintf(label, sizeof(label), "Volume: < %d%% >", v);
+        break;
+      }
+      default: snprintf(label, sizeof(label), "Exit"); break;
+    }
+    /* crop to what fits (12 px per size-2 char), leaving room for the
+     * scroll arrows — a longer label would wrap onto the next row */
+    int fit = (W - 14 - 20) / 12;
+    if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
+    tft.setCursor(14, y);
+    tft.print(label);
+}
+
+/* Scroll arrows at the right edge: more rows above / below. */
+static void draw_arrows(TFT_eSPI &tft) {
+    const int W = tft.width(), rows = menu_rows();
+    const int yUp = s_top + 2, yDn = s_top + s_shown * s_step - 12;
+    tft.fillRect(W - 18, yUp, 12, 8, TFT_BLACK);
+    tft.fillRect(W - 18, yDn, 12, 8, TFT_BLACK);
+    if (s_first > 0)
+        tft.fillTriangle(W - 12, yUp, W - 17, yUp + 7, W - 7, yUp + 7, TFT_LIGHTGREY);
+    if (s_first + s_shown < rows)
+        tft.fillTriangle(W - 12, yDn + 7, W - 17, yDn, W - 7, yDn, TFT_LIGHTGREY);
+}
+
+/* Visible rows + arrows, in place (after a scroll). */
+static void draw_rows(TFT_eSPI &tft, int sel) {
+    for (int i = s_first; i < s_first + s_shown; i++) draw_row(tft, i, sel);
+    draw_arrows(tft);
+}
+
+/* Move the highlight from `old` to `sel`: just those two rows, or every
+ * visible row when the list scrolls — never a full-screen clear. */
+static void menu_select(TFT_eSPI &tft, int old, int sel) {
+    if (menu_follow(sel)) draw_rows(tft, sel);
+    else { draw_row(tft, old, sel); draw_row(tft, sel, sel); }
+}
+
+/* The whole menu: on entry and after another screen (load error, ...). */
+static void draw_menu(TFT_eSPI &tft, int sel) {
+    const int W = tft.width(), H = tft.height();
+    menu_layout(tft);
+    menu_follow(sel);
+    const int HINT_H = s_wide ? 12 : 22;
 
     tft.fillScreen(TFT_BLACK);
     tft.setTextSize(2);
@@ -312,72 +395,23 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
         tft.print(board_pins_warning());
     }
 
-    tft.setTextSize(2);
-    int y = top;
-    for (int i = s_first; i < s_first + shown; i++) {
-        /* Game names in yellow, settings / actions in white. */
-        uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
-        if (i == sel) {
-            tft.fillRect(4, y - 1, W - 8, step - 1, TFT_BLUE);
-            tft.setTextColor(fg, TFT_BLUE);
-        } else {
-            tft.setTextColor(fg, TFT_BLACK);
-        }
-        char label[40];
-        switch (row_kind(i)) {
-          case ROW_GAME: snprintf(label, sizeof(label), "%s", games[avail[i]].label); break;
-#ifdef MENU_DISPLAY_TOGGLE
-          case ROW_DISPLAY:
-            snprintf(label, sizeof(label), "Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
-            break;
-#endif
-          case ROW_FPS:
-            snprintf(label, sizeof(label), "Show FPS: %s", g_show_fps ? "On" : "Off");
-            break;
-          case ROW_DRIVE: snprintf(label, sizeof(label), "ROM Drive (USB)"); break;
-          case ROW_VOLUME: {
-            int v = pico_audio_get_volume_pct();
-            if (v <= 0) snprintf(label, sizeof(label), "Volume: < Mute >");
-            else        snprintf(label, sizeof(label), "Volume: < %d%% >", v);
-            break;
-          }
-          default: snprintf(label, sizeof(label), "Exit"); break;
-        }
-        /* crop to what fits (12 px per size-2 char), leaving room for the
-         * scroll arrows — a longer label would wrap onto the next row */
-        int fit = (W - 14 - 20) / 12;
-        if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
-        tft.setCursor(14, y);
-        tft.print(label);
-        y += step;
-    }
-    /* more rows above / below */
-    if (s_first > 0)
-        tft.fillTriangle(W - 12, top + 2, W - 17, top + 9, W - 7, top + 9, TFT_LIGHTGREY);
-    if (s_first + shown < rows)
-        tft.fillTriangle(W - 12, top + shown * step - 5, W - 17, top + shown * step - 12,
-                         W - 7, top + shown * step - 12, TFT_LIGHTGREY);
+    draw_rows(tft, sel);
 
     /* Hint lines kept <= 37 chars (222 px) so they fit portrait width;
      * landscape gets a single <= 51-char line (306 px). */
     tft.setTextSize(1);
     tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    if (wide) {
+    if (s_wide) {
         tft.setCursor(6, H - HINT_H + 2);
         tft.print("FIRE select  LT/RT volume  hold MENU in game: list");
         draw_volume(tft);
         return;
     }
+    (void)W;
     tft.setCursor(6, H - HINT_H + 2);
     tft.print("UP/DN pick  FIRE select  MENU exit");
     tft.setCursor(6, H - HINT_H + 12);
-#ifdef PICO_QUAD
     tft.print("LT/RT volume  in game hold MENU: list");
-#elif defined(PICO_STANDALONE)
-    tft.print("LT/RT volume  in game hold MENU: list");
-#else
-    tft.print("LT/RT volume  in game hold MENU: list");
-#endif
     draw_volume(tft);
 }
 
@@ -519,7 +553,7 @@ extern "C" void pico_menu_pick_and_load(void) {
                     int n = sel + step;
                     if (fresh) n = (n + menu_rows()) % menu_rows();
                     else if (n < 0 || n >= menu_rows()) n = sel;
-                    if (n != sel) { sel = n; draw_menu(tft, sel); }
+                    if (n != sel) { int old = sel; sel = n; menu_select(tft, old, sel); }
                 }
             }
             /* Volume row: LEFT/RIGHT step it in place. */
@@ -529,7 +563,8 @@ extern "C" void pico_menu_pick_and_load(void) {
                 if (dv) {
                     set_volume(pico_audio_get_volume_pct() + dv);
                     vol_shown = pico_audio_get_volume_pct();
-                    draw_menu(tft, sel);
+                    draw_row(tft, sel, sel);
+                    draw_volume(tft);
                 }
             }
             if ((m & (BUTTON_FIRE | BUTTON_START)) && !(prev_mask & (BUTTON_FIRE | BUTTON_START)))
