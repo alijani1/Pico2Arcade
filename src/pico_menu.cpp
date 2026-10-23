@@ -478,7 +478,7 @@ extern "C" void pico_menu_pick_and_load(void) {
     if (hv >= 0) pico_config_save_volume(hv);
     else hv = pico_config_volume();
 #endif
-    pico_audio_set_volume_pct(hv >= 0 ? hv : 100);
+    pico_audio_set_volume_pct(hv >= 0 ? hv : 50);   /* default 50 % */
     handoff_volume_write(pico_audio_get_volume_pct());
     Serial.printf("[menu] volume %d%% (%s)\n", pico_audio_get_volume_pct(),
                   hv >= 0 ? "from CartReader" : "default");

@@ -26,7 +26,7 @@ static bool     g_started    = false;
 static int      g_sample_rate = 0;
 // Volume 0..100 %, applied as gain = pct² / 10000 — the same perceptual
 // curve PicoCartReader uses, so a given % sounds the same in both.
-static volatile int g_volume_pct = 100;
+static volatile int g_volume_pct = 50;    /* default 50 %: full is too loud */
 static volatile int g_gain       = 10000;   // pct², 0..10000
 
 extern "C" void pico_audio_init(int sample_rate) {

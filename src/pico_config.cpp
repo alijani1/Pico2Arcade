@@ -43,7 +43,7 @@ extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 /* Plain Pico 2: no SD card — settings live in one 4 KB flash sector just
  * above the 1 MB ROM drive (the firmware is far below). Only written from
  * the menu on core 0 (core 1 is still parked in setup1 then). Default:
- * portrait (full-size picture on a 240x320 panel), FPS off, volume 100%. */
+ * portrait (full-size picture on a 240x320 panel), FPS off, volume 50%. */
 #include <hardware/flash.h>
 #include <hardware/sync.h>
 #include "pico_audio.h"
@@ -53,7 +53,7 @@ extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #endif
 static const uint32_t CFG_MAGIC = 0x47434647u;          /* "GCFG" */
 struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, pad; };
-static Cfg s_cfg = { CFG_MAGIC, 0, 0, 100, 0 };
+static Cfg s_cfg = { CFG_MAGIC, 0, 0, 50, 0 };
 
 extern "C" {
     volatile int g_landscape_mode = 0;   /* default: portrait */
