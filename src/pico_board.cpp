@@ -11,14 +11,14 @@
 /* Quad Ultimate CX — pins match GameAdapterRGBPico data/quad.json: port 1
  * DB9 = the P1 nets 28-31 (fire 12, one button: A and B in two-button games);
  * the device buttons as there: Red (button 0) and Blue = A, Green (button 1)
- * and Yellow = B; the Joy-Con click also fires; White = START, Black = COIN
+ * and Yellow = B; the Joy-Con click also fires; Black = START, White = COIN
  * (the Quad's Start / Select), gray Menu; Joy-Con ADC on 44/45; PWM audio
  * 22 + PAM8302 enable 4; backlight MOSFET 23. */
 board_pins_t g_pins = {
     /* up down left right */ 28, 29, 30, 31,
     /* fire fire2 fire3 fire4 */ 12, 14, 16, -1,
     /* fireb fireb2 fireb3 */ -1, 15, 17,
-    /* start coin menu    */ 19, 20, 18,   /* White = GPIO19, Black = GPIO20 */
+    /* start coin menu    */ 20, 19, 18,   /* Black = GPIO20 = START, White = GPIO19 = COIN */
     /* nav_up nav_down    */ 3, 2,          /* left / right side buttons */
     /* joy_x joy_y        */ 44, 45,
     /* joy_click          */ 21,
