@@ -18,7 +18,7 @@ board_pins_t g_pins = {
     /* up down left right */ 28, 29, 30, 31,
     /* fire fire2 fire3 fire4 */ 12, 14, 16, -1,
     /* fireb fireb2 fireb3 */ -1, 15, 17,
-    /* start coin menu    */ 20, 19, 18,
+    /* start coin menu    */ 19, 20, 18,   /* White = GPIO19, Black = GPIO20 */
     /* nav_up nav_down    */ 3, 2,          /* left / right side buttons */
     /* joy_x joy_y        */ 44, 45,
     /* joy_click          */ 21,
