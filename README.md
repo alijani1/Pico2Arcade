@@ -93,7 +93,7 @@ is one menu entry away and runs alongside the device's normal job.
 
 - **Arcade Games** in the Mini-Games menu, on the built-in 2.4" color screen with sound
 - Play with an **Atari joystick** on port 1 or the on-device thumbstick and buttons
-- **256 KB ROM drive** over USB
+- **512 KB ROM drive** over USB (from Quad firmware 1.1; 256 KB on 1.0)
 - Also its everyday job: a four-player USB adapter for Atari 2600/7800 controllers — the CX-W adds Bluetooth
 
 </td>
@@ -258,11 +258,12 @@ MAME versions that renamed a ROM file are fine: a file missing under its
 name is found by its CRC32. **Merged** sets (with every clone inside) are
 not supported: the whole zip is read into RAM, and they're too big.
 
-**Quad / Duo 5200: the ROM drive holds about 251 KB.** All the zips together
-are larger than that (all 14 zips, DK Jr. Japan included, are ~300 KB), so copy the games you
-want until the drive is full; the game list shows whichever zips are there.
-The standalone Pico 2 (1 MB drive) and the PicoCartReader (SD card) hold
-them all.
+**Quad / Duo 5200: the ROM drive is 512 KB** (Duo 5200 from 1.1, Quad from
+1.1), which holds every zip (all 14, DK Jr. Japan included, are ~300 KB).
+On a Quad still on firmware 1.0 it holds about 251 KB, so copy the games
+you want until the drive is full; the game list shows whichever zips are
+there. The standalone Pico 2 (1 MB drive) and the PicoCartReader (SD card)
+hold them all.
 
 | Game | Zip | Files the loader reads |
 |---|---|---|
@@ -310,7 +311,7 @@ pio run -e pico2_std_ili9341 -t upload   # the same with an ILI9341 display
 |---|---|---|
 | `pico2_std` | Raspberry Pi Pico 2 | standalone; TinyUSB for the ROM drive |
 | `pico2_std_ili9341` | Raspberry Pi Pico 2 | as `pico2_std`, ILI9341 display (SPI 50 MHz) |
-| `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x360000, ≤ 380 KB); `-t upload` writes only that slot |
+| `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x270000 from Quad 1.1, 0x360000 on 1.0; ≤ 380 KB); `-t upload` writes only that slot |
 | `duo5200` | Duo 5200 Ultimate | chain-booted by the Duo 5200 firmware (1.1+) from its arcade slot (0x300000, ≤ 380 KB; 512 KB ROM drive); `-t upload` writes only that slot |
 | `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
 | `pico2` | PicoCartReader | flashes at offset 0, **replacing** the CartReader firmware |
