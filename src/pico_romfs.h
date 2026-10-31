@@ -16,8 +16,10 @@
  * On both flash boards the drive is written only in USB ROM drive mode
  * (pico_drive.cpp), which formats it on first use.
  *
- * Paths are the SD-style "/roms/<name>.zip"; on the Quad drive the zip is
- * looked up by name in the root directory, or in a ROMS folder.
+ * Paths are the SD-style "/roms/<name>.zip"; on the flash drives the zip is
+ * looked up by name in the root directory, then in an ARCADE, MAME, ROMS,
+ * ROMS/ARCADE or ROMS/MAME folder (shared drives with per-project folders).
+ * The SD card is searched the same way, starting with /roms/.
  */
 #ifndef PICO_ROMFS_H
 #define PICO_ROMFS_H

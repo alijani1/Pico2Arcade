@@ -171,8 +171,10 @@ On the first boot the Pico formats its ROM drive and shows up on your
 computer as a USB drive called **ARCADE ROMS**. The screen shows
 "ROM Drive (USB)".
 
-1. Copy the ROM zips onto the drive, either in the root or in a `ROMS` folder
-   (see [ROM sets](#rom-sets)).
+1. Copy the ROM zips onto the drive — in the root, or in an `ARCADE`, `MAME`
+   or `ROMS` folder (also `ROMS/ARCADE` or `ROMS/MAME`), so the drive can be
+   shared with projects that keep their ROMs in their own folders (see
+   [ROM sets](#rom-sets)).
 2. If your wiring differs from the defaults, edit **`ARCADE.INI`** on the
    drive.
 3. Eject the drive, then press **MENU** or **START**. The Pico restarts into
@@ -378,8 +380,9 @@ attract-mode menu never runs.
 - [`src/pico_romfs.cpp`](src/pico_romfs.cpp): where the zips come from. On
   the PicoCartReader it's the SD card. On the flash boards it's a small
   read-only FAT12/16 reader over XIP: the drive is plain memory, so a zip is
-  found in the root directory (or a `ROMS` folder) and copied cluster by
-  cluster.
+  found in the root directory (or an `ARCADE`, `MAME`, `ROMS`, `ROMS/ARCADE`
+  or `ROMS/MAME` folder) and copied cluster by cluster. The PicoCartReader's
+  SD card is searched the same way (`/roms/` first).
 - [`src/pico_drive.cpp`](src/pico_drive.cpp): USB ROM drive mode (TinyUSB
   mass storage). Writes go through a 4 KB flash-sector cache, with core 1
   idled around each erase/program. The drive is formatted FAT12 on first use.

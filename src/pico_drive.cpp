@@ -235,7 +235,8 @@ extern "C" void pico_drive_run(void) {
     tft.setTextSize(1);
     int y = 56;
     tft.setCursor(10, y);      tft.printf("Copy the MAME ROM zips to the");
-    tft.setCursor(10, y += 12); tft.printf("%s drive (root or ROMS folder).", driveName);
+    tft.setCursor(10, y += 12); tft.printf("%s drive: in the root or an", driveName);
+    tft.setCursor(10, y += 12); tft.print("ARCADE, MAME or ROMS folder.");
 #ifdef PICO_STANDALONE
     tft.setCursor(10, y += 20); tft.print("Pins: edit ARCADE.INI on the drive.");
 #endif

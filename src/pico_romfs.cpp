@@ -12,9 +12,30 @@ extern "C" bool pico_sd_init(void);
 
 extern "C" bool romfs_init(void) { return pico_sd_init(); }
 
-extern "C" bool romfs_exists(const char *path) { return SD.exists(path); }
+/* Games ask for "/roms/<name>.zip"; also accept the zip in /arcade, /mame,
+ * /roms/arcade or /roms/mame (shared SD cards with per-project folders), or
+ * in the root. Resolves into `buf`; false if none exists. */
+static bool sd_resolve(const char *path, char *buf, size_t len) {
+    if (SD.exists(path)) { strncpy(buf, path, len - 1); buf[len - 1] = 0; return true; }
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    static const char *const DIRS[] = { "/arcade/", "/mame/", "/roms/arcade/", "/roms/mame/", "/" };
+    for (const char *d : DIRS) {
+        snprintf(buf, len, "%s%s", d, name);
+        if (SD.exists(buf)) return true;
+    }
+    return false;
+}
+
+extern "C" bool romfs_exists(const char *path) {
+    char p[64];
+    return sd_resolve(path, p, sizeof(p));
+}
 
 extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
+    char resolved[64];
+    if (!sd_resolve(path, resolved, sizeof(resolved))) { Serial.printf("[romfs] not found: %s\n", path); return false; }
+    path = resolved;
     File f = SD.open(path, FILE_READ);
     if (!f) { Serial.printf("[romfs] open failed: %s\n", path); return false; }
     size_t sz = f.size();
@@ -172,10 +193,11 @@ static const uint8_t *scan_dir(const uint8_t *dir, uint32_t count, const char *n
     return nullptr;
 }
 
-/* Find a directory entry in a subdirectory's cluster chain. */
-static const uint8_t *scan_subdir(uint32_t cluster, const char *name83) {
+/* Find a directory entry in a subdirectory's cluster chain (wantAttr: 0 =
+ * file, 0x10 = folder). */
+static const uint8_t *scan_subdir(uint32_t cluster, const char *name83, uint8_t wantAttr = 0) {
     for (int guard = 0; cluster_ok(cluster) && guard < 4096; guard++) {
-        const uint8_t *e = scan_dir(vol + cluster_ofs(cluster), clusterBytes / 32, name83, 0);
+        const uint8_t *e = scan_dir(vol + cluster_ofs(cluster), clusterBytes / 32, name83, wantAttr);
         if (e) return e;
         cluster = fat_next(cluster);
         if (fat_eoc(cluster)) break;
@@ -183,7 +205,23 @@ static const uint8_t *scan_subdir(uint32_t cluster, const char *name83) {
     return nullptr;
 }
 
-/* Directory entry for the zip named by `path` (root, then ROMS folder). */
+/* Folders searched after the root, in order — so the drive can be shared
+ * with other projects that keep their ROMs in their own folders:
+ * ARCADE, MAME, ROMS, ROMS/ARCADE, ROMS/MAME. */
+static const char DIR_ARCADE[11] = {'A','R','C','A','D','E',' ',' ',' ',' ',' '};
+static const char DIR_MAME[11]   = {'M','A','M','E',' ',' ',' ',' ',' ',' ',' '};
+static const char DIR_ROMS[11]   = {'R','O','M','S',' ',' ',' ',' ',' ',' ',' '};
+
+/* Look for `n83` in the folder `dir83` found among the root entries, or (when
+ * `parent` != 0) inside the folder starting at cluster `parent`. */
+static const uint8_t *find_in_folder(uint32_t parent, const char *dir83, const char *n83) {
+    const uint8_t *d = parent ? scan_subdir(parent, dir83, 0x10)
+                              : scan_dir(vol + rootOfs, rootEntries, dir83, 0x10);
+    return d ? scan_subdir(rd16(d + 26), n83) : nullptr;
+}
+
+/* Directory entry for the zip named by `path`: the root, then the folders
+ * above. */
 static const uint8_t *find_file(const char *path) {
     if (!vol) return nullptr;
     const char *name = strrchr(path, '/');
@@ -192,9 +230,16 @@ static const uint8_t *find_file(const char *path) {
     if (!to_83(name, n83)) return nullptr;
     const uint8_t *e = scan_dir(vol + rootOfs, rootEntries, n83, 0);
     if (e) return e;
-    const char romsDir[11] = {'R','O','M','S',' ',' ',' ',' ',' ',' ',' '};
-    const uint8_t *d = scan_dir(vol + rootOfs, rootEntries, romsDir, 0x10);
-    return d ? scan_subdir(rd16(d + 26), n83) : nullptr;
+    if ((e = find_in_folder(0, DIR_ARCADE, n83))) return e;
+    if ((e = find_in_folder(0, DIR_MAME, n83)))   return e;
+    if ((e = find_in_folder(0, DIR_ROMS, n83)))   return e;
+    const uint8_t *roms = scan_dir(vol + rootOfs, rootEntries, DIR_ROMS, 0x10);
+    if (roms) {
+        uint32_t c = rd16(roms + 26);
+        if ((e = find_in_folder(c, DIR_ARCADE, n83))) return e;
+        if ((e = find_in_folder(c, DIR_MAME, n83)))   return e;
+    }
+    return nullptr;
 }
 
 extern "C" bool romfs_exists(const char *path) { return find_file(path) != nullptr; }
