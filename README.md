@@ -220,6 +220,12 @@ list shows a red warning naming the first bad line.
   explains which file is missing or wrong.
 - **Display: Landscape / Portrait**: portrait is the arcade's own full-size
   picture; landscape scales it to fit the panel sideways.
+- **Scale: Smooth / Sharp / Drop** (Quad, Duo 5200 and the 160x80 test
+  build): how the picture is shrunk. **Smooth** (default) averages the pixels
+  each screen pixel covers: no jitter on lines. **Sharp** keeps most lines
+  exact and blends only the in-between ones. **Drop** skips rows and columns:
+  sharpest and fastest, but lines jitter. Changes at once, so you can compare
+  in a running game. On the Quad / Duo 5200 it applies to landscape.
 - **Show FPS**: frame-rate overlay.
 - **ROM Drive (USB)**: restarts as the USB ROM drive (flash-drive boards).
 - **Volume**: LEFT / RIGHT change it in 10 % steps; FIRE steps up and wraps
@@ -315,6 +321,7 @@ pio run -e pico2_std_ili9341 -t upload   # the same with an ILI9341 display
 | `pico2_std_ili9341` | Raspberry Pi Pico 2 | as `pico2_std`, ILI9341 display (SPI 50 MHz) |
 | `quad` | Quad Ultimate CX | chain-booted by the Quad firmware from its arcade slot (0x270000 from Quad 1.1, 0x360000 on 1.0; ≤ 380 KB); `-t upload` writes only that slot |
 | `duo5200` | Duo 5200 Ultimate | chain-booted by the Duo 5200 firmware (1.1+) from its arcade slot (0x300000, ≤ 380 KB; 512 KB ROM drive); `-t upload` writes only that slot |
+| `duo_tiny` | Duo Ultimate (160x80 ST7735) | **test build**: the arcade on the tiny screen, standalone — flashes at offset 0, **replacing** the Duo firmware (reflash the Duo UF2 afterwards). Picture 62x80 landscape / 80x103 portrait; built-in Duo pins (5-way = stick, Red / Yellow = A, Green / Blue = B, Black = START, White = COIN) |
 | `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
 | `pico2` | PicoCartReader | flashes at offset 0, **replacing** the CartReader firmware |
 | `bench` | PicoCartReader | Z80 benchmark (attract mode, logs to SD) |
@@ -437,8 +444,22 @@ are buffered so debug prints don't stall either core.
 games. Galaga is the closest to the edge but sits comfortably at 59–60 fps
 in gameplay.
 
-**Landscape.** In landscape the 224×288 frame is scaled 6:5 (nearest
-neighbour, dropping every 6th row and column) to fit 320×240.
+**Landscape.** In landscape the 224×288 frame is scaled 6:5 to 186×240 to fit
+320×240. On the Quad and Duo 5200 the menu's Scale row picks how: Smooth
+(area average: in each group of six rows / columns the five outputs weigh two
+neighbours 5:1, 4:2, 3:3, 2:4, 1:5), Sharp (four copied, the middle pair
+blended) or Drop (every 6th row and column skipped — the original method, and
+still the only one on the other boards). The weighted modes keep a pixel's
+red, green and blue in one 32-bit word (green high, red|blue low) so one
+multiply weighs all three, and the frame is scaled in six bands, each sent by
+DMA while the next is scaled. Show FPS and Scale ride in the handoff flags to
+the host firmware; they last across a power-off once the host saves them
+(today it keeps only the orientation).
+
+**160x80 panel (test).** The `duo_tiny` build box-filters the whole frame to
+80x103 (portrait) or 62x80 (landscape); Scale picks the window per screen pixel:
+everything it covers (Smooth), the 2x2 at its centre (Sharp) or the centre
+pixel (Drop). Saved in the settings sector.
 
 ### Zip → memory pipeline
 
@@ -494,7 +515,7 @@ reboots into it.
 ## Directory layout
 
 ```
-platformio.ini           PIO build config (envs: pico2_std, pico2_std_ili9341, quad, duo5200, pico2_arcade, pico2, bench)
+platformio.ini           PIO build config (envs: pico2_std, pico2_std_ili9341, quad, duo5200, duo_tiny, pico2_arcade, pico2, bench)
 tft_overlay.py           installs the custom ST7789 init into TFT_eSPI (pre-build)
 arcade_upload.py         `-t upload` into a host's arcade slot (quad / pico2_arcade)
 src/
