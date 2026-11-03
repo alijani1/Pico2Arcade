@@ -167,46 +167,71 @@ static inline void blend_rows565(const uint16_t *s0, const uint16_t *s1,
 extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; }
 
 /* Weighted 6:5 both ways (224x288 -> 186x240). Output k (0..4) of each group
- * of 6 rows / columns = w0 x source[a] + w1 x source[a+1], in sixths:
+ * of 6 rows / columns = w0 x source[a] + w1 x source[a+1], in 16ths:
  *   Smooth: area average — each output is the part of the 1.2x1.2 source
- *           pixels it covers (5+1, 4+2, 3+3, 2+4, 1+5): no dropped rows or
- *           columns, so no jitter on lines, much less blur than the bilinear.
+ *           pixels it covers (5+1, 4+2, 3+3, 2+4, 1+5 sixths, as 13+3, 11+5,
+ *           8+8, 5+11, 3+13): no dropped rows or columns, so no jitter on
+ *           lines, much less blur than the bilinear.
  *   Sharp:  sources 0, 1, 4, 5 copied as they are, only 2 and 3 blended
- *           (3+3): nothing dropped, but just 1 of 5 lines is soft.
- * Vertical pass into packed R|B and G sums (x6), then horizontal (x36): B*36
- * stays below bit 11, so the fields never overlap. ~5 ms/frame at 200 MHz.
+ *           (8+8): nothing dropped, but just 1 of 5 lines is soft.
+ * Pixels are "spread" into one 32-bit word, G in the top half and R|B in the
+ * bottom (0x07E0F81F), so one multiply weights all three channels: with
+ * weights summing to 16 no field reaches the next, and >> 4 divides them all.
+ * Each source row is spread once per group of 6. Done a band of groups at a
+ * time so the previous band can go out by DMA meanwhile (Video::write).
  * (Drop is downscale_288_to_240 below — copies only.) */
 struct Tap6 { uint8_t a, w0, w1; };
 static const Tap6 TAPS[2][5] = {
-    { {0,5,1}, {1,4,2}, {2,3,3}, {3,2,4}, {4,1,5} },   /* SCALE_SMOOTH */
-    { {0,6,0}, {1,6,0}, {2,3,3}, {4,6,0}, {5,6,0} },   /* SCALE_SHARP */
+    { {0,13,3}, {1,11,5}, {2,8,8}, {3,5,11}, {4,3,13} },  /* SCALE_SMOOTH */
+    { {0,16,0}, {1,16,0}, {2,8,8}, {4,16,0}, {5,16,0} },  /* SCALE_SHARP */
 };
-static void downscale_weighted(const uint16_t *src, uint16_t *dst, int mode) {
-    static uint32_t vrb[GAME_W], vg[GAME_W];
-    const Tap6 *T = TAPS[mode == SCALE_SHARP ? 1 : 0];
-    for (int oy = 0; oy < LANDSCAPE_H; oy++) {
-        const Tap6 &ty = T[oy % 5];
-        const uint32_t wa = ty.w0, wb = ty.w1;
-        const uint16_t *s0 = src + (size_t)((oy / 5) * 6 + ty.a) * GAME_W;
-        const uint16_t *s1 = wb ? s0 + GAME_W : s0;   /* never past the last row */
-        for (int x = 0; x < GAME_W; x++) {
-            uint32_t p0 = __builtin_bswap16(s0[x]), p1 = __builtin_bswap16(s1[x]);
-            vrb[x] = (p0 & 0xF81F) * wa + (p1 & 0xF81F) * wb;
-            vg[x]  = (p0 & 0x07E0) * wa + (p1 & 0x07E0) * wb;
-        }
-        uint16_t *out = dst + (size_t)oy * LANDSCAPE_W;
-        for (int ox = 0; ox < LANDSCAPE_W; ox++) {    /* 37 groups + 1 tail column */
-            const Tap6 &tx = T[ox % 5];
-            const int xa = (ox / 5) * 6 + tx.a;
-            const int xb = tx.w1 ? xa + 1 : xa;
-            uint32_t arb = vrb[xa] * tx.w0 + vrb[xb] * tx.w1;
-            uint32_t ag  = vg[xa]  * tx.w0 + vg[xb]  * tx.w1;
-            uint32_t r = ((arb >> 11) + 18) / 36;
-            uint32_t b = ((arb & 0x7FF) + 18) / 36;
-            uint32_t g = ((ag >> 5) + 18) / 36;
-            out[ox] = __builtin_bswap16((uint16_t)((r << 11) | (g << 5) | b));
+static const uint32_t SPREAD_M   = 0x07E0F81Fu;
+static const uint32_t SPREAD_RND = 8u | (8u << 11) | (8u << 21);   /* +0.5 per field */
+
+static inline uint32_t spread565(uint16_t p) {     /* byte-swapped 565 -> spread */
+    uint32_t v = __builtin_bswap16(p);
+    return (v | (v << 16)) & SPREAD_M;
+}
+static inline uint16_t pack565(uint32_t s) {       /* spread -> byte-swapped 565 */
+    s &= SPREAD_M;
+    return __builtin_bswap16((uint16_t)(s | (s >> 16)));
+}
+static inline uint32_t mix16(uint32_t a, uint32_t b, uint32_t wa, uint32_t wb) {
+    return (a * wa + b * wb + SPREAD_RND) >> 4;
+}
+
+template <int MODE>
+static void scale_groups(const uint16_t *src, uint16_t *dst, int gy0, int gy1) {
+    static uint32_t sp[6][GAME_W], vrow[GAME_W];
+    const Tap6 *T = TAPS[MODE == SCALE_SHARP ? 1 : 0];
+    for (int gy = gy0; gy < gy1; gy++) {
+        const uint16_t *s = src + (size_t)gy * 6 * GAME_W;
+        for (int r = 0; r < 6; r++)
+            for (int x = 0; x < GAME_W; x++) sp[r][x] = spread565(s[r * GAME_W + x]);
+        for (int k = 0; k < 5; k++) {
+            const Tap6 ty = T[k];
+            const uint32_t *v = sp[ty.a];
+            if (ty.w1) {
+                const uint32_t *v1 = sp[ty.a + 1];
+                for (int x = 0; x < GAME_W; x++) vrow[x] = mix16(v[x], v1[x], ty.w0, ty.w1) & SPREAD_M;
+                v = vrow;
+            }
+            uint16_t *out = dst + (size_t)(gy * 5 + k) * LANDSCAPE_W;
+            for (int g = 0; g < 37; g++, v += 6, out += 5) {
+#pragma GCC unroll 5
+                for (int j = 0; j < 5; j++) {
+                    const Tap6 tx = T[j];
+                    out[j] = tx.w1 ? pack565(mix16(v[tx.a], v[tx.a + 1], tx.w0, tx.w1))
+                                   : pack565(v[tx.a]);
+                }
+            }
+            out[0] = pack565(mix16(v[T[0].a], v[T[0].a + 1], T[0].w0, T[0].w1));   /* tail: src 222/223 */
         }
     }
+}
+static void downscale_weighted(const uint16_t *src, uint16_t *dst, int mode, int gy0, int gy1) {
+    if (mode == SCALE_SHARP) scale_groups<SCALE_SHARP>(src, dst, gy0, gy1);
+    else                     scale_groups<SCALE_SMOOTH>(src, dst, gy0, gy1);
 }
 #endif  /* PICO_GALAGINO_LANDSCAPE_AREA */
 
@@ -323,6 +348,31 @@ static void push_banded(int x, int y, int w, int h, uint16_t *buf) {
   }
 }
 
+#if defined(PICO_GALAGINO_LANDSCAPE) && defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
+/* Smooth / Sharp: scale a band (8 groups = 40 rows), start its DMA push, and
+ * scale the next band while it goes out — the push no longer adds to the
+ * scaling time. Each band has its own rows of scaled_buf, so nothing is
+ * overwritten while in flight. Audio topped up between bands as before.
+ * Without DMA: scale everything, then the blocking banded push. */
+static void push_scaled_overlapped(int mode) {
+  const int GROUPS = LANDSCAPE_H / 5, BAND = GROUPS / PUSH_BANDS;   /* 48 / 6 = 8 */
+  if (!tft.DMA_Enabled) {
+    downscale_weighted(frame_buf, scaled_buf, mode, 0, GROUPS);
+    push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
+    return;
+  }
+  tft.startWrite();
+  for (int g0 = 0; g0 < GROUPS; g0 += BAND) {
+    downscale_weighted(frame_buf, scaled_buf, mode, g0, g0 + BAND);
+    tft.pushImageDMA(push_x_off, g0 * 5, LANDSCAPE_W, BAND * 5,
+                     scaled_buf + (size_t)g0 * 5 * LANDSCAPE_W);   /* waits for the previous band */
+    snd_transmit();
+  }
+  tft.dmaWait();
+  tft.endWrite();
+}
+#endif
+
 void Video::write(uint16_t *colors, uint32_t len) {
   int rows = (int)(len / GAME_W);
   if (rows <= 0) return;
@@ -338,11 +388,14 @@ void Video::write(uint16_t *colors, uint32_t len) {
 #elif defined(PICO_GALAGINO_LANDSCAPE)
     if (is_landscape_locked) {
 #if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
-      if (g_scale_mode != SCALE_DROP) downscale_weighted(frame_buf, scaled_buf, g_scale_mode);
-      else
+      if (g_scale_mode != SCALE_DROP) {
+        push_scaled_overlapped(g_scale_mode);
+      } else
 #endif
+      {
       downscale_288_to_240(frame_buf, scaled_buf);
       push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
+      }
     } else {
       push_banded(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
     }
