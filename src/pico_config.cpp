@@ -52,7 +52,8 @@ extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #define PICO_CONFIG_PHYS 0x300000u
 #endif
 static const uint32_t CFG_MAGIC = 0x47434647u;          /* "GCFG" */
-struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, pad; };
+/* scale: the 160x80 panel's Scale row (SCALE_*; was padding, so 0 = Smooth) */
+struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, scale; };
 /* The Duo's 160x80 panel starts in landscape, the way the Duo is held. */
 #ifdef PICO_TINY_SCREEN
 #define PICO_DEFAULT_LANDSCAPE 1
@@ -61,6 +62,9 @@ struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, pad; };
 #endif
 static Cfg s_cfg = { CFG_MAGIC, PICO_DEFAULT_LANDSCAPE, 0, 50, 0 };
 
+#ifdef PICO_TINY_SCREEN
+extern "C" volatile int g_scale_mode;    /* video.cpp */
+#endif
 extern "C" {
     volatile int g_landscape_mode = PICO_DEFAULT_LANDSCAPE;   /* default: portrait */
     volatile int g_show_fps       = 0;   /* default: off */
@@ -72,6 +76,9 @@ extern "C" void pico_config_load(void) {
     if (s_cfg.volume > 100) s_cfg.volume = 100;
     g_landscape_mode = s_cfg.landscape ? 1 : 0;
     g_show_fps = s_cfg.show_fps ? 1 : 0;
+#ifdef PICO_TINY_SCREEN
+    g_scale_mode = s_cfg.scale <= SCALE_DROP ? s_cfg.scale : SCALE_SMOOTH;
+#endif
     Serial.printf("[cfg] landscape=%d show_fps=%d volume=%d (%s)\n", g_landscape_mode,
                   g_show_fps, s_cfg.volume, f->magic == CFG_MAGIC ? "flash" : "defaults");
 }
@@ -105,6 +112,12 @@ extern "C" void pico_config_save_show_fps(int on) {
     g_show_fps = on ? 1 : 0;
     pico_config_save();
 }
+#ifdef PICO_TINY_SCREEN
+extern "C" void pico_config_save_scale(int mode) {
+    s_cfg.scale = (uint8_t)mode;
+    pico_config_save();
+}
+#endif
 /* Stored volume (0..100) — the menu uses it when no handoff volume is set. */
 extern "C" int pico_config_volume(void) { return s_cfg.volume; }
 extern "C" void pico_config_save_volume(int pct) {

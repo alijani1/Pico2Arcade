@@ -155,6 +155,9 @@ extern "C" void pico_config_save_landscape(int on);
 #endif
 extern "C" volatile int g_show_fps;
 extern "C" void pico_config_save_show_fps(int on);
+#ifdef PICO_TINY_SCREEN
+extern "C" void pico_config_save_scale(int mode);
+#endif
 extern "C" int  pico_config_volume(void);
 extern "C" void pico_config_save_volume(int pct);
 
@@ -200,8 +203,9 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_FPS, ROW_DRIVE, ROW_VOLUME,
 #if defined(PICO_GALAGINO_LANDSCAPE)
 #  define MENU_DISPLAY_TOGGLE 1
 #endif
-/* Landscape Scale row (Smooth / Sharp / Drop): area-scaling builds. */
-#if defined(MENU_DISPLAY_TOGGLE) && defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
+/* Scale row (Smooth / Sharp / Drop): area-scaling builds (landscape only)
+ * and the 160x80 panel (both orientations; saved — pico_config.cpp). */
+#if defined(MENU_DISPLAY_TOGGLE) && ((defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))                                      || defined(PICO_TINY_SCREEN))
 #  define MENU_SCALE_ROW 1
 extern "C" volatile int g_scale_mode;     /* video.cpp */
 #endif
@@ -691,6 +695,9 @@ extern "C" void pico_menu_pick_and_load(void) {
 #ifdef MENU_SCALE_ROW
           case ROW_SCALE:       /* Smooth -> Sharp -> Drop -> Smooth; landscape only */
             g_scale_mode = (g_scale_mode + 1) % 3;
+#ifdef PICO_TINY_SCREEN
+            pico_config_save_scale(g_scale_mode);
+#endif
             break;             /* loop redraws the menu with the new value */
 #endif
           case ROW_FPS:

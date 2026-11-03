@@ -63,25 +63,53 @@ static const int TINY_PW = 80, TINY_PH = 103;   /* portrait */
 static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
 static uint16_t tiny_buf[TINY_PW * TINY_PH];
 static int tiny_w, tiny_h, tiny_x, tiny_y;
-static uint16_t tiny_x0[TINY_PW + 1];           /* first source column of each output column */
+
+/* Scale row in the menu (both orientations here), kept in the settings
+ * (pico_config.cpp). Each output pixel averages a window of source pixels:
+ *   Smooth: all the ~2.8x2.8 (3.6x3.6 landscape) pixels it covers (default)
+ *   Sharp:  only the 2x2 at its centre — crisper, still no dropped detail
+ *           at the 2-3 px scale of most lines
+ *   Drop:   the one pixel at its centre (nearest neighbour) */
+#if !(defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))
+extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; }
+#endif
+static uint8_t tiny_cs[TINY_PW], tiny_cn[TINY_PW];   /* per output column: first source column, count */
+static uint16_t tiny_rs[TINY_PH];                    /* per output row: first source row */
+static uint8_t tiny_rn[TINY_PH];                     /*   and count */
+static int tiny_mode = -1;                           /* mode the windows were built for */
+
+static void tiny_window(int i, int n, int len, int mode, int &s, int &c) {
+  const int a = i * len / n, b = (i + 1) * len / n;   /* the pixels it covers */
+  if (mode == SCALE_DROP)       { s = (a + b) / 2; c = 1; }
+  else if (mode == SCALE_SHARP) { s = (a + b - 1) / 2; c = 2; if (s + 2 > len) s = len - 2; }
+  else                          { s = a; c = b - a; }
+}
+
+static void tiny_build(int mode) {
+  int s, c;
+  for (int i = 0; i < tiny_w; i++) { tiny_window(i, tiny_w, GAME_W, mode, s, c); tiny_cs[i] = s; tiny_cn[i] = c; }
+  for (int i = 0; i < tiny_h; i++) { tiny_window(i, tiny_h, GAME_H, mode, s, c); tiny_rs[i] = s; tiny_rn[i] = c; }
+  tiny_mode = mode;
+}
 
 static void tiny_setup(int w, int h, int panel_w, int panel_h) {
   tiny_w = w; tiny_h = h;
   tiny_x = (panel_w - w) / 2;
   tiny_y = (panel_h - h) / 2;
-  for (int i = 0; i <= w; i++) tiny_x0[i] = (uint16_t)(i * GAME_W / w);
+  tiny_mode = -1;                                    /* windows built on the first frame */
 }
 
 static void downscale_tiny(const uint16_t *src, uint16_t *dst) {
+  if (g_scale_mode != tiny_mode) tiny_build(g_scale_mode);
   uint16_t sr[TINY_PW], sg[TINY_PW], sb[TINY_PW];
   for (int oy = 0; oy < tiny_h; oy++) {
-    const int y0 = oy * GAME_H / tiny_h, y1 = (oy + 1) * GAME_H / tiny_h;
+    const int y0 = tiny_rs[oy], y1 = y0 + tiny_rn[oy];
     memset(sr, 0, sizeof(sr)); memset(sg, 0, sizeof(sg)); memset(sb, 0, sizeof(sb));
     for (int sy = y0; sy < y1; sy++) {
       const uint16_t *row = src + (size_t)sy * GAME_W;
       for (int ox = 0; ox < tiny_w; ox++) {
         unsigned r = 0, g = 0, b = 0;
-        for (int sx = tiny_x0[ox]; sx < tiny_x0[ox + 1]; sx++) {
+        for (int sx = tiny_cs[ox]; sx < tiny_cs[ox] + tiny_cn[ox]; sx++) {
           uint16_t v = __builtin_bswap16(row[sx]);
           r += v >> 11; g += (v >> 5) & 0x3F; b += v & 0x1F;
         }
@@ -90,7 +118,7 @@ static void downscale_tiny(const uint16_t *src, uint16_t *dst) {
     }
     uint16_t *out = dst + (size_t)oy * tiny_w;
     for (int ox = 0; ox < tiny_w; ox++) {
-      const unsigned n = (unsigned)(y1 - y0) * (tiny_x0[ox + 1] - tiny_x0[ox]);
+      const unsigned n = (unsigned)(y1 - y0) * tiny_cn[ox];
       const unsigned r = (sr[ox] + n / 2) / n, g = (sg[ox] + n / 2) / n, b = (sb[ox] + n / 2) / n;
       out[ox] = __builtin_bswap16((uint16_t)((r << 11) | (g << 5) | b));
     }
