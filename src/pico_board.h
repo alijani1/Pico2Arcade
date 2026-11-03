@@ -42,6 +42,12 @@
 #  define PICO_ROT_PORTRAIT  0
 #endif
 
+/* Landscape scale modes (menu Scale row; builds with
+ * PICO_GALAGINO_LANDSCAPE_AREA — video.cpp g_scale_mode). */
+#define SCALE_SMOOTH 0   /* area average (default) */
+#define SCALE_SHARP  1   /* copy 4 of 5, blend the middle pair */
+#define SCALE_DROP   2   /* drop every 6th row / column */
+
 /* USB ROM drive mode (pico_drive.cpp) — builds with the TinyUSB stack. */
 #if defined(PICO_BOARD_TABLE) && defined(USE_TINYUSB)
 #  define PICO_USB_DRIVE 1

@@ -162,18 +162,33 @@ static inline void blend_rows565(const uint16_t *s0, const uint16_t *s1,
 #endif
 
 #if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
-/* Area average, 6:5 both ways (224x288 -> 186x240): each output pixel is the
- * part of the 1.2x1.2 source pixels it covers, so in every group of 6 the
- * weights (in sixths) are 5+1, 4+2, 3+3, 2+4, 1+5 — no dropped rows or
- * columns, so no jitter on lines, and much less blur than the 2x2 bilinear.
+/* Landscape scale, picked in the menu (Scale row), default Smooth. Session
+ * only: the host keeps just the orientation. */
+extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; }
+
+/* Weighted 6:5 both ways (224x288 -> 186x240). Output k (0..4) of each group
+ * of 6 rows / columns = w0 x source[a] + w1 x source[a+1], in sixths:
+ *   Smooth: area average — each output is the part of the 1.2x1.2 source
+ *           pixels it covers (5+1, 4+2, 3+3, 2+4, 1+5): no dropped rows or
+ *           columns, so no jitter on lines, much less blur than the bilinear.
+ *   Sharp:  sources 0, 1, 4, 5 copied as they are, only 2 and 3 blended
+ *           (3+3): nothing dropped, but just 1 of 5 lines is soft.
  * Vertical pass into packed R|B and G sums (x6), then horizontal (x36): B*36
- * stays below bit 11, so the fields never overlap. ~5 ms/frame at 200 MHz. */
-static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
+ * stays below bit 11, so the fields never overlap. ~5 ms/frame at 200 MHz.
+ * (Drop is downscale_288_to_240 below — copies only.) */
+struct Tap6 { uint8_t a, w0, w1; };
+static const Tap6 TAPS[2][5] = {
+    { {0,5,1}, {1,4,2}, {2,3,3}, {3,2,4}, {4,1,5} },   /* SCALE_SMOOTH */
+    { {0,6,0}, {1,6,0}, {2,3,3}, {4,6,0}, {5,6,0} },   /* SCALE_SHARP */
+};
+static void downscale_weighted(const uint16_t *src, uint16_t *dst, int mode) {
     static uint32_t vrb[GAME_W], vg[GAME_W];
+    const Tap6 *T = TAPS[mode == SCALE_SHARP ? 1 : 0];
     for (int oy = 0; oy < LANDSCAPE_H; oy++) {
-        const int k = oy % 5, a = (oy / 5) * 6 + k;
-        const uint32_t wa = 5 - k, wb = k + 1;
-        const uint16_t *s0 = src + (size_t)a * GAME_W, *s1 = s0 + GAME_W;
+        const Tap6 &ty = T[oy % 5];
+        const uint32_t wa = ty.w0, wb = ty.w1;
+        const uint16_t *s0 = src + (size_t)((oy / 5) * 6 + ty.a) * GAME_W;
+        const uint16_t *s1 = wb ? s0 + GAME_W : s0;   /* never past the last row */
         for (int x = 0; x < GAME_W; x++) {
             uint32_t p0 = __builtin_bswap16(s0[x]), p1 = __builtin_bswap16(s1[x]);
             vrb[x] = (p0 & 0xF81F) * wa + (p1 & 0xF81F) * wb;
@@ -181,10 +196,11 @@ static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
         }
         uint16_t *out = dst + (size_t)oy * LANDSCAPE_W;
         for (int ox = 0; ox < LANDSCAPE_W; ox++) {    /* 37 groups + 1 tail column */
-            const int kx = ox % 5, xa = (ox / 5) * 6 + kx;
-            const uint32_t ua = 5 - kx, ub = kx + 1;
-            uint32_t arb = vrb[xa] * ua + vrb[xa + 1] * ub;
-            uint32_t ag  = vg[xa]  * ua + vg[xa + 1]  * ub;
+            const Tap6 &tx = T[ox % 5];
+            const int xa = (ox / 5) * 6 + tx.a;
+            const int xb = tx.w1 ? xa + 1 : xa;
+            uint32_t arb = vrb[xa] * tx.w0 + vrb[xb] * tx.w1;
+            uint32_t ag  = vg[xa]  * tx.w0 + vg[xb]  * tx.w1;
             uint32_t r = ((arb >> 11) + 18) / 36;
             uint32_t b = ((arb & 0x7FF) + 18) / 36;
             uint32_t g = ((ag >> 5) + 18) / 36;
@@ -192,7 +208,8 @@ static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
         }
     }
 }
-#else
+#endif  /* PICO_GALAGINO_LANDSCAPE_AREA */
+
 static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
     /* 48 blocks × 6 src rows → 5 dst rows = 288 → 240 exactly. */
     for (int j = 0; j < LANDSCAPE_H; j += 5) {
@@ -221,7 +238,6 @@ static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
 #endif
     }
 }
-#endif  /* PICO_GALAGINO_LANDSCAPE_AREA */
 
 #pragma GCC pop_options
 #endif  /* PICO_GALAGINO_LANDSCAPE */
@@ -321,6 +337,10 @@ void Video::write(uint16_t *colors, uint32_t len) {
     push_banded(tiny_x, tiny_y, tiny_w, tiny_h, tiny_buf);
 #elif defined(PICO_GALAGINO_LANDSCAPE)
     if (is_landscape_locked) {
+#if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
+      if (g_scale_mode != SCALE_DROP) downscale_weighted(frame_buf, scaled_buf, g_scale_mode);
+      else
+#endif
       downscale_288_to_240(frame_buf, scaled_buf);
       push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
     } else {

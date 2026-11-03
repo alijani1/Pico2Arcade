@@ -194,13 +194,20 @@ static void set_volume(int v) {
 /* Menu rows: available games, then (landscape builds) the display
  * toggle, the FPS-overlay toggle, (flash boards) ROM Drive, Volume, then
  * Exit. Row kinds are derived from the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
 #  define MENU_DISPLAY_TOGGLE 1
 #endif
-#ifdef MENU_DISPLAY_TOGGLE
+/* Landscape Scale row (Smooth / Sharp / Drop): area-scaling builds. */
+#if defined(MENU_DISPLAY_TOGGLE) && defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
+#  define MENU_SCALE_ROW 1
+extern "C" volatile int g_scale_mode;     /* video.cpp */
+#endif
+#ifdef MENU_SCALE_ROW
+static const int SETTING_ROWS_BASE = 3;   /* Display, Scale, Show FPS */
+#elif defined(MENU_DISPLAY_TOGGLE)
 static const int SETTING_ROWS_BASE = 2;   /* Display, Show FPS */
 #else
 static const int SETTING_ROWS_BASE = 1;   /* Show FPS */
@@ -219,6 +226,10 @@ static RowKind row_kind(int row) {
     row -= nAvail;
 #ifdef MENU_DISPLAY_TOGGLE
     if (row == 0) return ROW_DISPLAY;
+    row--;
+#endif
+#ifdef MENU_SCALE_ROW
+    if (row == 0) return ROW_SCALE;
     row--;
 #endif
     if (row == 0) return ROW_FPS;
@@ -343,6 +354,12 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #ifdef MENU_DISPLAY_TOGGLE
       case ROW_DISPLAY:
         snprintf(label, sizeof(label), "Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
+        break;
+#endif
+#ifdef MENU_SCALE_ROW
+      case ROW_SCALE:
+        snprintf(label, sizeof(label), "Scale: %s", g_scale_mode == SCALE_SHARP ? "Sharp"
+                                                  : g_scale_mode == SCALE_DROP ? "Drop" : "Smooth");
         break;
 #endif
       case ROW_FPS:
@@ -670,6 +687,11 @@ extern "C" void pico_menu_pick_and_load(void) {
              * we come back to this menu instead of the CartReader. */
             handoff_relaunch_arcade();
             break;
+#endif
+#ifdef MENU_SCALE_ROW
+          case ROW_SCALE:       /* Smooth -> Sharp -> Drop -> Smooth; landscape only */
+            g_scale_mode = (g_scale_mode + 1) % 3;
+            break;             /* loop redraws the menu with the new value */
 #endif
           case ROW_FPS:
             pico_config_save_show_fps(!g_show_fps);
