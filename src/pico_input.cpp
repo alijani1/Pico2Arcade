@@ -51,6 +51,9 @@ static const unsigned long MENU_EXIT_HOLD_MS = 1000;
  * single-button external joystick fires both. */
 extern "C" { volatile int g_two_fire = 0; }
 
+#ifdef PICO_TINY_SCREEN
+extern "C" volatile int g_stretch;   /* video.cpp: landscape width index */
+#endif
 /* Set by pico_menu once a game is armed (defined in pico_core1.cpp). */
 extern volatile int g_menu_done;
 
@@ -366,6 +369,11 @@ extern "C" unsigned char buttons_get(void) {
         } else if (menu_down) {
             menu_down = false;
             g_menu_tapped = true;
+#ifdef PICO_TINY_SCREEN
+            /* In a game, landscape: a tap steps the width 62 -> 75 -> 112; the
+             * video side picks it up next frame and saves it (video.cpp). */
+            if (g_menu_done && g_landscape_mode) g_stretch = (g_stretch + 1) % 3;
+#endif
         }
     }
 

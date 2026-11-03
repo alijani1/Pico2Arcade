@@ -226,8 +226,10 @@ list shows a red warning naming the first bad line.
   exact and blends only the in-between ones. **Drop** skips rows and columns:
   sharpest and fastest, but lines jitter. Changes at once, so you can compare
   in a running game. On the Quad / Duo 5200 it applies to landscape.
-- **Stretch: On / Off** (160x80 test build): landscape picture twice as wide,
-  124x80 instead of 62x80, resampled to the full width.
+- **Width: 62 / 75 / 112** (160x80 test build, landscape): 62 is the true
+  shape; 75 and 112 are 1.2x and 1.8x wide, each an exact 3:1 / 2:1 division
+  of the 224 columns so thin lines stay steady. A **MENU tap in a game** steps
+  through them too. Saved.
 - **Show FPS**: frame-rate overlay.
 - **ROM Drive (USB)**: restarts as the USB ROM drive (flash-drive boards).
 - **Volume**: LEFT / RIGHT change it in 10 % steps; FIRE steps up and wraps

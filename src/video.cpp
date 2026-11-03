@@ -61,14 +61,20 @@ static uint16_t frame_buf[GAME_W * GAME_H];
  * ~3 ms per frame on core 0; the push is tiny (16 KB at most). */
 static const int TINY_PW = 80, TINY_PH = 103;   /* portrait */
 static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
-static const int TINY_SW = 124;                 /* landscape, Stretch on: twice as wide */
-static const int TINY_MAXW = TINY_SW;
+/* Landscape widths (menu Width row / MENU tap in a game): 62 = the true
+ * shape (224x288 into 80 rows); 75 = exactly 3 source columns per output,
+ * 1.2x wide; 112 = exactly 2, 1.8x wide. Even divisions keep thin vertical
+ * lines steady (124 — 1.8 columns each, 2x wide — was tried and dropped). */
+static const int TINY_WIDTHS[3] = { 62, 75, 112 };
+static const int TINY_MAXW = 112;
 static uint16_t tiny_buf[TINY_MAXW * TINY_PH];
 static int tiny_w, tiny_h, tiny_x, tiny_y;
-/* Stretch row (landscape): resampled straight to 124 columns, so the extra
- * width is real detail, not doubled pixels. Saved (pico_config.cpp); picked up
- * by the next frame (Video::write re-centres and clears the borders). */
+/* Landscape width index into TINY_WIDTHS, resampled straight to that many
+ * columns (real detail, not doubled pixels). Set by the menu or a MENU tap in
+ * a game (pico_input.cpp); the next frame re-centres, clears the borders and
+ * saves it (pico_config.cpp). */
 extern "C" { volatile int g_stretch = 0; }
+extern "C" void pico_config_save_stretch(int idx);
 static int tiny_stretch = 0;                    /* what the geometry was built for */
 
 /* Scale row in the menu (both orientations here), kept in the settings
@@ -343,7 +349,7 @@ void Video::begin(void) {
   }
 #ifdef PICO_TINY_SCREEN
   tiny_stretch = g_stretch;
-  if (is_landscape_locked) tiny_setup(tiny_stretch ? TINY_SW : TINY_LW, TINY_LH, tft.width(), tft.height());
+  if (is_landscape_locked) tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height());
   else                     tiny_setup(TINY_PW, TINY_PH, tft.width(), tft.height());
   push_x_off = tiny_x;
   Serial.printf("[video] tiny screen: image %dx%d at (%d,%d)\n", tiny_w, tiny_h, tiny_x, tiny_y);
@@ -419,11 +425,12 @@ void Video::write(uint16_t *colors, uint32_t len) {
   cur_row += rows;
   if (cur_row >= GAME_H) {
 #if defined(PICO_TINY_SCREEN)
-    if (is_landscape_locked && g_stretch != tiny_stretch) {   /* Stretch toggled in the menu */
+    if (is_landscape_locked && g_stretch != tiny_stretch) {   /* Width changed (menu / MENU tap) */
       tiny_stretch = g_stretch;
-      tiny_setup(tiny_stretch ? TINY_SW : TINY_LW, TINY_LH, tft.width(), tft.height());
+      tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height());
       push_x_off = tiny_x;
       tft.fillScreen(TFT_BLACK);
+      pico_config_save_stretch(tiny_stretch);     /* no-op if the menu already saved it */
     }
     downscale_tiny(frame_buf, tiny_buf);
     push_banded(tiny_x, tiny_y, tiny_w, tiny_h, tiny_buf);
@@ -476,8 +483,8 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
     tft.setCursor(0, 12);  tft.printf("CPU %3.0f%%", load);
     return;
   }
-  if (tiny_x < 40) {
-    /* Landscape stretched: an 18 px border — three numbers, 3 chars each. */
+  {
+    /* Landscape: a 24-49 px border — three numbers, 3 chars each. */
     tft.fillRect(0, 0, tiny_x, 36, TFT_BLACK);
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(0, 2);   tft.printf("%2.0f", scr_fps);
