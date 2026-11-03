@@ -65,12 +65,13 @@ static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
  * shape (224x288 into 80 rows); 75 = exactly 3 source columns per output,
  * 1.2x wide; 112 = exactly 2, 1.8x wide. Even divisions keep thin vertical
  * lines steady (124 — 1.8 columns each, 2x wide — was tried and dropped);
- * 160 = the full panel, 2.6x wide, uneven (1.4 columns each); "160 crop" =
- * scaled to 160x96 (exactly 3 source rows each) and the middle 80 rows shown,
- * 8 cut off top and bottom (3 tile rows of score / lives each). */
-static const int TINY_STEPS = 5;
-static const int TINY_WIDTHS[TINY_STEPS]  = { 62, 75, 112, 160, 160 };
-static const int TINY_VHEIGHT[TINY_STEPS] = { 80, 80,  80,  80,  96 };   /* scaled height before the crop */
+ * 160 = the full panel, 2.6x wide, uneven (1.4 columns each). Each width
+ * also has a "crop" step: scaled to 96 rows (exactly 3 source rows each) and
+ * the middle 80 shown, 8 cut off top and bottom (3 tile rows of score / lives
+ * each) — 20% taller. Steps: 62, 62 crop, 75, 75 crop, 112, ..., 160 crop. */
+static const int TINY_STEPS = 8;
+static const int TINY_WIDTHS[TINY_STEPS]  = { 62, 62, 75, 75, 112, 112, 160, 160 };
+static const int TINY_VHEIGHT[TINY_STEPS] = { 80, 96, 80, 96,  80,  96,  80,  96 };   /* scaled height before the crop */
 static const int TINY_MAXW = 160;
 static uint16_t tiny_buf[TINY_MAXW * TINY_PH];
 static int tiny_w, tiny_h, tiny_x, tiny_y;

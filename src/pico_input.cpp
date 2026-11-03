@@ -370,9 +370,9 @@ extern "C" unsigned char buttons_get(void) {
             menu_down = false;
             g_menu_tapped = true;
 #ifdef PICO_TINY_SCREEN
-            /* In a game, landscape: a tap steps the width 62 -> 75 -> 112 -> 160 -> 160 crop; the
+            /* In a game, landscape: a tap steps the width 62 -> 62 crop -> 75 -> ... -> 160 crop; the
              * video side picks it up next frame and saves it (video.cpp). */
-            if (g_menu_done && g_landscape_mode) g_stretch = (g_stretch + 1) % 5;
+            if (g_menu_done && g_landscape_mode) g_stretch = (g_stretch + 1) % 8;
 #endif
         }
     }
