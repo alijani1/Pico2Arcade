@@ -65,11 +65,16 @@ static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
  * shape (224x288 into 80 rows); 75 = exactly 3 source columns per output,
  * 1.2x wide; 112 = exactly 2, 1.8x wide. Even divisions keep thin vertical
  * lines steady (124 — 1.8 columns each, 2x wide — was tried and dropped);
- * 160 = the full panel, 2.6x wide, uneven (1.4 columns each). */
-static const int TINY_WIDTHS[4] = { 62, 75, 112, 160 };
+ * 160 = the full panel, 2.6x wide, uneven (1.4 columns each); "160 crop" =
+ * scaled to 160x96 (exactly 3 source rows each) and the middle 80 rows shown,
+ * 8 cut off top and bottom (3 tile rows of score / lives each). */
+static const int TINY_STEPS = 5;
+static const int TINY_WIDTHS[TINY_STEPS]  = { 62, 75, 112, 160, 160 };
+static const int TINY_VHEIGHT[TINY_STEPS] = { 80, 80,  80,  80,  96 };   /* scaled height before the crop */
 static const int TINY_MAXW = 160;
 static uint16_t tiny_buf[TINY_MAXW * TINY_PH];
 static int tiny_w, tiny_h, tiny_x, tiny_y;
+static int tiny_vh, tiny_vy0;                   /* scaled height, first of its rows shown */
 /* Landscape width index into TINY_WIDTHS, resampled straight to that many
  * columns (real detail, not doubled pixels). Set by the menu or a MENU tap in
  * a game (pico_input.cpp); the next frame re-centres, clears the borders and
@@ -102,12 +107,14 @@ static void tiny_window(int i, int n, int len, int mode, int &s, int &c) {
 static void tiny_build(int mode) {
   int s, c;
   for (int i = 0; i < tiny_w; i++) { tiny_window(i, tiny_w, GAME_W, mode, s, c); tiny_cs[i] = s; tiny_cn[i] = c; }
-  for (int i = 0; i < tiny_h; i++) { tiny_window(i, tiny_h, GAME_H, mode, s, c); tiny_rs[i] = s; tiny_rn[i] = c; }
+  for (int i = 0; i < tiny_h; i++) { tiny_window(tiny_vy0 + i, tiny_vh, GAME_H, mode, s, c); tiny_rs[i] = s; tiny_rn[i] = c; }
   tiny_mode = mode;
 }
 
-static void tiny_setup(int w, int h, int panel_w, int panel_h) {
+static void tiny_setup(int w, int h, int panel_w, int panel_h, int vh = 0) {
   tiny_w = w; tiny_h = h;
+  tiny_vh = vh > h ? vh : h;                         /* > h: crop to the middle h rows */
+  tiny_vy0 = (tiny_vh - h) / 2;
   tiny_x = (panel_w - w) / 2;
   tiny_y = (panel_h - h) / 2;
   tiny_mode = -1;                                    /* windows built on the first frame */
@@ -350,7 +357,8 @@ void Video::begin(void) {
   }
 #ifdef PICO_TINY_SCREEN
   tiny_stretch = g_stretch;
-  if (is_landscape_locked) tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height());
+  if (is_landscape_locked) tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height(),
+                                      TINY_VHEIGHT[tiny_stretch]);
   else                     tiny_setup(TINY_PW, TINY_PH, tft.width(), tft.height());
   push_x_off = tiny_x;
   Serial.printf("[video] tiny screen: image %dx%d at (%d,%d)\n", tiny_w, tiny_h, tiny_x, tiny_y);
@@ -428,7 +436,7 @@ void Video::write(uint16_t *colors, uint32_t len) {
 #if defined(PICO_TINY_SCREEN)
     if (is_landscape_locked && g_stretch != tiny_stretch) {   /* Width changed (menu / MENU tap) */
       tiny_stretch = g_stretch;
-      tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height());
+      tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height(), TINY_VHEIGHT[tiny_stretch]);
       push_x_off = tiny_x;
       tft.fillScreen(TFT_BLACK);
       pico_config_save_stretch(tiny_stretch);     /* no-op if the menu already saved it */

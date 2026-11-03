@@ -229,7 +229,9 @@ list shows a red warning naming the first bad line.
 - **Width: 62 / 75 / 112 / 160** (160x80 test build, landscape): 62 is the
   true shape; 75 and 112 are 1.2x and 1.8x wide, each an exact 3:1 / 2:1
   division of the 224 columns so thin lines stay steady; 160 fills the screen
-  (2.6x wide, no room for the FPS overlay). A **MENU tap in a game** steps
+  (2.6x wide, no room for the FPS overlay); **160 crop** scales to 160x96
+  (exactly 3 game rows per line) and cuts 8 lines off the top and bottom —
+  everything 20% taller, minus about 3 tile rows of score / lives at each end. A **MENU tap in a game** steps
   through them too. Saved.
 - **Show FPS**: frame-rate overlay.
 - **ROM Drive (USB)**: restarts as the USB ROM drive (flash-drive boards).

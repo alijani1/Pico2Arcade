@@ -209,7 +209,7 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE
 #  define MENU_SCALE_ROW 1
 extern "C" volatile int g_scale_mode;     /* video.cpp */
 #endif
-/* Width row (landscape 62 / 75 / 112 / 160): the 160x80 panel. */
+/* Width row (landscape 62 / 75 / 112 / 160 / 160 crop): the 160x80 panel. */
 #if defined(MENU_SCALE_ROW) && defined(PICO_TINY_SCREEN)
 #  define MENU_STRETCH_ROW 1
 extern "C" volatile int g_stretch;        /* video.cpp */
@@ -380,8 +380,8 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #endif
 #ifdef MENU_STRETCH_ROW
       case ROW_STRETCH:
-        snprintf(label, sizeof(label), "Width: %s", g_stretch == 3 ? "160" : g_stretch == 2 ? "112"
-                                                  : g_stretch == 1 ? "75" : "62");
+        snprintf(label, sizeof(label), "Width: %s", g_stretch == 4 ? "160 crop" : g_stretch == 3 ? "160"
+                                                  : g_stretch == 2 ? "112" : g_stretch == 1 ? "75" : "62");
         break;
 #endif
       case ROW_FPS:
@@ -719,8 +719,8 @@ extern "C" void pico_menu_pick_and_load(void) {
             break;             /* loop redraws the menu with the new value */
 #endif
 #ifdef MENU_STRETCH_ROW
-          case ROW_STRETCH:     /* landscape width 62 -> 75 -> 112 -> 160 -> 62 */
-            pico_config_save_stretch((g_stretch + 1) % 4);
+          case ROW_STRETCH:     /* landscape width 62 -> 75 -> 112 -> 160 -> 160 crop -> 62 */
+            pico_config_save_stretch((g_stretch + 1) % 5);
             break;             /* loop redraws the menu with the new value */
 #endif
           case ROW_FPS:
