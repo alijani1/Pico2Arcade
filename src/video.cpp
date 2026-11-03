@@ -195,6 +195,13 @@ static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
 
 Video::Video() {}
 
+#ifdef PICO_TINY_SCREEN
+/* The menu and ROM drive screens draw through this same object: on the ST7735
+ * the panel offsets (colstart/rowstart) depend on the tab type that only
+ * init() records, so a second, un-init'd TFT_eSPI drew a few pixels off. */
+TFT_eSPI &video_tft(void) { return tft; }
+#endif
+
 void Video::begin(void) {
   /* Re-tie clk_peri to clk_sys. When platformio's board_build.f_cpu
    * overrides sys clock, the framework leaves clk_peri on the USB PLL

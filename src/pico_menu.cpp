@@ -24,6 +24,9 @@ extern "C" bool pico_input_menu_tapped(void);
 #include "pico_drive.h"
 #include "pico_romcheck.h"
 #include "pico_hiscore.h"
+#ifdef PICO_TINY_SCREEN
+TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object */
+#endif
 
 extern "C" bool runtime_load_pacman(void);
 extern "C" bool runtime_load_mspacman(void);
@@ -554,7 +557,11 @@ extern "C" void pico_menu_pick_and_load(void) {
     Serial.printf("[menu] volume %d%% (%s)\n", pico_audio_get_volume_pct(),
                   hv >= 0 ? "from CartReader" : "default");
 
+#ifdef PICO_TINY_SCREEN
+    TFT_eSPI &tft = video_tft();
+#else
     TFT_eSPI tft;
+#endif
     /* tft.init() already ran in Video::begin — safe to skip re-init. This
      * object starts out assuming 240x320; match the rotation Video::begin
      * gave the panel so width()/height() (and the layout) are right. */

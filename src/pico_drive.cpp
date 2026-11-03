@@ -11,6 +11,9 @@
 #include "pico_romfs.h"
 #include "pico_handoff.h"
 #include "pico_audio.h"
+#ifdef PICO_TINY_SCREEN
+TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object */
+#endif
 
 #ifdef PICO_GALAGINO_LANDSCAPE
 extern "C" volatile int g_landscape_mode;
@@ -222,7 +225,11 @@ extern "C" void pico_drive_run(void) {
     delay(20);
     TinyUSBDevice.attach();
 
+#ifdef PICO_TINY_SCREEN
+    TFT_eSPI &tft = video_tft();
+#else
     TFT_eSPI tft;
+#endif
 #ifdef PICO_GALAGINO_LANDSCAPE
     tft.setRotation(g_landscape_mode ? PICO_ROT_LANDSCAPE : PICO_ROT_PORTRAIT);
 #endif
