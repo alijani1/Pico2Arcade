@@ -35,6 +35,9 @@ extern unsigned short (*timeplt_sprite_colors)[4];  /* 64 groups x 4 */
 extern unsigned char  ay_env_restart[2];            /* galagino.cpp */
 extern unsigned char  timeplt_video_enable;         /* emulation.c */
 extern unsigned char  timeplt_mux_bank0[0x100], timeplt_mux_bank1[0x100];
+/* [buffer][first set bank 0 / bank 1, second set bank 0 / bank 1] */
+extern unsigned char  timeplt_show[2][4][0x100];
+extern volatile unsigned char timeplt_show_idx;
 #ifdef __cplusplus
 }
 #endif
@@ -170,6 +173,18 @@ static inline void timeplt_run_frame(void) {
     memset(timeplt_mux_bank0, 0, 0x100);
     memset(timeplt_mux_bank1, 0, 0x100);
   }
+  /* Publish this frame's two sets for the renderer. It runs on the other core
+   * while the next frame is emulated, so reading sprite RAM / the mux banks
+   * directly caught the game mid-rewrite: often the new first set twice and
+   * no second set — the clouds mostly missing, flashing in now and then. */
+  {
+    unsigned char n = timeplt_show_idx ^ 1;
+    memcpy(timeplt_show[n][0], timeplt_mux_bank0, 0x100);
+    memcpy(timeplt_show[n][1], timeplt_mux_bank1, 0x100);
+    memcpy(timeplt_show[n][2], memory + TIMEPLT_SPRITES0, 0x100);
+    memcpy(timeplt_show[n][3], memory + TIMEPLT_SPRITES1, 0x100);
+    timeplt_show_idx = n;
+  }
 
   if(timeplt_nmi_enable) {
     current_cpu = 0;
@@ -204,8 +219,10 @@ static inline void timeplt_add_sprites(const unsigned char *bank0, const unsigne
 static inline void timeplt_prepare_frame(void) {
   active_sprites = 0;
   if(!timeplt_video_enable) return;
-  timeplt_add_sprites(timeplt_mux_bank0, timeplt_mux_bank1);          /* first set */
-  timeplt_add_sprites(memory + TIMEPLT_SPRITES0, memory + TIMEPLT_SPRITES1);
+  /* the last finished frame's sets (published by timeplt_run_frame) */
+  unsigned char (*show)[0x100] = timeplt_show[timeplt_show_idx];
+  timeplt_add_sprites(show[0], show[1]);          /* first set */
+  timeplt_add_sprites(show[2], show[3]);
 }
 
 /* cat: 0 = tiles under the sprites, 1 = over them (colour RAM bit 4) */

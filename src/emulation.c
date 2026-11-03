@@ -102,6 +102,9 @@ unsigned char xevious_boom = 0;       /* 54xx explosion request for the audio si
 #ifdef ENABLE_TIMEPLT
 unsigned char timeplt_video_enable = 0;
 unsigned char timeplt_mux_bank0[0x100], timeplt_mux_bank1[0x100];   /* first sprite set of a frame */
+/* Both sprite sets of the last finished frame (timeplt.h), double-buffered */
+unsigned char timeplt_show[2][4][0x100];
+volatile unsigned char timeplt_show_idx = 0;
 #endif
 
 #ifdef ENABLE_DIGDUG
