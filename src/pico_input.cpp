@@ -247,10 +247,10 @@ extern "C" unsigned char buttons_get(void) {
      * one-button joystick (no fireb) gives both. Otherwise all are FIRE. */
 #ifdef PICO_DUO
     /* The Duo's 5-way is on the case, aligned for landscape: in portrait turn
-     * it a quarter like the Joy-Con below (right -> down, up -> right). */
+     * it a quarter (right -> up, left -> down, up -> left — bench-checked). */
     if (!g_landscape_mode) {
-        if (pin_low(g_pins.up))    state |= BUTTON_RIGHT;
-        if (pin_low(g_pins.down))  state |= BUTTON_LEFT;
+        if (pin_low(g_pins.up))    state |= BUTTON_LEFT;
+        if (pin_low(g_pins.down))  state |= BUTTON_RIGHT;
         if (pin_low(g_pins.left))  state |= BUTTON_DOWN;
         if (pin_low(g_pins.right)) state |= BUTTON_UP;
     } else
