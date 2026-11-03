@@ -161,8 +161,11 @@ mapped.
 
 ### 3. Flash the firmware
 
-Hold **BOOTSEL** while plugging the Pico 2 into USB, then copy the UF2 for
-your display (ST7789 or ILI9341) onto the `RP2350` drive that appears. To build it yourself, see
+Download the UF2 for your display from the
+[latest release](https://github.com/alijani1/Pico2Arcade/releases/latest):
+`Pico2Arcade-pico2_std.uf2` (ST7789) or `Pico2Arcade-pico2_std_ili9341.uf2`
+(ILI9341). Hold **BOOTSEL** while plugging the Pico 2 into USB, then copy it
+onto the `RP2350` drive that appears. To build it yourself, see
 [Build](#build).
 
 ### 4. Copy the ROMs and set the pins
@@ -249,6 +252,10 @@ list shows a red warning naming the first bad line.
 **In a game**
 
 - Joystick + FIRE; START and COIN as on the cabinet.
+- Quad / Duo 5200 thumbstick: a direction needs a firm push (dead zone about a
+  third of the travel) and lets go only once the stick is nearly back at rest.
+  The rest point is the stick's measured centre; a reading taken at boot is used
+  only when the stick has settled.
 - Two-button games (Super Cobra and Scramble: laser / bomb; Xevious:
   zapper / bomb) use **A** for the first and **B** for the second. A
   one-button joystick (PicoCartReader external stick, Quad DB9) fires both.
