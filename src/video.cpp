@@ -61,8 +61,15 @@ static uint16_t frame_buf[GAME_W * GAME_H];
  * ~3 ms per frame on core 0; the push is tiny (16 KB at most). */
 static const int TINY_PW = 80, TINY_PH = 103;   /* portrait */
 static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
-static uint16_t tiny_buf[TINY_PW * TINY_PH];
+static const int TINY_SW = 124;                 /* landscape, Stretch on: twice as wide */
+static const int TINY_MAXW = TINY_SW;
+static uint16_t tiny_buf[TINY_MAXW * TINY_PH];
 static int tiny_w, tiny_h, tiny_x, tiny_y;
+/* Stretch row (landscape): resampled straight to 124 columns, so the extra
+ * width is real detail, not doubled pixels. Saved (pico_config.cpp); picked up
+ * by the next frame (Video::write re-centres and clears the borders). */
+extern "C" { volatile int g_stretch = 0; }
+static int tiny_stretch = 0;                    /* what the geometry was built for */
 
 /* Scale row in the menu (both orientations here), kept in the settings
  * (pico_config.cpp). Each output pixel averages a window of source pixels:
@@ -73,7 +80,7 @@ static int tiny_w, tiny_h, tiny_x, tiny_y;
 #if !(defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))
 extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; }
 #endif
-static uint8_t tiny_cs[TINY_PW], tiny_cn[TINY_PW];   /* per output column: first source column, count */
+static uint8_t tiny_cs[TINY_MAXW], tiny_cn[TINY_MAXW]; /* per output column: first source column, count */
 static uint16_t tiny_rs[TINY_PH];                    /* per output row: first source row */
 static uint8_t tiny_rn[TINY_PH];                     /*   and count */
 static int tiny_mode = -1;                           /* mode the windows were built for */
@@ -101,7 +108,7 @@ static void tiny_setup(int w, int h, int panel_w, int panel_h) {
 
 static void downscale_tiny(const uint16_t *src, uint16_t *dst) {
   if (g_scale_mode != tiny_mode) tiny_build(g_scale_mode);
-  uint16_t sr[TINY_PW], sg[TINY_PW], sb[TINY_PW];
+  uint16_t sr[TINY_MAXW], sg[TINY_MAXW], sb[TINY_MAXW];
   for (int oy = 0; oy < tiny_h; oy++) {
     const int y0 = tiny_rs[oy], y1 = y0 + tiny_rn[oy];
     memset(sr, 0, sizeof(sr)); memset(sg, 0, sizeof(sg)); memset(sb, 0, sizeof(sb));
@@ -335,7 +342,8 @@ void Video::begin(void) {
     Serial.println("[video] portrait mode");
   }
 #ifdef PICO_TINY_SCREEN
-  if (is_landscape_locked) tiny_setup(TINY_LW, TINY_LH, tft.width(), tft.height());
+  tiny_stretch = g_stretch;
+  if (is_landscape_locked) tiny_setup(tiny_stretch ? TINY_SW : TINY_LW, TINY_LH, tft.width(), tft.height());
   else                     tiny_setup(TINY_PW, TINY_PH, tft.width(), tft.height());
   push_x_off = tiny_x;
   Serial.printf("[video] tiny screen: image %dx%d at (%d,%d)\n", tiny_w, tiny_h, tiny_x, tiny_y);
@@ -411,6 +419,12 @@ void Video::write(uint16_t *colors, uint32_t len) {
   cur_row += rows;
   if (cur_row >= GAME_H) {
 #if defined(PICO_TINY_SCREEN)
+    if (is_landscape_locked && g_stretch != tiny_stretch) {   /* Stretch toggled in the menu */
+      tiny_stretch = g_stretch;
+      tiny_setup(tiny_stretch ? TINY_SW : TINY_LW, TINY_LH, tft.width(), tft.height());
+      push_x_off = tiny_x;
+      tft.fillScreen(TFT_BLACK);
+    }
     downscale_tiny(frame_buf, tiny_buf);
     push_banded(tiny_x, tiny_y, tiny_w, tiny_h, tiny_buf);
 #elif defined(PICO_GALAGINO_LANDSCAPE)
@@ -460,6 +474,16 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
     tft.setCursor(0, 2);   tft.printf("S%2.0f E%2.0f", scr_fps, emu_fps);
     tft.setTextColor(col, TFT_BLACK);
     tft.setCursor(0, 12);  tft.printf("CPU %3.0f%%", load);
+    return;
+  }
+  if (tiny_x < 40) {
+    /* Landscape stretched: an 18 px border — three numbers, 3 chars each. */
+    tft.fillRect(0, 0, tiny_x, 36, TFT_BLACK);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(0, 2);   tft.printf("%2.0f", scr_fps);
+    tft.setCursor(0, 12);  tft.printf("%2.0f", emu_fps);
+    tft.setTextColor(col, TFT_BLACK);
+    tft.setCursor(0, 22);  tft.printf("%3.0f", load);
     return;
   }
 #endif

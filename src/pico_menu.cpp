@@ -197,7 +197,7 @@ static void set_volume(int v) {
 /* Menu rows: available games, then (landscape builds) the display
  * toggle, the FPS-overlay toggle, (flash boards) ROM Drive, Volume, then
  * Exit. Row kinds are derived from the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
@@ -209,7 +209,15 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_FPS, ROW_DRIVE, ROW_VOLUME,
 #  define MENU_SCALE_ROW 1
 extern "C" volatile int g_scale_mode;     /* video.cpp */
 #endif
-#ifdef MENU_SCALE_ROW
+/* Stretch row (landscape twice as wide): the 160x80 panel. */
+#if defined(MENU_SCALE_ROW) && defined(PICO_TINY_SCREEN)
+#  define MENU_STRETCH_ROW 1
+extern "C" volatile int g_stretch;        /* video.cpp */
+extern "C" void pico_config_save_stretch(int on);
+#endif
+#ifdef MENU_STRETCH_ROW
+static const int SETTING_ROWS_BASE = 4;   /* Display, Scale, Stretch, Show FPS */
+#elif defined(MENU_SCALE_ROW)
 static const int SETTING_ROWS_BASE = 3;   /* Display, Scale, Show FPS */
 #elif defined(MENU_DISPLAY_TOGGLE)
 static const int SETTING_ROWS_BASE = 2;   /* Display, Show FPS */
@@ -234,6 +242,10 @@ static RowKind row_kind(int row) {
 #endif
 #ifdef MENU_SCALE_ROW
     if (row == 0) return ROW_SCALE;
+    row--;
+#endif
+#ifdef MENU_STRETCH_ROW
+    if (row == 0) return ROW_STRETCH;
     row--;
 #endif
     if (row == 0) return ROW_FPS;
@@ -364,6 +376,11 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
       case ROW_SCALE:
         snprintf(label, sizeof(label), "Scale: %s", g_scale_mode == SCALE_SHARP ? "Sharp"
                                                   : g_scale_mode == SCALE_DROP ? "Drop" : "Smooth");
+        break;
+#endif
+#ifdef MENU_STRETCH_ROW
+      case ROW_STRETCH:
+        snprintf(label, sizeof(label), "Stretch: %s", g_stretch ? "On" : "Off");
         break;
 #endif
       case ROW_FPS:
@@ -698,6 +715,11 @@ extern "C" void pico_menu_pick_and_load(void) {
 #if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
             pico_config_save_scale(g_scale_mode);
 #endif
+            break;             /* loop redraws the menu with the new value */
+#endif
+#ifdef MENU_STRETCH_ROW
+          case ROW_STRETCH:     /* landscape: 62x80 <-> 124x80 */
+            pico_config_save_stretch(!g_stretch);
             break;             /* loop redraws the menu with the new value */
 #endif
           case ROW_FPS:
