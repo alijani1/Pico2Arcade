@@ -30,6 +30,15 @@
 #if defined(PICO_HOSTED) || defined(PICO_STANDALONE)
 #  define PICO_BOARD_TABLE 1
 #endif
+/* Duo Ultimate port 1 DB9 directions (data/duoultimate.json), read beside
+ * the 5-way (g_pins has one pin per direction); its fire is g_pins.fire3. */
+#ifdef PICO_DUO
+#  define DUO_DB9_UP    16
+#  define DUO_DB9_DOWN  17
+#  define DUO_DB9_LEFT  18
+#  define DUO_DB9_RIGHT 19
+#endif
+
 /* Panel rotations for the two display modes. The 240x320 boards: landscape
  * 3, portrait 0. The Duo's 160x80 panel reads landscape at 1 (as in the Duo
  * firmware); portrait is 2 — one quarter turn on, the same way 3 -> 0 is on

@@ -47,7 +47,8 @@ board_pins_t g_pins = {
 };
 #elif defined(PICO_DUO)
 /* Duo Ultimate (GameAdapterRGBPico data/duoultimate.json), standalone test
- * build: directions = the 5-way (up 25, down 8, left 12, right 6), A = Red,
+ * build: directions = the 5-way (up 25, down 8, left 12, right 6) and the port 1
+ * DB9 stick (16-19, pico_board.h DUO_DB9_*), A = Red,
  * Yellow, the port 1 DB9 fire (13) or the 5-way press (7), B = Green or Blue,
  * Black = START, White = COIN, gray Menu (23); PWM audio 37 + amp enable 0;
  * backlight LEDA on GPIO 5 (the Duo firmware drives it HIGH after tft.init). */
@@ -196,6 +197,18 @@ extern "C" void board_pins_load(void) {
         pinMode(g_pins.backlight, OUTPUT);
         digitalWrite(g_pins.backlight, HIGH);
     }
+#ifdef PICO_DUO
+    /* Duo DB9 ports in Atari mode, as the Duo firmware sets them at boot
+     * (GameAdapterRGBPico main.cpp, docs/PIN7_PIN8_CONTROL_DESIGN.md): pin 7 =
+     * +5V (GPIO11 LOW, GPIO29 LOW) and pin 8 = GND (GPIO30 HIGH, GPIO31 LOW).
+     * Pin 8 is the joystick's common ground — left floating, no direction or
+     * fire on the port ever reads. Ordered so neither short combination
+     * (GPIO29 HIGH + GPIO11 LOW, GPIO30 HIGH + GPIO31 HIGH) occurs. */
+    pinMode(29, OUTPUT); digitalWrite(29, LOW);    /* pin 7 ground switch open first */
+    pinMode(11, OUTPUT); digitalWrite(11, LOW);    /* then the +5V P-FETs on */
+    pinMode(31, OUTPUT); digitalWrite(31, LOW);    /* pin 8 +5V channel open first */
+    pinMode(30, OUTPUT); digitalWrite(30, HIGH);   /* then the ground channel closed */
+#endif
 }
 
 extern "C" const char *board_default_ini(void) {

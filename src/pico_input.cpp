@@ -179,6 +179,10 @@ extern "C" void pico_input_init(void) {
                               g_pins.fireb, g_pins.fireb2, g_pins.fireb3,
                               g_pins.joy_click };
     for (int p : tablePins) if (p >= 0) pinMode(p, INPUT_PULLUP);
+#ifdef PICO_DUO
+    const int db9Pins[] = { DUO_DB9_UP, DUO_DB9_DOWN, DUO_DB9_LEFT, DUO_DB9_RIGHT };
+    for (int p : db9Pins) pinMode(p, INPUT_PULLUP);
+#endif
     rc_stick_init();
 #else
     pinMode(PIN_SELECT, INPUT_PULLUP);
@@ -261,6 +265,14 @@ extern "C" unsigned char buttons_get(void) {
     if (pin_low(g_pins.left))      state |= BUTTON_LEFT;
     if (pin_low(g_pins.right))     state |= BUTTON_RIGHT;
     }
+#ifdef PICO_DUO
+    /* Port 1 DB9 joystick too (fire 13 is g_pins.fire3). Not turned in
+     * portrait: an external stick points whichever way the player holds it. */
+    if (pin_low(DUO_DB9_UP))    state |= BUTTON_UP;
+    if (pin_low(DUO_DB9_DOWN))  state |= BUTTON_DOWN;
+    if (pin_low(DUO_DB9_LEFT))  state |= BUTTON_LEFT;
+    if (pin_low(DUO_DB9_RIGHT)) state |= BUTTON_RIGHT;
+#endif
     {
         const unsigned char B = g_two_fire ? BUTTON_FIRE2 : BUTTON_FIRE;
         const unsigned char joyFire = (g_two_fire && g_pins.fireb < 0) ? (BUTTON_FIRE | BUTTON_FIRE2)
