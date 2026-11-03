@@ -64,9 +64,10 @@ static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
 /* Landscape widths (menu Width row / MENU tap in a game): 62 = the true
  * shape (224x288 into 80 rows); 75 = exactly 3 source columns per output,
  * 1.2x wide; 112 = exactly 2, 1.8x wide. Even divisions keep thin vertical
- * lines steady (124 — 1.8 columns each, 2x wide — was tried and dropped). */
-static const int TINY_WIDTHS[3] = { 62, 75, 112 };
-static const int TINY_MAXW = 112;
+ * lines steady (124 — 1.8 columns each, 2x wide — was tried and dropped);
+ * 160 = the full panel, 2.6x wide, uneven (1.4 columns each). */
+static const int TINY_WIDTHS[4] = { 62, 75, 112, 160 };
+static const int TINY_MAXW = 160;
 static uint16_t tiny_buf[TINY_MAXW * TINY_PH];
 static int tiny_w, tiny_h, tiny_x, tiny_y;
 /* Landscape width index into TINY_WIDTHS, resampled straight to that many
@@ -483,6 +484,7 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
     tft.setCursor(0, 12);  tft.printf("CPU %3.0f%%", load);
     return;
   }
+  if (tiny_x < 18) return;      /* full width: no border to draw in (serial only) */
   {
     /* Landscape: a 24-49 px border — three numbers, 3 chars each. */
     tft.fillRect(0, 0, tiny_x, 36, TFT_BLACK);

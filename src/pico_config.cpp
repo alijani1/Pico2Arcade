@@ -76,7 +76,7 @@ extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #endif
 static const uint32_t CFG_MAGIC = 0x47434647u;          /* "GCFG" */
 /* scale: the 160x80 panel's Scale row (SCALE_*; was padding, so 0 = Smooth) */
-/* stretch: the 160x80 panel's landscape Width (0/1/2 = 62/75/112); older
+/* stretch: the 160x80 panel's landscape Width (0-3 = 62/75/112/160); older
  * settings end before it, so it reads the erased 0xFF there = 62 */
 struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, scale, stretch, pad[3]; };
 /* The Duo's 160x80 panel starts in landscape, the way the Duo is held. */
@@ -104,7 +104,7 @@ extern "C" void pico_config_load(void) {
     g_show_fps = s_cfg.show_fps ? 1 : 0;
 #ifdef PICO_TINY_SCREEN
     g_scale_mode = s_cfg.scale <= SCALE_DROP ? s_cfg.scale : SCALE_SMOOTH;
-    if (s_cfg.stretch > 2) s_cfg.stretch = 0;
+    if (s_cfg.stretch > 3) s_cfg.stretch = 0;
     g_stretch = s_cfg.stretch;
 #endif
     Serial.printf("[cfg] landscape=%d show_fps=%d volume=%d (%s)\n", g_landscape_mode,
@@ -146,7 +146,7 @@ extern "C" void pico_config_save_scale(int mode) {
     pico_config_save();
 }
 extern "C" void pico_config_save_stretch(int idx) {
-    g_stretch = (idx >= 0 && idx <= 2) ? idx : 0;
+    g_stretch = (idx >= 0 && idx <= 3) ? idx : 0;
     s_cfg.stretch = (uint8_t)g_stretch;
     pico_config_save();
 }
