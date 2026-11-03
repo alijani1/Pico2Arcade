@@ -161,6 +161,38 @@ static inline void blend_rows565(const uint16_t *s0, const uint16_t *s1,
 }
 #endif
 
+#if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
+/* Area average, 6:5 both ways (224x288 -> 186x240): each output pixel is the
+ * part of the 1.2x1.2 source pixels it covers, so in every group of 6 the
+ * weights (in sixths) are 5+1, 4+2, 3+3, 2+4, 1+5 — no dropped rows or
+ * columns, so no jitter on lines, and much less blur than the 2x2 bilinear.
+ * Vertical pass into packed R|B and G sums (x6), then horizontal (x36): B*36
+ * stays below bit 11, so the fields never overlap. ~5 ms/frame at 200 MHz. */
+static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
+    static uint32_t vrb[GAME_W], vg[GAME_W];
+    for (int oy = 0; oy < LANDSCAPE_H; oy++) {
+        const int k = oy % 5, a = (oy / 5) * 6 + k;
+        const uint32_t wa = 5 - k, wb = k + 1;
+        const uint16_t *s0 = src + (size_t)a * GAME_W, *s1 = s0 + GAME_W;
+        for (int x = 0; x < GAME_W; x++) {
+            uint32_t p0 = __builtin_bswap16(s0[x]), p1 = __builtin_bswap16(s1[x]);
+            vrb[x] = (p0 & 0xF81F) * wa + (p1 & 0xF81F) * wb;
+            vg[x]  = (p0 & 0x07E0) * wa + (p1 & 0x07E0) * wb;
+        }
+        uint16_t *out = dst + (size_t)oy * LANDSCAPE_W;
+        for (int ox = 0; ox < LANDSCAPE_W; ox++) {    /* 37 groups + 1 tail column */
+            const int kx = ox % 5, xa = (ox / 5) * 6 + kx;
+            const uint32_t ua = 5 - kx, ub = kx + 1;
+            uint32_t arb = vrb[xa] * ua + vrb[xa + 1] * ub;
+            uint32_t ag  = vg[xa]  * ua + vg[xa + 1]  * ub;
+            uint32_t r = ((arb >> 11) + 18) / 36;
+            uint32_t b = ((arb & 0x7FF) + 18) / 36;
+            uint32_t g = ((ag >> 5) + 18) / 36;
+            out[ox] = __builtin_bswap16((uint16_t)((r << 11) | (g << 5) | b));
+        }
+    }
+}
+#else
 static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
     /* 48 blocks × 6 src rows → 5 dst rows = 288 → 240 exactly. */
     for (int j = 0; j < LANDSCAPE_H; j += 5) {
@@ -189,6 +221,7 @@ static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
 #endif
     }
 }
+#endif  /* PICO_GALAGINO_LANDSCAPE_AREA */
 
 #pragma GCC pop_options
 #endif  /* PICO_GALAGINO_LANDSCAPE */
