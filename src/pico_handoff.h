@@ -34,6 +34,11 @@ extern "C" {
  * (Quad host: saved in its settings, so they survive power-off). */
 #define HANDOFF_FLAG_PORTRAIT  0x01u   /* display portrait (else landscape) */
 #define HANDOFF_FLAG_DRIVE     0x02u   /* next boot: USB ROM drive mode (cleared on entry) */
+/* Kept across our own relaunches; they survive a power-off once the host
+ * saves the whole flags byte (Quad / Duo 5200 firmware save PORTRAIT only). */
+#define HANDOFF_FLAG_SHOW_FPS  0x04u   /* FPS overlay on */
+#define HANDOFF_FLAG_SCALE_SHIFT 3     /* bits 3-4: landscape Scale (SCALE_*, pico_board.h) */
+#define HANDOFF_FLAG_SCALE_MASK  0x18u
 
 /* Volume handed over by the CartReader (0..100), or -1 if none. */
 int  handoff_volume_read(void);

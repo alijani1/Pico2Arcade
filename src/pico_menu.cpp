@@ -155,7 +155,7 @@ extern "C" void pico_config_save_landscape(int on);
 #endif
 extern "C" volatile int g_show_fps;
 extern "C" void pico_config_save_show_fps(int on);
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
 extern "C" void pico_config_save_scale(int mode);
 #endif
 extern "C" int  pico_config_volume(void);
@@ -695,7 +695,7 @@ extern "C" void pico_menu_pick_and_load(void) {
 #ifdef MENU_SCALE_ROW
           case ROW_SCALE:       /* Smooth -> Sharp -> Drop -> Smooth; landscape only */
             g_scale_mode = (g_scale_mode + 1) % 3;
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
             pico_config_save_scale(g_scale_mode);
 #endif
             break;             /* loop redraws the menu with the new value */

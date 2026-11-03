@@ -18,16 +18,33 @@
  * write it back when it changes (the menu then relaunches us), and the Quad
  * saves it in its settings on return. Default landscape (the panel is mounted
  * that way; portrait = turn the Quad sideways for a full-size picture). The FPS
- * overlay is session-only, off at boot. */
+ * overlay and the landscape Scale ride in the same flags (HANDOFF_FLAG_SHOW_FPS,
+ * _SCALE_*): kept across our relaunches, and across a power-off once the host
+ * saves the whole flags byte — until then they are back to off / Smooth. */
 #include "pico_handoff.h"
 extern "C" {
     volatile int g_landscape_mode = 1;
     volatile int g_show_fps       = 0;
 }
+#ifdef PICO_GALAGINO_LANDSCAPE_AREA
+extern "C" volatile int g_scale_mode;    /* video.cpp */
+#endif
+static void flags_update(int clear, int set) {
+    int f = handoff_flags_read();
+    if (f < 0) f = 0;
+    handoff_flags_write((f & ~clear) | set);
+}
 extern "C" void pico_config_load(void) {
     int f = handoff_flags_read();
-    if (f >= 0) g_landscape_mode = (f & HANDOFF_FLAG_PORTRAIT) ? 0 : 1;
-    Serial.printf("[cfg] landscape=%d (from Quad)\n", g_landscape_mode);
+    if (f >= 0) {
+        g_landscape_mode = (f & HANDOFF_FLAG_PORTRAIT) ? 0 : 1;
+        g_show_fps = (f & HANDOFF_FLAG_SHOW_FPS) ? 1 : 0;
+#ifdef PICO_GALAGINO_LANDSCAPE_AREA
+        int sc = (f & HANDOFF_FLAG_SCALE_MASK) >> HANDOFF_FLAG_SCALE_SHIFT;
+        g_scale_mode = sc <= SCALE_DROP ? sc : SCALE_SMOOTH;
+#endif
+    }
+    Serial.printf("[cfg] landscape=%d show_fps=%d (from Quad)\n", g_landscape_mode, g_show_fps);
 }
 extern "C" void pico_config_save_landscape(int on) {
     g_landscape_mode = on ? 1 : 0;
@@ -36,7 +53,13 @@ extern "C" void pico_config_save_landscape(int on) {
     f = on ? (f & ~HANDOFF_FLAG_PORTRAIT) : (f | HANDOFF_FLAG_PORTRAIT);
     handoff_flags_write(f);
 }
-extern "C" void pico_config_save_show_fps(int on)  { g_show_fps = on ? 1 : 0; }
+extern "C" void pico_config_save_show_fps(int on) {
+    g_show_fps = on ? 1 : 0;
+    flags_update(HANDOFF_FLAG_SHOW_FPS, on ? HANDOFF_FLAG_SHOW_FPS : 0);
+}
+extern "C" void pico_config_save_scale(int mode) {
+    flags_update(HANDOFF_FLAG_SCALE_MASK, (mode << HANDOFF_FLAG_SCALE_SHIFT) & HANDOFF_FLAG_SCALE_MASK);
+}
 extern "C" int  pico_config_volume(void) { return -1; }        /* the Quad keeps it */
 extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #elif defined(PICO_STANDALONE)
