@@ -226,6 +226,11 @@ list shows a red warning naming the first bad line.
   exact and blends only the in-between ones. **Drop** skips rows and columns:
   sharpest and fastest, but lines jitter. Changes at once, so you can compare
   in a running game. On the Quad / Duo 5200 it applies to landscape.
+- **Width** (Quad / Duo 5200, landscape): **186** (true shape), **224** (one
+  screen column per game column), **268**, **320** (full panel), each also as
+  **crop**: rows 1:1, the middle 240 of the 288 shown (24 cut off top and
+  bottom) — **224 crop** is the game's own pixels, unscaled. A **MENU tap in a
+  game** steps through them too.
 - **Width: 62 / 75 / 112 / 160** (160x80 test build, landscape): 62 is the
   true shape; 75 and 112 are 1.2x and 1.8x wide, each an exact 3:1 / 2:1
   division of the 224 columns so thin lines stay steady; 160 fills the screen

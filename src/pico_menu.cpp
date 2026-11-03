@@ -209,8 +209,9 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE
 #  define MENU_SCALE_ROW 1
 extern "C" volatile int g_scale_mode;     /* video.cpp */
 #endif
-/* Width row (landscape 62 / 75 / 112 / 160, each also cropped): the 160x80 panel. */
-#if defined(MENU_SCALE_ROW) && defined(PICO_TINY_SCREEN)
+/* Width row (landscape 62 / 75 / 112 / 160 on the 160x80 panel, 186 / 224 /
+ * 268 / 320 on the Quad / Duo 5200 — each also cropped; video.cpp). */
+#if defined(MENU_SCALE_ROW)
 #  define MENU_STRETCH_ROW 1
 extern "C" volatile int g_stretch;        /* video.cpp */
 extern "C" void pico_config_save_stretch(int idx);
@@ -381,7 +382,11 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #ifdef MENU_STRETCH_ROW
       case ROW_STRETCH:
       {
+#ifdef PICO_TINY_SCREEN
         static const int W[4] = { 62, 75, 112, 160 };   /* video.cpp TINY_WIDTHS, in pairs */
+#else
+        static const int W[4] = { 186, 224, 268, 320 }; /* video.cpp WIDE_WIDTHS, in pairs */
+#endif
         snprintf(label, sizeof(label), "Width: %d%s", W[(g_stretch >> 1) & 3], (g_stretch & 1) ? " crop" : "");
       }
         break;
@@ -721,7 +726,7 @@ extern "C" void pico_menu_pick_and_load(void) {
             break;             /* loop redraws the menu with the new value */
 #endif
 #ifdef MENU_STRETCH_ROW
-          case ROW_STRETCH:     /* landscape width 62 -> 62 crop -> 75 -> ... -> 160 crop -> 62 */
+          case ROW_STRETCH:     /* landscape width 62 -> 62 crop -> 75 -> ... -> 160 crop -> 62 (186 ... 320 crop) */
             pico_config_save_stretch((g_stretch + 1) % 8);
             break;             /* loop redraws the menu with the new value */
 #endif

@@ -39,6 +39,8 @@ extern "C" {
 #define HANDOFF_FLAG_SHOW_FPS  0x04u   /* FPS overlay on */
 #define HANDOFF_FLAG_SCALE_SHIFT 3     /* bits 3-4: landscape Scale (SCALE_*, pico_board.h) */
 #define HANDOFF_FLAG_SCALE_MASK  0x18u
+#define HANDOFF_FLAG_WIDTH_SHIFT 5     /* bits 5-7: landscape Width step (0-7, video.cpp) */
+#define HANDOFF_FLAG_WIDTH_MASK  0xE0u
 
 /* Volume handed over by the CartReader (0..100), or -1 if none. */
 int  handoff_volume_read(void);

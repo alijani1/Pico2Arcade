@@ -34,7 +34,13 @@ static const int LANDSCAPE_W = 186;
 #else
 static const int LANDSCAPE_W = GAME_W;
 #endif
+/* Quad / Duo 5200: Scale + Width rows, any width 186-320, scaled band by band
+ * into two small buffers (push_landscape_wide) instead of a whole frame. */
+#if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
+#  define LANDSCAPE_WIDE 1
+#else
 static uint16_t scaled_buf[LANDSCAPE_W * LANDSCAPE_H];
+#endif
 
 /* Runtime landscape flag, defined in pico_config.cpp, loaded from SD
  * before Video::begin() runs. Video::begin() reads it ONCE and caches
@@ -211,30 +217,7 @@ static inline void blend_rows565(const uint16_t *s0, const uint16_t *s1,
 }
 #endif
 
-#if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
-/* Landscape scale, picked in the menu (Scale row), default Smooth. Session
- * only: the host keeps just the orientation. */
-extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; }
-
-/* Weighted 6:5 both ways (224x288 -> 186x240). Output k (0..4) of each group
- * of 6 rows / columns = w0 x source[a] + w1 x source[a+1], in 16ths:
- *   Smooth: area average — each output is the part of the 1.2x1.2 source
- *           pixels it covers (5+1, 4+2, 3+3, 2+4, 1+5 sixths, as 13+3, 11+5,
- *           8+8, 5+11, 3+13): no dropped rows or columns, so no jitter on
- *           lines, much less blur than the bilinear.
- *   Sharp:  sources 0, 1, 4, 5 copied as they are, only 2 and 3 blended
- *           (8+8): nothing dropped, but just 1 of 5 lines is soft.
- * Pixels are "spread" into one 32-bit word, G in the top half and R|B in the
- * bottom (0x07E0F81F), so one multiply weights all three channels: with
- * weights summing to 16 no field reaches the next, and >> 4 divides them all.
- * Each source row is spread once per group of 6. Done a band of groups at a
- * time so the previous band can go out by DMA meanwhile (Video::write).
- * (Drop is downscale_288_to_240 below — copies only.) */
-struct Tap6 { uint8_t a, w0, w1; };
-static const Tap6 TAPS[2][5] = {
-    { {0,13,3}, {1,11,5}, {2,8,8}, {3,5,11}, {4,3,13} },  /* SCALE_SMOOTH */
-    { {0,16,0}, {1,16,0}, {2,8,8}, {4,16,0}, {5,16,0} },  /* SCALE_SHARP */
-};
+#ifdef LANDSCAPE_WIDE
 static const uint32_t SPREAD_M   = 0x07E0F81Fu;
 static const uint32_t SPREAD_RND = 8u | (8u << 11) | (8u << 21);   /* +0.5 per field */
 
@@ -250,41 +233,107 @@ static inline uint32_t mix16(uint32_t a, uint32_t b, uint32_t wa, uint32_t wb) {
     return (a * wa + b * wb + SPREAD_RND) >> 4;
 }
 
-template <int MODE>
-static void scale_groups(const uint16_t *src, uint16_t *dst, int gy0, int gy1) {
-    static uint32_t sp[6][GAME_W], vrow[GAME_W];
-    const Tap6 *T = TAPS[MODE == SCALE_SHARP ? 1 : 0];
-    for (int gy = gy0; gy < gy1; gy++) {
-        const uint16_t *s = src + (size_t)gy * 6 * GAME_W;
-        for (int r = 0; r < 6; r++)
-            for (int x = 0; x < GAME_W; x++) sp[r][x] = spread565(s[r * GAME_W + x]);
-        for (int k = 0; k < 5; k++) {
-            const Tap6 ty = T[k];
-            const uint32_t *v = sp[ty.a];
-            if (ty.w1) {
-                const uint32_t *v1 = sp[ty.a + 1];
-                for (int x = 0; x < GAME_W; x++) vrow[x] = mix16(v[x], v1[x], ty.w0, ty.w1) & SPREAD_M;
-                v = vrow;
-            }
-            uint16_t *out = dst + (size_t)(gy * 5 + k) * LANDSCAPE_W;
-            for (int g = 0; g < 37; g++, v += 6, out += 5) {
-#pragma GCC unroll 5
-                for (int j = 0; j < 5; j++) {
-                    const Tap6 tx = T[j];
-                    out[j] = tx.w1 ? pack565(mix16(v[tx.a], v[tx.a + 1], tx.w0, tx.w1))
-                                   : pack565(v[tx.a]);
-                }
-            }
-            out[0] = pack565(mix16(v[T[0].a], v[T[0].a + 1], T[0].w0, T[0].w1));   /* tail: src 222/223 */
-        }
-    }
-}
-static void downscale_weighted(const uint16_t *src, uint16_t *dst, int mode, int gy0, int gy1) {
-    if (mode == SCALE_SHARP) scale_groups<SCALE_SHARP>(src, dst, gy0, gy1);
-    else                     scale_groups<SCALE_SMOOTH>(src, dst, gy0, gy1);
-}
-#endif  /* PICO_GALAGINO_LANDSCAPE_AREA */
+#endif
 
+#ifdef LANDSCAPE_WIDE
+/* Landscape scale, picked in the menu (Scale row), default Smooth, and the
+ * landscape Width (Width row / MENU tap in a game). Both ride in the handoff
+ * flags (pico_config.cpp). */
+extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; volatile int g_stretch = 0; }
+extern "C" void pico_config_save_stretch(int idx);
+
+/* Width steps: 186 = the true shape (6:5 both ways); 224 = one screen column
+ * per game column (1.2x wide); 268 (1.44x); 320 = the full panel (1.72x).
+ * Each also has a "crop" step: rows 1:1 instead of 6:5, the middle 240 of the
+ * 288 shown (24 cut off top and bottom, 3 tile rows of score / lives each),
+ * 20% taller. 224 crop is the game's own pixels, unscaled. */
+static const int WIDE_STEPS = 8;
+static const int WIDE_WIDTHS[WIDE_STEPS] = { 186, 186, 224, 224, 268, 268, 320, 320 };
+static const int WIDE_MAXW = 320;
+static const int WIDE_BAND = LANDSCAPE_H / 6;                /* 40 rows per DMA band */
+
+/* Separable 2-tap filter: output i = w0 x source[a] + w1 x source[a+1], in
+ * 16ths. Output i covers source [i*num/den, (i+1)*num/den) (num/den = source
+ * pixels per output, <= 1.2, so at most two source pixels):
+ *   Smooth: weights = how much of each it covers (area average; for 6:5 the
+ *           5+1, 4+2, 3+3, 2+4, 1+5 sixths as 13+3, 11+5, 8+8, 5+11, 3+13)
+ *   Sharp:  a minor weight of a third or less snaps to the major pixel, so
+ *           most lines are exact copies and only true in-betweens blend
+ *   Drop:   the major pixel only (nearest; for 6:5 = skip every 6th)
+ * Pixels are "spread" into one 32-bit word, G in the top half and R|B in the
+ * bottom (0x07E0F81F), so one multiply weights all three channels: with
+ * weights summing to 16 no field reaches the next, and >> 4 divides them all. */
+struct Tap { uint16_t a; uint8_t w0, w1; };
+static Tap wide_cols[WIDE_MAXW], wide_rows[LANDSCAPE_H];
+static int wide_w = 186, wide_built_mode = -1, wide_built_step = -1;
+static bool wide_cols_identity = false;                     /* 224: column i = source i */
+static uint16_t wide_band[2][WIDE_BAND * WIDE_MAXW];         /* DMA double buffer */
+
+static void build_taps(Tap *t, int n, int num, int den, int ofs, int src_len, int mode) {
+  for (int i = 0; i < n; i++) {
+    const int start = i * num, end = start + num;            /* in 1/den source pixels */
+    const int a = start / den;
+    int cov = (a + 1) * den; if (cov > end) cov = end; cov -= start;
+    int w0 = (16 * cov + num / 2) / num, w1 = 16 - w0;
+    if (mode == SCALE_DROP)       { if (w1 > w0) { w0 = 16; w1 = 0; t[i].a = ofs + a + 1; } else { w0 = 16; w1 = 0; t[i].a = ofs + a; } }
+    else if (mode == SCALE_SHARP && (w0 <= 5 || w1 <= 5)) {
+      t[i].a = ofs + (w1 > w0 ? a + 1 : a); w0 = 16; w1 = 0;
+    } else t[i].a = ofs + a;
+    if (w1 && t[i].a + 1 >= src_len) { w0 = 16; w1 = 0; }    /* never past the last pixel */
+    t[i].w0 = (uint8_t)w0; t[i].w1 = (uint8_t)w1;
+  }
+}
+
+static void wide_build(int mode, int step) {
+  wide_w = WIDE_WIDTHS[step];
+  if (wide_w == 186) build_taps(wide_cols, wide_w, 6, 5, 0, GAME_W, mode);   /* exact 6:5 groups */
+  else               build_taps(wide_cols, wide_w, GAME_W, wide_w, 0, GAME_W, mode);
+  if (step & 1) build_taps(wide_rows, LANDSCAPE_H, 1, 1, (GAME_H - LANDSCAPE_H) / 2, GAME_H, mode);  /* crop */
+  else          build_taps(wide_rows, LANDSCAPE_H, 6, 5, 0, GAME_H, mode);
+  wide_cols_identity = (wide_w == GAME_W);
+  wide_built_mode = mode; wide_built_step = step;
+}
+
+/* Source rows spread once each: a two-row cache (rows come in rising order). */
+static uint32_t wide_sp[2][GAME_W];
+static int wide_sp_row[2] = { -1, -1 };
+static const uint32_t *spread_row(const uint16_t *src, int r, int keep) {
+  if (wide_sp_row[0] == r) return wide_sp[0];
+  if (wide_sp_row[1] == r) return wide_sp[1];
+  int k = (wide_sp_row[0] == keep) ? 1 : (wide_sp_row[1] == keep) ? 0
+        : (wide_sp_row[0] < wide_sp_row[1] ? 0 : 1);
+  const uint16_t *s = src + (size_t)r * GAME_W;
+  for (int x = 0; x < GAME_W; x++) wide_sp[k][x] = spread565(s[x]);
+  wide_sp_row[k] = r;
+  return wide_sp[k];
+}
+
+static void wide_scale_rows(const uint16_t *src, uint16_t *dst, int oy0, int oy1) {
+  static uint32_t vrow[GAME_W];
+  for (int oy = oy0; oy < oy1; oy++) {
+    const Tap ty = wide_rows[oy];
+    uint16_t *out = dst + (size_t)(oy - oy0) * wide_w;
+    if (!ty.w1 && wide_cols_identity) {                       /* a pure row at 224: copy */
+      memcpy(out, src + (size_t)ty.a * GAME_W, GAME_W * 2);
+      continue;
+    }
+    const uint32_t *v = spread_row(src, ty.a, -1);
+    if (ty.w1) {
+      const uint32_t *v1 = spread_row(src, ty.a + 1, ty.a);
+      v = spread_row(src, ty.a, ty.a + 1);
+      for (int x = 0; x < GAME_W; x++) vrow[x] = mix16(v[x], v1[x], ty.w0, ty.w1) & SPREAD_M;
+      v = vrow;
+    }
+    for (int ox = 0; ox < wide_w; ox++) {
+      const Tap tx = wide_cols[ox];
+      out[ox] = tx.w1 ? pack565(mix16(v[tx.a], v[tx.a + 1], tx.w0, tx.w1)) : pack565(v[tx.a]);
+    }
+  }
+}
+#endif  /* LANDSCAPE_WIDE */
+
+
+#ifndef LANDSCAPE_WIDE
 static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
     /* 48 blocks × 6 src rows → 5 dst rows = 288 → 240 exactly. */
     for (int j = 0; j < LANDSCAPE_H; j += 5) {
@@ -313,6 +362,7 @@ static void downscale_288_to_240(const uint16_t *src, uint16_t *dst) {
 #endif
     }
 }
+#endif  /* !LANDSCAPE_WIDE */
 
 #pragma GCC pop_options
 #endif  /* PICO_GALAGINO_LANDSCAPE */
@@ -350,6 +400,10 @@ void Video::begin(void) {
   if (is_landscape_locked) {
     tft.setRotation(PICO_ROT_LANDSCAPE);   /* landscape 320x240, 270° CW */
     push_x_off = (320 - LANDSCAPE_W) / 2;
+#ifdef LANDSCAPE_WIDE
+    if (g_stretch < 0 || g_stretch >= WIDE_STEPS) g_stretch = 0;
+    push_x_off = (320 - WIDE_WIDTHS[g_stretch]) / 2;
+#endif
     Serial.printf("[video] landscape mode ON (image %dx%d at x=%d)\n",
                   LANDSCAPE_W, LANDSCAPE_H, push_x_off);
   } else {
@@ -400,28 +454,36 @@ static void push_banded(int x, int y, int w, int h, uint16_t *buf) {
   }
 }
 
-#if defined(PICO_GALAGINO_LANDSCAPE) && defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
-/* Smooth / Sharp: scale a band (8 groups = 40 rows), start its DMA push, and
- * scale the next band while it goes out — the push no longer adds to the
- * scaling time. Each band has its own rows of scaled_buf, so nothing is
- * overwritten while in flight. Audio topped up between bands as before.
- * Without DMA: scale everything, then the blocking banded push. */
-static void push_scaled_overlapped(int mode) {
-  const int GROUPS = LANDSCAPE_H / 5, BAND = GROUPS / PUSH_BANDS;   /* 48 / 6 = 8 */
-  if (!tft.DMA_Enabled) {
-    downscale_weighted(frame_buf, scaled_buf, mode, 0, GROUPS);
-    push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
-    return;
+#ifdef LANDSCAPE_WIDE
+/* Landscape: scale a band (40 rows) into one of two band buffers, start its
+ * DMA push, and scale the next band into the other while it goes out — the
+ * push no longer adds to the scaling time (pushImageDMA waits for the band
+ * before, so a buffer is free again two bands later). Audio topped up between
+ * bands as before. Without DMA: the same bands, pushed blocking. A changed
+ * Scale or Width rebuilds the taps; a changed width re-centres, clears the
+ * old borders and is saved. */
+static void push_landscape_wide(void) {
+  const int mode = g_scale_mode, step = g_stretch;
+  if (mode != wide_built_mode || step != wide_built_step) {
+    const int oldw = wide_w;
+    wide_build(mode, step);
+    wide_sp_row[0] = wide_sp_row[1] = -1;
+    if (wide_w != oldw || push_x_off != (320 - wide_w) / 2) {
+      push_x_off = (320 - wide_w) / 2;
+      tft.fillScreen(TFT_BLACK);
+    }
+    pico_config_save_stretch(step);           /* no-op if unchanged */
   }
-  tft.startWrite();
-  for (int g0 = 0; g0 < GROUPS; g0 += BAND) {
-    downscale_weighted(frame_buf, scaled_buf, mode, g0, g0 + BAND);
-    tft.pushImageDMA(push_x_off, g0 * 5, LANDSCAPE_W, BAND * 5,
-                     scaled_buf + (size_t)g0 * 5 * LANDSCAPE_W);   /* waits for the previous band */
+  wide_sp_row[0] = wide_sp_row[1] = -1;       /* a new frame */
+  const bool dma = tft.DMA_Enabled;
+  if (dma) tft.startWrite();
+  for (int b = 0, y0 = 0; y0 < LANDSCAPE_H; b ^= 1, y0 += WIDE_BAND) {
+    wide_scale_rows(frame_buf, wide_band[b], y0, y0 + WIDE_BAND);
+    if (dma) tft.pushImageDMA(push_x_off, y0, wide_w, WIDE_BAND, wide_band[b]);   /* waits for the band before */
+    else     tft.pushImage(push_x_off, y0, wide_w, WIDE_BAND, wide_band[b]);
     snd_transmit();
   }
-  tft.dmaWait();
-  tft.endWrite();
+  if (dma) { tft.dmaWait(); tft.endWrite(); }
 }
 #endif
 
@@ -446,15 +508,12 @@ void Video::write(uint16_t *colors, uint32_t len) {
     push_banded(tiny_x, tiny_y, tiny_w, tiny_h, tiny_buf);
 #elif defined(PICO_GALAGINO_LANDSCAPE)
     if (is_landscape_locked) {
-#if defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE)
-      if (g_scale_mode != SCALE_DROP) {
-        push_scaled_overlapped(g_scale_mode);
-      } else
-#endif
-      {
+#ifdef LANDSCAPE_WIDE
+      push_landscape_wide();
+#else
       downscale_288_to_240(frame_buf, scaled_buf);
       push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
-      }
+#endif
     } else {
       push_banded(TFT_X_OFFSET, TFT_Y_OFFSET, GAME_W, GAME_H, frame_buf);
     }
@@ -509,6 +568,18 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
   if (is_landscape_locked) {
     /* Left border: push_x_off px wide (67 px with the 186 px image). */
     int x = 2, w = push_x_off - 3;
+#ifdef LANDSCAPE_WIDE
+    if (push_x_off < 20) return;             /* 320: no border (serial only) */
+    if (push_x_off < 60) {                   /* 224 / 268: three numbers, 3 chars each */
+      tft.fillRect(0, 0, push_x_off, 36, TFT_BLACK);
+      tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+      tft.setCursor(0, 2);   tft.printf("%2.0f", scr_fps);
+      tft.setCursor(0, 12);  tft.printf("%2.0f", emu_fps);
+      tft.setTextColor(col, TFT_BLACK);
+      tft.setCursor(0, 22);  tft.printf("%3.0f", load);
+      return;
+    }
+#endif
     tft.fillRect(0, 0, w + 2, 70, TFT_BLACK);
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(x, 2);   tft.printf("SCR %4.1f", scr_fps);
@@ -560,7 +631,7 @@ void Video::fps_stats_tick(void) {
   } else if (shown) {
     /* Turned off: clear what we drew. */
 #ifdef PICO_GALAGINO_LANDSCAPE
-    if (is_landscape_locked) tft.fillRect(0, 0, push_x_off - 1, 70, TFT_BLACK);
+    if (is_landscape_locked) { if (push_x_off > 1) tft.fillRect(0, 0, push_x_off - 1, 70, TFT_BLACK); }
     else
 #endif
 #ifdef PICO_TINY_SCREEN

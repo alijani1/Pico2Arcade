@@ -51,7 +51,8 @@ static const unsigned long MENU_EXIT_HOLD_MS = 1000;
  * single-button external joystick fires both. */
 extern "C" { volatile int g_two_fire = 0; }
 
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_GALAGINO_LANDSCAPE_AREA)
+#  define INGAME_WIDTH_TAP 1
 extern "C" volatile int g_stretch;   /* video.cpp: landscape width index */
 #endif
 /* Set by pico_menu once a game is armed (defined in pico_core1.cpp). */
@@ -73,11 +74,27 @@ extern "C" bool pico_input_menu_tapped(void) {
 static const int PIN_JOY_X  = 44;
 static const int PIN_JOY_Y  = 45;
 #endif
+#ifdef PICO_HOSTED
+/* Quad / Duo 5200 Joy-Con (Hall stick), as GameAdapterRGBPico joycon5200.cpp:
+ * it rests at about X 2257 / Y 2081, not the 2048 midpoint, and right after
+ * power-on reads low (~1335) until it settles. A centre captured then sat a
+ * few hundred counts low, so a stick at rest was already part way to RIGHT
+ * and a light touch crossed 512. Now the boot sample is used only if it is
+ * in 1700-2500 and steady, else the measured rest; a direction needs 700
+ * counts and lets go below 420 (no flicker at the edge). */
+static const int JOY_THRESHOLD = 700;
+static const int JOY_RELEASE   = JOY_THRESHOLD * 6 / 10;
+static int joy_center_x = 2257;
+static int joy_center_y = 2081;
+static const int JOY_CENTER_MIN = 1700, JOY_CENTER_MAX = 2500, JOY_NOISE_MAX = 200;
+#else
 /* A direction triggers at 25% of the stick's travel from centre (2048 =
  * full deflection), so diagonals come easily. */
 static const int JOY_THRESHOLD = 512;
+static const int JOY_RELEASE   = JOY_THRESHOLD;
 static int joy_center_x = 2048;
 static int joy_center_y = 2048;
+#endif
 
 #ifdef PICO_BOARD_TABLE
 /* ── Atari 5200 controller analog stick (g_pins.stick_x / stick_y) ──────
@@ -203,13 +220,29 @@ extern "C" void pico_input_init(void) {
     analogReadResolution(12);
     long sx = 0, sy = 0;
     const int N = 8;
+    int lox = 4095, hix = 0, loy = 4095, hiy = 0;
     for (int i = 0; i < N; i++) {
-        sx += analogRead(PIN_JOY_X);
-        sy += analogRead(PIN_JOY_Y);
+        int x = analogRead(PIN_JOY_X), y = analogRead(PIN_JOY_Y);
+        sx += x; sy += y;
+        if (x < lox) lox = x;
+        if (x > hix) hix = x;
+        if (y < loy) loy = y;
+        if (y > hiy) hiy = y;
         delay(2);
     }
+#ifdef PICO_HOSTED
+    {
+        int cx = (int)(sx / N), cy = (int)(sy / N);
+        bool ok = cx >= JOY_CENTER_MIN && cx <= JOY_CENTER_MAX && cy >= JOY_CENTER_MIN && cy <= JOY_CENTER_MAX
+               && hix - lox <= JOY_NOISE_MAX && hiy - loy <= JOY_NOISE_MAX;
+        if (ok) { joy_center_x = cx; joy_center_y = cy; }      /* else keep the measured rest */
+        Serial.printf("[input] JoyCon rest X=%d Y=%d (%s)\n", cx, cy, ok ? "used" : "unsettled, default kept");
+    }
+#else
+    (void)lox; (void)hix; (void)loy; (void)hiy;
     joy_center_x = (int)(sx / N);
     joy_center_y = (int)(sy / N);
+#endif
     Serial.printf("[input] JoyCon center: X=%d Y=%d\n", joy_center_x, joy_center_y);
 }
 
@@ -342,10 +375,17 @@ extern "C" unsigned char buttons_get(void) {
         jy = rjy;
     }
 #endif
-    if (jx < -JOY_THRESHOLD) state |= BUTTON_LEFT;
-    if (jx >  JOY_THRESHOLD) state |= BUTTON_RIGHT;
-    if (jy < -JOY_THRESHOLD) state |= BUTTON_UP;
-    if (jy >  JOY_THRESHOLD) state |= BUTTON_DOWN;
+    /* Press past JOY_THRESHOLD, let go below JOY_RELEASE (hysteresis). */
+    static unsigned char joy_held = 0;
+    const unsigned char J_L = 1, J_R = 2, J_U = 4, J_D = 8;
+    if (jx < -((joy_held & J_L) ? JOY_RELEASE : JOY_THRESHOLD)) joy_held |= J_L; else joy_held &= ~J_L;
+    if (jx >  ((joy_held & J_R) ? JOY_RELEASE : JOY_THRESHOLD)) joy_held |= J_R; else joy_held &= ~J_R;
+    if (jy < -((joy_held & J_U) ? JOY_RELEASE : JOY_THRESHOLD)) joy_held |= J_U; else joy_held &= ~J_U;
+    if (jy >  ((joy_held & J_D) ? JOY_RELEASE : JOY_THRESHOLD)) joy_held |= J_D; else joy_held &= ~J_D;
+    if (joy_held & J_L) state |= BUTTON_LEFT;
+    if (joy_held & J_R) state |= BUTTON_RIGHT;
+    if (joy_held & J_U) state |= BUTTON_UP;
+    if (joy_held & J_D) state |= BUTTON_DOWN;
     }
 
     /* MENU: a tap is reported on release (the game list uses it to exit);
@@ -369,8 +409,9 @@ extern "C" unsigned char buttons_get(void) {
         } else if (menu_down) {
             menu_down = false;
             g_menu_tapped = true;
-#ifdef PICO_TINY_SCREEN
-            /* In a game, landscape: a tap steps the width 62 -> 62 crop -> 75 -> ... -> 160 crop; the
+#ifdef INGAME_WIDTH_TAP
+            /* In a game, landscape: a tap steps the width 62 -> 62 crop -> 75 -> ... -> 160 crop
+             * (Quad / Duo 5200: 186 ... 320 crop); the
              * video side picks it up next frame and saves it (video.cpp). */
             if (g_menu_done && g_landscape_mode) g_stretch = (g_stretch + 1) % 8;
 #endif

@@ -28,6 +28,7 @@ extern "C" {
 }
 #ifdef PICO_GALAGINO_LANDSCAPE_AREA
 extern "C" volatile int g_scale_mode;    /* video.cpp */
+extern "C" volatile int g_stretch;       /* video.cpp: landscape Width step */
 #endif
 static void flags_update(int clear, int set) {
     int f = handoff_flags_read();
@@ -42,6 +43,7 @@ extern "C" void pico_config_load(void) {
 #ifdef PICO_GALAGINO_LANDSCAPE_AREA
         int sc = (f & HANDOFF_FLAG_SCALE_MASK) >> HANDOFF_FLAG_SCALE_SHIFT;
         g_scale_mode = sc <= SCALE_DROP ? sc : SCALE_SMOOTH;
+        g_stretch = (f & HANDOFF_FLAG_WIDTH_MASK) >> HANDOFF_FLAG_WIDTH_SHIFT;
 #endif
     }
     Serial.printf("[cfg] landscape=%d show_fps=%d (from Quad)\n", g_landscape_mode, g_show_fps);
@@ -60,6 +62,12 @@ extern "C" void pico_config_save_show_fps(int on) {
 extern "C" void pico_config_save_scale(int mode) {
     flags_update(HANDOFF_FLAG_SCALE_MASK, (mode << HANDOFF_FLAG_SCALE_SHIFT) & HANDOFF_FLAG_SCALE_MASK);
 }
+#ifdef PICO_GALAGINO_LANDSCAPE_AREA
+extern "C" void pico_config_save_stretch(int idx) {
+    g_stretch = (idx >= 0 && idx <= 7) ? idx : 0;
+    flags_update(HANDOFF_FLAG_WIDTH_MASK, (g_stretch << HANDOFF_FLAG_WIDTH_SHIFT) & HANDOFF_FLAG_WIDTH_MASK);
+}
+#endif
 extern "C" int  pico_config_volume(void) { return -1; }        /* the Quad keeps it */
 extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #elif defined(PICO_STANDALONE)
