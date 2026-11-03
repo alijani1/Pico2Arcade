@@ -26,7 +26,7 @@ extern "C" {
     volatile int g_landscape_mode = 1;
     volatile int g_show_fps       = 0;
 }
-#ifdef PICO_GALAGINO_LANDSCAPE_AREA
+#if defined(PICO_GALAGINO_LANDSCAPE_AREA) || defined(PICO_TINY_SCREEN)   /* Duo: the 160x80 panel's */
 extern "C" volatile int g_scale_mode;    /* video.cpp */
 extern "C" volatile int g_stretch;       /* video.cpp: landscape Width step */
 #endif
@@ -40,7 +40,7 @@ extern "C" void pico_config_load(void) {
     if (f >= 0) {
         g_landscape_mode = (f & HANDOFF_FLAG_PORTRAIT) ? 0 : 1;
         g_show_fps = (f & HANDOFF_FLAG_SHOW_FPS) ? 1 : 0;
-#ifdef PICO_GALAGINO_LANDSCAPE_AREA
+#if defined(PICO_GALAGINO_LANDSCAPE_AREA) || defined(PICO_TINY_SCREEN)
         int sc = (f & HANDOFF_FLAG_SCALE_MASK) >> HANDOFF_FLAG_SCALE_SHIFT;
         g_scale_mode = sc <= SCALE_DROP ? sc : SCALE_SMOOTH;
         g_stretch = (f & HANDOFF_FLAG_WIDTH_MASK) >> HANDOFF_FLAG_WIDTH_SHIFT;
@@ -62,7 +62,7 @@ extern "C" void pico_config_save_show_fps(int on) {
 extern "C" void pico_config_save_scale(int mode) {
     flags_update(HANDOFF_FLAG_SCALE_MASK, (mode << HANDOFF_FLAG_SCALE_SHIFT) & HANDOFF_FLAG_SCALE_MASK);
 }
-#ifdef PICO_GALAGINO_LANDSCAPE_AREA
+#if defined(PICO_GALAGINO_LANDSCAPE_AREA) || defined(PICO_TINY_SCREEN)
 extern "C" void pico_config_save_stretch(int idx) {
     g_stretch = (idx >= 0 && idx <= 7) ? idx : 0;
     flags_update(HANDOFF_FLAG_WIDTH_MASK, (g_stretch << HANDOFF_FLAG_WIDTH_SHIFT) & HANDOFF_FLAG_WIDTH_MASK);

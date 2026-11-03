@@ -9,7 +9,8 @@
  *                 defaults, commented, when the drive is first formatted).
  * PICO_DUO        (with PICO_STANDALONE) Duo Ultimate run standalone, as a
  *                 test of the 160x80 ST7735 panel (PICO_TINY_SCREEN): built-in
- *                 Duo profile, no ARCADE.INI.
+ *                 Duo profile, no ARCADE.INI. Without PICO_STANDALONE: chain-
+ *                 booted by the Duo firmware (2.3+) from its arcade slot.
  * (PicoCartReader keeps its fixed PCA9539 expander wiring — not table-driven.)
  *
  * All buttons/directions are active LOW with the internal pull-up (switch to
@@ -24,7 +25,7 @@
 /* Chain-booted by an iCode host firmware (GameAdapterRGBPico include/arcade.hpp):
  * the host passes volume/orientation and the ROM drive location, and gets
  * them back on exit. */
-#if defined(PICO_QUAD) || defined(PICO_5200)
+#if defined(PICO_QUAD) || defined(PICO_5200) || (defined(PICO_DUO) && !defined(PICO_STANDALONE))
 #  define PICO_HOSTED 1
 #endif
 #if defined(PICO_HOSTED) || defined(PICO_STANDALONE)
