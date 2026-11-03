@@ -49,13 +49,13 @@ board_pins_t g_pins = {
 /* Duo Ultimate (GameAdapterRGBPico data/duoultimate.json), standalone test
  * build: directions = the 5-way (up 25, down 8, left 12, right 6), A = Red,
  * Yellow, the port 1 DB9 fire (13) or the 5-way press (7), B = Green or Blue,
- * White = START, Black = COIN, gray Menu (23); PWM audio 37 + amp enable 0;
+ * Black = START, White = COIN, gray Menu (23); PWM audio 37 + amp enable 0;
  * backlight LEDA on GPIO 5 (the Duo firmware drives it HIGH after tft.init). */
 board_pins_t g_pins = {
     /* up down left right */ 25, 8, 12, 6,
     /* fire fire2 fire3 fire4 */ 20, 21, 13, 7,
     /* fireb fireb2 fireb3 */ 9, 10, -1,
-    /* start coin menu    */ 24, 22, 23,
+    /* start coin menu    */ 22, 24, 23,   /* Black = START, White = COIN */
     /* nav_up nav_down    */ -1, -1,
     /* joy_x joy_y        */ -1, -1,
     /* joy_click          */ -1,
