@@ -245,10 +245,22 @@ extern "C" unsigned char buttons_get(void) {
     /* Player 1 joystick; fire also on the extra fire buttons / stick click.
      * Two-button games: the A buttons give FIRE, the B buttons FIRE2, and a
      * one-button joystick (no fireb) gives both. Otherwise all are FIRE. */
+#ifdef PICO_DUO
+    /* The Duo's 5-way is on the case, aligned for landscape: in portrait turn
+     * it a quarter like the Joy-Con below (right -> down, up -> right). */
+    if (!g_landscape_mode) {
+        if (pin_low(g_pins.up))    state |= BUTTON_RIGHT;
+        if (pin_low(g_pins.down))  state |= BUTTON_LEFT;
+        if (pin_low(g_pins.left))  state |= BUTTON_DOWN;
+        if (pin_low(g_pins.right)) state |= BUTTON_UP;
+    } else
+#endif
+    {
     if (pin_low(g_pins.up))        state |= BUTTON_UP;
     if (pin_low(g_pins.down))      state |= BUTTON_DOWN;
     if (pin_low(g_pins.left))      state |= BUTTON_LEFT;
     if (pin_low(g_pins.right))     state |= BUTTON_RIGHT;
+    }
     {
         const unsigned char B = g_two_fire ? BUTTON_FIRE2 : BUTTON_FIRE;
         const unsigned char joyFire = (g_two_fire && g_pins.fireb < 0) ? (BUTTON_FIRE | BUTTON_FIRE2)

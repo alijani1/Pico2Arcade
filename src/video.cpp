@@ -13,6 +13,7 @@
 #include <TFT_eSPI.h>
 #include "video.h"
 #include "config.h"
+#include "pico_board.h"   /* PICO_ROT_LANDSCAPE / PICO_ROT_PORTRAIT */
 #include "hardware/clocks.h"
 #include "hardware/spi.h"
 
@@ -51,6 +52,51 @@ static int cur_row = 0;
  * At 200 MHz sys / 100 MHz SPI, blocking pushImage may be fast enough to
  * still hit real speed with half the RAM footprint. */
 static uint16_t frame_buf[GAME_W * GAME_H];
+
+#ifdef PICO_TINY_SCREEN
+/* 160x80 panel (Duo Ultimate test, PICO_DUO): the whole 224x288 frame is
+ * box-filtered — each output pixel is the average of the ~2.8x2.8 source
+ * pixels it covers — down to 80x103 in portrait (the 80x160 way up) or 62x80
+ * in landscape, centred. Pixels stay byte-swapped RGB565 like frame_buf.
+ * ~3 ms per frame on core 0; the push is tiny (16 KB at most). */
+static const int TINY_PW = 80, TINY_PH = 103;   /* portrait */
+static const int TINY_LW = 62, TINY_LH = 80;    /* landscape */
+static uint16_t tiny_buf[TINY_PW * TINY_PH];
+static int tiny_w, tiny_h, tiny_x, tiny_y;
+static uint16_t tiny_x0[TINY_PW + 1];           /* first source column of each output column */
+
+static void tiny_setup(int w, int h, int panel_w, int panel_h) {
+  tiny_w = w; tiny_h = h;
+  tiny_x = (panel_w - w) / 2;
+  tiny_y = (panel_h - h) / 2;
+  for (int i = 0; i <= w; i++) tiny_x0[i] = (uint16_t)(i * GAME_W / w);
+}
+
+static void downscale_tiny(const uint16_t *src, uint16_t *dst) {
+  uint16_t sr[TINY_PW], sg[TINY_PW], sb[TINY_PW];
+  for (int oy = 0; oy < tiny_h; oy++) {
+    const int y0 = oy * GAME_H / tiny_h, y1 = (oy + 1) * GAME_H / tiny_h;
+    memset(sr, 0, sizeof(sr)); memset(sg, 0, sizeof(sg)); memset(sb, 0, sizeof(sb));
+    for (int sy = y0; sy < y1; sy++) {
+      const uint16_t *row = src + (size_t)sy * GAME_W;
+      for (int ox = 0; ox < tiny_w; ox++) {
+        unsigned r = 0, g = 0, b = 0;
+        for (int sx = tiny_x0[ox]; sx < tiny_x0[ox + 1]; sx++) {
+          uint16_t v = __builtin_bswap16(row[sx]);
+          r += v >> 11; g += (v >> 5) & 0x3F; b += v & 0x1F;
+        }
+        sr[ox] += r; sg[ox] += g; sb[ox] += b;
+      }
+    }
+    uint16_t *out = dst + (size_t)oy * tiny_w;
+    for (int ox = 0; ox < tiny_w; ox++) {
+      const unsigned n = (unsigned)(y1 - y0) * (tiny_x0[ox + 1] - tiny_x0[ox]);
+      const unsigned r = (sr[ox] + n / 2) / n, g = (sg[ox] + n / 2) / n, b = (sb[ox] + n / 2) / n;
+      out[ox] = __builtin_bswap16((uint16_t)((r << 11) | (g << 5) | b));
+    }
+  }
+}
+#endif
 
 #ifdef PICO_GALAGINO_LANDSCAPE
 /* 6:5 vertical downscale — 6 source rows → 5 destination rows.
@@ -171,14 +217,20 @@ void Video::begin(void) {
    * TFT_eSPI api calls. */
   is_landscape_locked = g_landscape_mode ? 1 : 0;
   if (is_landscape_locked) {
-    tft.setRotation(3);   /* landscape 320x240, 270° CW */
+    tft.setRotation(PICO_ROT_LANDSCAPE);   /* landscape 320x240, 270° CW */
     push_x_off = (320 - LANDSCAPE_W) / 2;
     Serial.printf("[video] landscape mode ON (image %dx%d at x=%d)\n",
                   LANDSCAPE_W, LANDSCAPE_H, push_x_off);
   } else {
-    tft.setRotation(0);   /* portrait 240x320 */
+    tft.setRotation(PICO_ROT_PORTRAIT);   /* portrait 240x320 */
     Serial.println("[video] portrait mode");
   }
+#ifdef PICO_TINY_SCREEN
+  if (is_landscape_locked) tiny_setup(TINY_LW, TINY_LH, tft.width(), tft.height());
+  else                     tiny_setup(TINY_PW, TINY_PH, tft.width(), tft.height());
+  push_x_off = tiny_x;
+  Serial.printf("[video] tiny screen: image %dx%d at (%d,%d)\n", tiny_w, tiny_h, tiny_x, tiny_y);
+#endif
 #else
   tft.setRotation(0);
 #endif
@@ -224,7 +276,10 @@ void Video::write(uint16_t *colors, uint32_t len) {
 
   cur_row += rows;
   if (cur_row >= GAME_H) {
-#ifdef PICO_GALAGINO_LANDSCAPE
+#if defined(PICO_TINY_SCREEN)
+    downscale_tiny(frame_buf, tiny_buf);
+    push_banded(tiny_x, tiny_y, tiny_w, tiny_h, tiny_buf);
+#elif defined(PICO_GALAGINO_LANDSCAPE)
     if (is_landscape_locked) {
       downscale_288_to_240(frame_buf, scaled_buf);
       push_banded(push_x_off, 0, LANDSCAPE_W, LANDSCAPE_H, scaled_buf);
@@ -256,6 +311,17 @@ static void draw_fps_overlay(float scr_fps, float emu_fps, float emu_ms) {
   float load = emu_ms / FRAME_BUDGET_MS * 100.0f;
   uint16_t col = (load < 80.0f) ? TFT_GREEN : (load < 95.0f) ? TFT_YELLOW : TFT_RED;
   tft.setTextSize(1);
+#ifdef PICO_TINY_SCREEN
+  if (!is_landscape_locked) {
+    /* Portrait 80x160: two short lines in the strip above the image. */
+    tft.fillRect(0, 0, tiny_w, tiny_y - 1, TFT_BLACK);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(0, 2);   tft.printf("S%2.0f E%2.0f", scr_fps, emu_fps);
+    tft.setTextColor(col, TFT_BLACK);
+    tft.setCursor(0, 12);  tft.printf("CPU %3.0f%%", load);
+    return;
+  }
+#endif
 #ifdef PICO_GALAGINO_LANDSCAPE
   if (is_landscape_locked) {
     /* Left border: push_x_off px wide (67 px with the 186 px image). */
@@ -313,6 +379,10 @@ void Video::fps_stats_tick(void) {
 #ifdef PICO_GALAGINO_LANDSCAPE
     if (is_landscape_locked) tft.fillRect(0, 0, push_x_off - 1, 70, TFT_BLACK);
     else
+#endif
+#ifdef PICO_TINY_SCREEN
+    tft.fillRect(0, 0, tiny_w, tiny_y - 1, TFT_BLACK);
+    if (0)
 #endif
     tft.fillRect(0, TFT_Y_OFFSET + GAME_H + 2, 240, 12, TFT_BLACK);
     shown = 0;

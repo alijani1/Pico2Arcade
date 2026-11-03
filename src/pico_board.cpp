@@ -45,6 +45,23 @@ board_pins_t g_pins = {
     /* backlight          */ 23,
     /* stick_x stick_y    */ 40, 41,
 };
+#elif defined(PICO_DUO)
+/* Duo Ultimate (GameAdapterRGBPico data/duoultimate.json), standalone test
+ * build: directions = the 5-way (up 25, down 8, left 12, right 6), A = Red,
+ * Yellow, the port 1 DB9 fire (13) or the 5-way press (7), B = Green or Blue,
+ * White = START, Black = COIN, gray Menu (23); PWM audio 37 + amp enable 0. */
+board_pins_t g_pins = {
+    /* up down left right */ 25, 8, 12, 6,
+    /* fire fire2 fire3 fire4 */ 20, 21, 13, 7,
+    /* fireb fireb2 fireb3 */ 9, 10, -1,
+    /* start coin menu    */ 24, 22, 23,
+    /* nav_up nav_down    */ -1, -1,
+    /* joy_x joy_y        */ -1, -1,
+    /* joy_click          */ -1,
+    /* audio amp          */ 37, 0,
+    /* backlight          */ -1,
+    /* stick_x stick_y    */ -1, -1,
+};
 #else
 /* Plain Pico 2 defaults (also the contents of the default ARCADE.INI). Chosen
  * clear of the display (SPI0: SCLK 6, MOSI 7, CS 5, DC 8, RST 9). */
@@ -160,7 +177,7 @@ static void parse_ini(const char *text, size_t len) {
 #endif
 
 extern "C" void board_pins_load(void) {
-#ifdef PICO_STANDALONE
+#if defined(PICO_STANDALONE) && !defined(PICO_DUO)   /* the Duo keeps its built-in profile */
     uint8_t *ini = nullptr;
     size_t n = 0;
     if (romfs_slurp("/ARCADE.INI", &ini, &n)) {

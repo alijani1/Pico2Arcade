@@ -238,6 +238,10 @@ static void draw_volume(TFT_eSPI &tft) {
     int v = pico_audio_get_volume_pct();
     uint16_t col = (v <= 0) ? TFT_YELLOW : TFT_LIGHTGREY;
     int x = tft.width() - 54, y = 12;
+#ifdef PICO_TINY_SCREEN
+    if (tft.width() < 120) return;       /* portrait 80 px: no room beside the title */
+    y = 3;
+#endif
     tft.fillRect(x, y - 1, 50, 10, TFT_BLACK);
     tft.fillRect(x, y + 2, 3, 4, col);
     tft.fillTriangle(x + 3, y + 4, x + 7, y, x + 7, y + 8, col);
@@ -251,7 +255,15 @@ static void draw_volume(TFT_eSPI &tft) {
 /* Rows never get tighter than this (size-2 text is 16 px tall). When they
  * don't all fit, the list scrolls: a window of rows that follows the
  * selection, with arrows at the right edge when there is more above/below. */
+/* 160x80 panel (PICO_TINY_SCREEN): size-1 text (8 px tall, 6 px a char),
+ * rows from 10 px, no hint lines. */
+#ifdef PICO_TINY_SCREEN
+static const int MIN_STEP = 10;
+static const int ROW_TS = 1, ROW_MAX_STEP = 12, ROW_TEXT_X = 3;
+#else
 static const int MIN_STEP = 18;
+static const int ROW_TS = 2, ROW_MAX_STEP = 24, ROW_TEXT_X = 10;
+#endif
 static int s_first = 0;                        /* first row shown */
 
 /* Menu layout from the panel's real size (240x320 portrait or 320x240
@@ -263,18 +275,28 @@ static bool s_wide;
 static void menu_layout(TFT_eSPI &tft) {
     const int H = tft.height();
     s_wide = tft.width() > H;                  /* landscape: one hint line, list pulled up */
+#ifdef PICO_TINY_SCREEN
+    const int HINT_H = 0;
+#else
     const int HINT_H = s_wide ? 12 : 22;       /* hint lines at the bottom */
+#endif
     /* A note line under the title only when there is something to say (no
      * ROMs / ARCADE.INI problem) — otherwise the list starts right below
      * the title, so the rows get more spacing. */
     const bool note = (nAvail == 0) || board_pins_warning()[0];
+#ifdef PICO_TINY_SCREEN
+    int top = note ? 32 : 14;
+#else
     int top = note ? 60 : (s_wide ? 28 : 40);
+#endif
     int step = (H - HINT_H - top) / menu_rows();
+#ifndef PICO_TINY_SCREEN
     if (note && step < 20) {                   /* tight (landscape): pull the list up */
         top = 46;
         step = (H - HINT_H - top) / menu_rows();
     }
-    if (step > 24) step = 24;
+#endif
+    if (step > ROW_MAX_STEP) step = ROW_MAX_STEP;
     int shown = menu_rows();
     if (step < MIN_STEP) {
         step = MIN_STEP;
@@ -310,7 +332,7 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     TFT_eSPI &gfx = off ? (TFT_eSPI &)spr : tft;
     const int ox = off ? 0 : x, oy = off ? 0 : y;      /* row origin on gfx */
     gfx.fillRect(ox, oy, w, h, bg);
-    gfx.setTextSize(2);
+    gfx.setTextSize(ROW_TS);
     gfx.setTextColor(fg, bg);
     char label[40];
     switch (row_kind(i)) {
@@ -334,9 +356,13 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     }
     /* crop to what fits (12 px per size-2 char), leaving room for the
      * scroll arrows — a longer label would wrap onto the next row */
+#ifdef PICO_TINY_SCREEN
+    int fit = (w - ROW_TEXT_X) / 6;
+#else
     int fit = (W - 14 - 20) / 12;
+#endif
     if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
-    gfx.setCursor(ox + 10, oy + 1);
+    gfx.setCursor(ox + ROW_TEXT_X, oy + 1);
     gfx.print(label);
     if (off) {
         spr.pushSprite(x, y);
@@ -374,21 +400,32 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     const int W = tft.width(), H = tft.height();
     menu_layout(tft);
     menu_follow(sel);
+#ifdef PICO_TINY_SCREEN
+    const int HINT_H = 0, NOTE_X = 2, NOTE_Y = 13, NOTE_Y2 = 22;
+#else
     const int HINT_H = s_wide ? 12 : 22;
+    const int NOTE_X = 10, NOTE_Y = 32, NOTE_Y2 = 44;
+#endif
 
     tft.fillScreen(TFT_BLACK);
+#ifdef PICO_TINY_SCREEN
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setCursor(2, 3);
+#else
     tft.setTextSize(2);
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
     tft.setCursor(10, 8);
+#endif
     tft.print("Arcade Games");
     tft.setTextSize(1);
-    tft.setCursor(10, 32);
+    tft.setCursor(NOTE_X, NOTE_Y);
     if (nAvail == 0) {
         tft.setTextColor(TFT_RED, TFT_BLACK);
 #ifdef PICO_BOARD_TABLE
         tft.print("No ROMs found on the ROM drive.");
         tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-        tft.setCursor(10, 44);
+        tft.setCursor(NOTE_X, NOTE_Y2);
 #ifdef PICO_USB_DRIVE
         tft.print("ROM Drive (USB): copy MAME zips");
 #else
@@ -406,6 +443,11 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     }
 
     draw_rows(tft, sel);
+#ifdef PICO_TINY_SCREEN
+    (void)W; (void)H;
+    draw_volume(tft);                /* no room for the hint lines */
+    return;
+#endif
 
     /* Hint lines kept <= 37 chars (222 px) so they fit portrait width;
      * landscape gets a single <= 51-char line (306 px). */
@@ -427,6 +469,17 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
 
 /* Show a load error and wait for a button press (then back to menu). */
 static void show_load_error(TFT_eSPI &tft, int g) {
+#ifdef PICO_TINY_SCREEN
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(2, 40);
+    tft.print("LOAD FAILED");
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(2, 52);
+    tft.printf("Check %s", games[g].zip + 6);
+    tft.setCursor(2, 66);
+    tft.print("FIRE/START: back");
+#else
     tft.setTextSize(2);
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(10, 140);
@@ -437,6 +490,7 @@ static void show_load_error(TFT_eSPI &tft, int g) {
     tft.printf("Check %s on %s", games[g].zip + 6, romfs_where());   /* skip "/roms/" */
     tft.setCursor(10, 180);
     tft.print("Press FIRE/START to go back");
+#endif
     while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
     while (!(buttons_get() & (BUTTON_FIRE | BUTTON_START))) delay(20);
 }
@@ -444,6 +498,22 @@ static void show_load_error(TFT_eSPI &tft, int g) {
 /* The zip isn't the supported MAME set (pico_romcheck.cpp). */
 static void show_bad_set(TFT_eSPI &tft, int g) {
     tft.fillScreen(TFT_BLACK);
+#ifdef PICO_TINY_SCREEN
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(2, 2);
+    tft.print("WRONG ROM SET");
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setCursor(2, 14);
+    tft.printf("%s:", games[g].zip + 6);                  /* skip "/roms/" */
+    tft.setCursor(2, 24);
+    tft.print(badWhy[g]);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.setCursor(2, 46);
+    tft.print("Use the MAME parent set");
+    tft.setCursor(2, 66);
+    tft.print("FIRE/START: back");
+#else
     tft.setTextSize(2);
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(10, 40);
@@ -461,6 +531,7 @@ static void show_bad_set(TFT_eSPI &tft, int g) {
     tft.printf("(non-merged), copied to %s.", romfs_where());
     tft.setCursor(10, 144);
     tft.print("Press FIRE/START to go back");
+#endif
     while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
     while (!(buttons_get() & (BUTTON_FIRE | BUTTON_START))) delay(20);
 }
@@ -488,7 +559,7 @@ extern "C" void pico_menu_pick_and_load(void) {
      * object starts out assuming 240x320; match the rotation Video::begin
      * gave the panel so width()/height() (and the layout) are right. */
 #ifdef PICO_GALAGINO_LANDSCAPE
-    tft.setRotation(g_landscape_mode ? 3 : 0);
+    tft.setRotation(g_landscape_mode ? PICO_ROT_LANDSCAPE : PICO_ROT_PORTRAIT);
 #endif
     int sel = 0;
     int g = -1;   /* chosen index into games[] */
@@ -617,9 +688,15 @@ extern "C" void pico_menu_pick_and_load(void) {
             }
             Serial.printf("[menu] picked: %s\n", games[cand].label);
             tft.fillScreen(TFT_BLACK);
+#ifdef PICO_TINY_SCREEN
+            tft.setTextSize(1);
+            tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+            tft.setCursor(2, 20);
+#else
             tft.setTextSize(2);
             tft.setTextColor(TFT_YELLOW, TFT_BLACK);
             tft.setCursor(10, 100);
+#endif
             tft.printf("Loading %s...", games[cand].label);
             if (games[cand].loader()) g = cand;
             else show_load_error(tft, cand);

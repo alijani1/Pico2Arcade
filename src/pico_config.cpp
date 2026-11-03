@@ -53,10 +53,16 @@ extern "C" void pico_config_save_volume(int pct) { (void)pct; }
 #endif
 static const uint32_t CFG_MAGIC = 0x47434647u;          /* "GCFG" */
 struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, pad; };
-static Cfg s_cfg = { CFG_MAGIC, 0, 0, 50, 0 };
+/* The Duo's 160x80 panel starts in landscape, the way the Duo is held. */
+#ifdef PICO_TINY_SCREEN
+#define PICO_DEFAULT_LANDSCAPE 1
+#else
+#define PICO_DEFAULT_LANDSCAPE 0
+#endif
+static Cfg s_cfg = { CFG_MAGIC, PICO_DEFAULT_LANDSCAPE, 0, 50, 0 };
 
 extern "C" {
-    volatile int g_landscape_mode = 0;   /* default: portrait */
+    volatile int g_landscape_mode = PICO_DEFAULT_LANDSCAPE;   /* default: portrait */
     volatile int g_show_fps       = 0;   /* default: off */
 }
 

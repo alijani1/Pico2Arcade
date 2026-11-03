@@ -7,6 +7,9 @@
  * PICO_STANDALONE plain Pico 2 dev board: defaults below, overridden by
  *                 ARCADE.INI in the root of the ROM drive (written with the
  *                 defaults, commented, when the drive is first formatted).
+ * PICO_DUO        (with PICO_STANDALONE) Duo Ultimate run standalone, as a
+ *                 test of the 160x80 ST7735 panel (PICO_TINY_SCREEN): built-in
+ *                 Duo profile, no ARCADE.INI.
  * (PicoCartReader keeps its fixed PCA9539 expander wiring — not table-driven.)
  *
  * All buttons/directions are active LOW with the internal pull-up (switch to
@@ -27,6 +30,18 @@
 #if defined(PICO_HOSTED) || defined(PICO_STANDALONE)
 #  define PICO_BOARD_TABLE 1
 #endif
+/* Panel rotations for the two display modes. The 240x320 boards: landscape
+ * 3, portrait 0. The Duo's 160x80 panel reads landscape at 1 (as in the Duo
+ * firmware); portrait is 2 — one quarter turn on, the same way 3 -> 0 is on
+ * the other boards, so the Joy-Con / 5-way portrait remap is the same. */
+#ifdef PICO_TINY_SCREEN
+#  define PICO_ROT_LANDSCAPE 1
+#  define PICO_ROT_PORTRAIT  2
+#else
+#  define PICO_ROT_LANDSCAPE 3
+#  define PICO_ROT_PORTRAIT  0
+#endif
+
 /* USB ROM drive mode (pico_drive.cpp) — builds with the TinyUSB stack. */
 #if defined(PICO_BOARD_TABLE) && defined(USE_TINYUSB)
 #  define PICO_USB_DRIVE 1

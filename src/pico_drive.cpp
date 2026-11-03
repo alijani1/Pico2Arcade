@@ -203,7 +203,7 @@ extern "C" void pico_drive_run(void) {
     const char *driveName = "ARCADE ROMS";
     static const char LABEL[11] = {'A','R','C','A','D','E',' ','R','O','M','S'};
     if (!is_formatted()) {
-#ifdef PICO_STANDALONE
+#if defined(PICO_STANDALONE) && !defined(PICO_DUO)
         static const char INI83[11] = {'A','R','C','A','D','E',' ',' ','I','N','I'};
         format_drive(LABEL, INI83, board_default_ini());
 #else
@@ -224,9 +224,22 @@ extern "C" void pico_drive_run(void) {
 
     TFT_eSPI tft;
 #ifdef PICO_GALAGINO_LANDSCAPE
-    tft.setRotation(g_landscape_mode ? 3 : 0);
+    tft.setRotation(g_landscape_mode ? PICO_ROT_LANDSCAPE : PICO_ROT_PORTRAIT);
 #endif
     tft.fillScreen(TFT_BLACK);
+#ifdef PICO_TINY_SCREEN
+    /* 160x80: the same, condensed to size-1 lines. */
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(2, 2);  tft.print("ROM Drive (USB)");
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setCursor(2, 16); tft.print("Copy MAME zips to the");
+    tft.setCursor(2, 26); tft.printf("%s drive", driveName);
+    tft.setCursor(2, 36); tft.print("(root/ARCADE/MAME/ROMS)");
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setCursor(2, 54); tft.print("Eject, then press");
+    tft.setCursor(2, 64); tft.print("MENU or START to play.");
+#else
     tft.setTextSize(2);
     tft.setTextColor(TFT_YELLOW, TFT_BLACK);
     tft.setCursor(10, 20);
@@ -237,7 +250,7 @@ extern "C" void pico_drive_run(void) {
     tft.setCursor(10, y);      tft.printf("Copy the MAME ROM zips to the");
     tft.setCursor(10, y += 12); tft.printf("%s drive: in the root or an", driveName);
     tft.setCursor(10, y += 12); tft.print("ARCADE, MAME or ROMS folder.");
-#ifdef PICO_STANDALONE
+#if defined(PICO_STANDALONE) && !defined(PICO_DUO)
     tft.setCursor(10, y += 20); tft.print("Pins: edit ARCADE.INI on the drive.");
 #endif
     tft.setCursor(10, y += 20); tft.print("Zips: puckman mspacman galaga");
@@ -245,6 +258,7 @@ extern "C" void pico_drive_run(void) {
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
     tft.setCursor(10, y += 24); tft.print("Eject the drive, then press");
     tft.setCursor(10, y += 12); tft.print("MENU or START to play.");
+#endif
 
     delay(300);
     while (pin_low(g_pins.menu) || pin_low(g_pins.start)) delay(10);   /* released from entry */
