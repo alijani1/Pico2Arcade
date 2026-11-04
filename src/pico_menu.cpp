@@ -181,6 +181,16 @@ static void scan_roms(void) {
             avail[nAvail++] = i;
         }
     }
+    /* List alphabetically by label (games[] order is by emulator, not name).
+     * avail[] holds games[] indices, so only the display order changes. */
+    for (int a = 1; a < nAvail; a++) {
+        int v = avail[a], b = a;
+        while (b > 0 && strcasecmp(games[avail[b - 1]].label, games[v].label) > 0) {
+            avail[b] = avail[b - 1];
+            b--;
+        }
+        avail[b] = v;
+    }
 }
 
 /* Volume row: LEFT/RIGHT (or FIRE, wrapping) step it; kept by the host via
