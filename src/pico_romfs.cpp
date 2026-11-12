@@ -249,7 +249,14 @@ extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
     if (!e) { Serial.printf("[romfs] not found: %s\n", path); return false; }
     uint32_t size = rd32(e + 28), cluster = rd16(e + 26);
     if (size == 0 || size > volSize) return false;
+#ifdef PICO_FRUITJAM
+    /* Fruit Jam: in PSRAM (read once, by the unpacking) - the SRAM heap is
+     * short with HDMI sound's 36 KB queue, and Xevious needs ~200 KB to load */
+    uint8_t *buf = (uint8_t *)pmalloc(size);
+    if (!buf) buf = (uint8_t *)malloc(size);
+#else
     uint8_t *buf = (uint8_t *)malloc(size);
+#endif
     if (!buf) { Serial.printf("[romfs] malloc %lu bytes failed\n", (unsigned long)size); return false; }
     /* Copy cluster by cluster (the file may be fragmented). */
     uint32_t done = 0;

@@ -83,3 +83,12 @@ void __pico_notify_give(void) {
  * object file can reorder the other boards' linker veneers. */
 #include "usb_pads_glue.c"
 #endif
+
+#ifdef A8_HDMI_AUDIO
+/* Fruit Jam HDMI sound: pico_hdmi's packet encoder and queue as
+ * Adafruit-DVI-HSTX vendors them - C, so here, in a C file built anyway (an
+ * extra object file can reorder the other boards' veneers), as Pico2Atari8
+ * does in its a8_stubs.c. video.cpp has the rest of the driver. */
+#include "drivers/dvhstx/audio_packet.c"
+#include "drivers/dvhstx/audio_queue.c"
+#endif

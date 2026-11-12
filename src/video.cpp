@@ -576,6 +576,72 @@ static void hdmi_pal_332(void) {
   }
 }
 
+#ifdef A8_HDMI_AUDIO
+/* ---- sound over HDMI ------------------------------------------------------
+ * As Pico2Atari8's a8_display.cpp: the driver sends 16-bit stereo in data
+ * islands in the blanking (its dvhstx_audio.cpp and pico_hdmi's packet code,
+ * compiled at the end of this file and in pico_freertos_stubs.c), from a
+ * queue of encoded packets (36 KB, in RAM). pico_audio.cpp puts the game's
+ * samples into its HDMI ring instead of I2S (Sound row / serial key o); the
+ * feed here takes them, resamples them to 48000 Hz (= exactly 2 x Galagino's
+ * 24000; Donkey Kong's 11765 interpolated) and keeps the queue
+ * HDMI_AUDIO_TARGET packets deep. On core 0 - the HDMI core here (Pico2Atari8:
+ * core 1, its HDMI core) - from the frame wait and between the render strips. The output
+ * always starts with sound (hdmi_start). */
+extern "C" {
+#include "drivers/dvhstx/audio_config.h"
+#include "pico_hdmi/hstx_packet.h"
+#include "pico_hdmi/hstx_data_island_queue.h"
+}
+#include "pico_audio.h"
+static const uint32_t HDMI_AUDIO_RATE = 48000;
+static const uint32_t HDMI_AUDIO_TARGET = 200;          /* packets queued (4 frames each): 16.7 ms */
+static volatile bool hdmi_audio_on = false;
+static int hdmi_audio_frame = 0;                        /* the packets' frame counter (channel status) */
+static int16_t ha_prev = 0, ha_cur = 0;                 /* the two input samples around the output one */
+static uint32_t ha_pos = 0;                             /* its place between them, 16.16 */
+
+/* Core 0: top the queue up from the HDMI ring. */
+static void __no_inline_not_in_flash_func(hdmi_audio_feed)(void) {
+  if (!hdmi_audio_on) return;
+  const int rate = pico_audio_hdmi_rate();
+  if (rate <= 0) return;
+  const uint32_t step = (uint32_t)(((uint64_t)rate << 16) / HDMI_AUDIO_RATE);
+  const bool in_hsync = hstx_di_queue_get_hsync_active();
+  while (hstx_di_queue_get_level() < HDMI_AUDIO_TARGET) {
+    /* the input samples 4 output ones need: all there, or wait for them */
+    const uint32_t need = (ha_pos + 4 * step) >> 16;
+    if (pico_audio_hdmi_avail() < need) return;         /* nothing due: the driver sends silence */
+    audio_sample_t f[4];
+    for (int k = 0; k < 4; k++) {
+      while (ha_pos >= 0x10000u) {
+        int16_t s;
+        pico_audio_hdmi_take(&s, 1);
+        ha_prev = ha_cur;
+        ha_cur = s;
+        ha_pos -= 0x10000u;
+      }
+      const int32_t v = ha_prev + (((int32_t)ha_cur - ha_prev) * (int32_t)ha_pos >> 16);
+      f[k].left = f[k].right = (int16_t)v;
+      ha_pos += step;
+    }
+    hstx_packet_t packet;
+    const int next = hstx_packet_set_audio_samples_cs_rate(&packet, f, 4, hdmi_audio_frame, HDMI_AUDIO_RATE);
+    hstx_data_island_t island;
+    hstx_encode_data_island(&island, &packet, false, in_hsync);
+    if (!hstx_di_queue_push(&island)) return;          /* (below the target: has room) */
+    hdmi_audio_frame = next;
+  }
+}
+
+/* pico_audio.cpp: is the HDMI output carrying sound (before it starts: it
+ * will). */
+bool a8_display_hdmi_audio(void) { return hdmi_started ? hdmi_audio_on : true; }
+uint32_t a8_display_hdmi_audio_gaps(void) { return hstx_di_queue_silence_count; }
+#else
+static inline void hdmi_audio_feed(void) {}
+#endif
+
 /* Starts the output (Video::begin, core 0). The driver's interrupt runs on
  * the core that starts it: core 0, the renderer's, since the USB host moved
  * to core 1 next to the emulator (Pico2Atari8's split). (Was video_core1_poll,
@@ -588,7 +654,23 @@ static void hdmi_start(int m) {
   if (hdmi_started) hdmi.reset();                       /* a mode change (Screen row) */
   hdmi_vmode = m;
   hdmi.set_scanline_callback(hdmi_line);
+#ifdef A8_HDMI_AUDIO
+  /* Always with sound (data islands; silent while the sound goes to the
+   * codec): switching the sound to HDMI then restarts nothing (Pico2Atari8:
+   * restarting DVI <-> HDMI lost the picture on a display). A mode with no
+   * room for it: picture only. */
+  hdmi.enable_audio(HDMI_AUDIO_RATE);
+  hdmi_audio_frame = 0;
   hdmi_ok = hdmi.init(HDMI_MODES[m].w, HDMI_MODES[m].h, pimoroni::DVHSTX::MODE_RGB565, false, pins);
+  hdmi_audio_on = hdmi_ok;
+  if (!hdmi_ok) {
+    Serial.printf("[video] HDMI sound doesn't fit %s: picture only\n", HDMI_MODES[m].name);
+    hdmi.enable_audio(0);
+    hdmi_ok = hdmi.init(HDMI_MODES[m].w, HDMI_MODES[m].h, pimoroni::DVHSTX::MODE_RGB565, false, pins);
+  }
+#else
+  hdmi_ok = hdmi.init(HDMI_MODES[m].w, HDMI_MODES[m].h, pimoroni::DVHSTX::MODE_RGB565, false, pins);
+#endif
   if (hdmi_ok) {
     out_words = hdmi.get_width() / 2;
     out_lines = hdmi.get_height();
@@ -656,7 +738,10 @@ void video_hdmi_wait_vblank(void) {
   static uint32_t last = 0;
   const uint32_t t0 = time_us_32();
   uint32_t f;
-  while ((f = hdmi.get_frame_count()) == last && time_us_32() - t0 < 50000) __wfe();
+  while ((f = hdmi.get_frame_count()) == last && time_us_32() - t0 < 50000) {
+    hdmi_audio_feed();                          /* (HDMI sound: keep its queue topped up meanwhile) */
+    __wfe();
+  }
   last = f;
 }
 
@@ -1266,6 +1351,7 @@ void Video::write(uint16_t *colors, uint32_t len) {
 #ifdef PICO_HDMI
   if (!hdmi_game) hdmi_game_start();                  /* the game's first strip: frame_buf is its now */
   if (cur_row == 0) hdmi_frame_start();               /* Scale / Width, the overlay box */
+  hdmi_audio_feed();                                  /* HDMI sound: between the render strips too */
 #endif
   memcpy(&frame_buf[cur_row * GAME_W], colors, (size_t)rows * GAME_W * 2);
 
@@ -1486,4 +1572,8 @@ const struct dvi_timing dvi_timing_800x600p_60hz = {
     .bit_clk_khz     = 400000
 };
 #include "drivers/dvhstx/font_cp437.c"
+#ifdef A8_HDMI_AUDIO
+#undef NUM_CHANS                         /* dvhstx.cpp's 3; the audio code's is 4 */
+#include "drivers/dvhstx/dvhstx_audio.cpp"
+#endif
 #endif  /* PICO_HDMI */

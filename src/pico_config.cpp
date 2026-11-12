@@ -130,6 +130,10 @@ extern "C" void pico_config_load(void) {
     g_stretch = s_cfg.stretch;
 #ifdef PICO_HDMI
     g_hdmi_mode = (s_cfg.pad[0] >= 1 && s_cfg.pad[0] <= 16) ? s_cfg.pad[0] - 1 : -1;
+#ifdef A8_HDMI_AUDIO
+    /* pad[1] = the Sound row's output + 1 (0 = Auto: older settings too) */
+    if (s_cfg.pad[1] >= 1 && s_cfg.pad[1] <= 5) pico_audio_set_sound_output(s_cfg.pad[1] - 1);
+#endif
 #endif
 #endif
     Serial.printf("[cfg] landscape=%d show_fps=%d volume=%d (%s)\n", g_landscape_mode,
@@ -205,6 +209,12 @@ extern "C" void pico_config_save_stretch(int idx) {
 }
 #endif
 #ifdef PICO_HDMI
+#ifdef A8_HDMI_AUDIO
+extern "C" void pico_config_save_sound_output(int o) {
+    s_cfg.pad[1] = (uint8_t)(o >= 0 && o <= 4 ? o + 1 : 0);
+    pico_config_save();
+}
+#endif
 extern "C" void pico_config_save_hdmi_mode(int m) {
     g_hdmi_mode = m;
     s_cfg.pad[0] = (uint8_t)(m >= 0 ? m + 1 : 0);

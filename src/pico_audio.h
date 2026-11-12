@@ -61,8 +61,19 @@ void    pico_audio_report(void);
 /* A key from the serial monitor: + - volume, A H S B output, I report. */
 void    pico_audio_key(int c);
 /* Output 0 - 3 as pico_audio_set_output (4 HDMI: not yet here). */
+/* (Since: 4 = HDMI, A8_HDMI_AUDIO.) */
 void    pico_audio_set_sound_output(int o);
 int     pico_audio_get_sound_output(void);
+#ifdef A8_HDMI_AUDIO
+/* Sound over HDMI instead of the codec (serial key o toggles). */
+void    pico_audio_set_hdmi(int on);
+void    pico_audio_toggle_hdmi(void);
+/* video.cpp's feed (core 0): n samples (all or none) of the HDMI ring, its
+ * rate (the game's: 24000 / 11765 Hz) and how many are in it. */
+size_t  pico_audio_hdmi_take(int16_t *dst, size_t n);
+int     pico_audio_hdmi_rate(void);
+size_t  pico_audio_hdmi_avail(void);
+#endif
 #endif
 
 #ifdef __cplusplus

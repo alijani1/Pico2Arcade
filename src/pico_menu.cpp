@@ -207,13 +207,15 @@ static void set_volume(int v) {
 /* Menu rows: available games, then (landscape builds) the display
  * toggle, the FPS-overlay toggle, (flash boards) ROM Drive, Volume, then
  * Exit. Row kinds are derived from the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT, ROW_SCREEN };   /* (ROW_SCREEN: HDMI, last so the others keep their values) */
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT, ROW_SCREEN, ROW_SOUND };   /* (ROW_SOUND: the Fruit Jam's sound output) */   /* (ROW_SCREEN: HDMI, last so the others keep their values) */
 #ifdef PICO_HDMI
 extern "C" int video_hdmi_mode(void);                /* video.cpp: the Screen row (try_screen_mode below) */
 extern "C" const char *video_hdmi_mode_name(int m);
 extern "C" int video_hdmi_width(int step);
 extern "C" int video_hdmi_height(int step);
 extern "C" bool video_hdmi_take_mode_key(void);      /* serial key m pressed (once) */
+extern "C" void pico_config_save_sound_output(int o);   /* pico_config.cpp: the Sound row */
+#include "pico_audio.h"                              /* the Sound row: pico_audio_*_sound_output */
 #endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
@@ -235,7 +237,7 @@ extern "C" volatile int g_stretch;        /* video.cpp */
 extern "C" void pico_config_save_stretch(int idx);
 #endif
 #if defined(MENU_STRETCH_ROW) && !defined(MENU_DISPLAY_TOGGLE)
-static const int SETTING_ROWS_BASE = 4;   /* Screen, Scale, Width, Show FPS (HDMI: no Display row) */
+static const int SETTING_ROWS_BASE = 5;   /* Screen, Scale, Width, Show FPS, Sound (HDMI: no Display row) */
 #elif defined(MENU_STRETCH_ROW)
 static const int SETTING_ROWS_BASE = 4;   /* Display, Scale, Width, Show FPS */
 #elif defined(MENU_SCALE_ROW)
@@ -271,6 +273,10 @@ static RowKind row_kind(int row) {
 #endif
 #ifdef MENU_STRETCH_ROW
     if (row == 0) return ROW_STRETCH;
+    row--;
+#endif
+#ifdef A8_HDMI_AUDIO
+    if (row == 0) return ROW_SOUND;
     row--;
 #endif
     if (row == 0) return ROW_FPS;
@@ -435,6 +441,14 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #endif
       }
         break;
+#endif
+#ifdef A8_HDMI_AUDIO
+      case ROW_SOUND: {
+        static const char *const OUT[5] = { "Auto", "Headphones", "Speaker", "Both", "HDMI" };
+        const int o = pico_audio_get_sound_output();
+        snprintf(label, sizeof(label), "Sound: %s", OUT[(o >= 0 && o < 5) ? o : 0]);
+        break;
+      }
 #endif
       case ROW_FPS:
         snprintf(label, sizeof(label), "Show FPS: %s", g_show_fps ? "On" : "Off");
@@ -847,6 +861,14 @@ extern "C" void pico_menu_pick_and_load(void) {
           case ROW_STRETCH:     /* landscape width 62 -> 62 crop -> 75 -> ... -> 160 crop -> 62 (186 ... 320 crop) */
             pico_config_save_stretch((g_stretch + 1) % 8);
             break;             /* loop redraws the menu with the new value */
+#endif
+#ifdef A8_HDMI_AUDIO
+          case ROW_SOUND: {     /* Auto -> Headphones -> Speaker -> Both -> HDMI -> Auto (saved) */
+            const int o = (pico_audio_get_sound_output() + 1) % 5;
+            pico_audio_set_sound_output(o);
+            pico_config_save_sound_output(o);
+            break;
+          }
 #endif
           case ROW_FPS:
             pico_config_save_show_fps(!g_show_fps);

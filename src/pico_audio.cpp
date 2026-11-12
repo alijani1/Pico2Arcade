@@ -39,7 +39,9 @@
  * forces 1 headphones, 2 speaker, 3 both; serial keys, main.cpp). */
 #include <PicoTlv320Impl.hpp>          /* the driver's code: in this one file */
 #ifdef A8_HDMI_AUDIO
-#include "a8_display.h"                  /* sound over HDMI (a8_display.cpp) */
+/* sound over HDMI: Pico2Arcade's video.cpp (Pico2Atari8: a8_display.cpp / .h) */
+bool a8_display_hdmi_audio(void);        /* the HDMI output carries sound */
+uint32_t a8_display_hdmi_audio_gaps(void);
 #endif
 
 #ifndef A8_I2S_BCLK_PIN
@@ -168,7 +170,7 @@ extern "C" void pico_audio_init(int sample_rate) {
         g_i2s.end();
         g_hhead = g_htail = 0;
         g_hdmi = true;
-        Serial.printf("[audio] sound: HDMI (44100 Hz)%c", 10);
+        Serial.printf("[audio] sound: HDMI (48000 Hz)%c", 10);
     }
 #endif
 }
@@ -275,9 +277,12 @@ extern "C" void pico_audio_set_hdmi(int on_) {
     }
     g_min_queued = 1 << 30;
     g_stretched = 0;
-    Serial.printf("[audio] sound: %s%c", g_hdmi ? "HDMI (44100 Hz)" : "Fruit Jam", 10);
+    Serial.printf("[audio] sound: %s%c", g_hdmi ? "HDMI (48000 Hz)" : "Fruit Jam", 10);
 }
 extern "C" void pico_audio_toggle_hdmi(void) { pico_audio_set_hdmi(!g_hdmi); }
+/* Pico2Arcade (video.cpp's feed): the HDMI ring's rate (the game's) and fill. */
+extern "C" int pico_audio_hdmi_rate(void) { return g_in_rate; }
+extern "C" size_t pico_audio_hdmi_avail(void) { return g_hhead - g_htail; }
 #endif
 
 /* Galagino's sound (pico_audio_push): blocks of UNSIGNED 16-bit samples
@@ -296,7 +301,19 @@ static volatile bool g_diag_no_feed = false, g_diag_i2s_off = false;
 extern "C" size_t __not_in_flash_func(pico_audio_push)(const void *data, size_t bytes) {
     if (!g_started || bytes < 2 || g_diag_no_feed || g_diag_i2s_off) return 0;
 #ifdef A8_HDMI_AUDIO
-    // TODO: sound over HDMI (push_hdmi above) - Galagino's rates aren't 22050.
+    if (g_hdmi) {
+        /* Sound over HDMI: into the HDMI ring (push_hdmi: the DC blocker and
+         * the volume as for I2S), whole blocks only, at the game's rate;
+         * video.cpp's feed (core 0, the HDMI core here) resamples it to
+         * 48 kHz packets. (Was: TODO - Galagino's rates aren't 22050.) */
+        const uint16_t *u = (const uint16_t *)data;
+        size_t n = bytes / 2;
+        if (n > 128) n = 128;
+        if (HDMI_RING - (int)(g_hhead - g_htail) < (int)n + 8) return 0;
+        int16_t s16[128];
+        for (size_t i = 0; i < n; i++) s16[i] = (int16_t)((int32_t)u[i] - 32768);
+        return push_hdmi(s16, n);
+    }
 #endif
     if (g_i2s.getUnderflow()) g_underruns++;           /* the DMA found no buffer: silence played */
     const uint16_t *samples = (const uint16_t *)data;
@@ -401,6 +418,9 @@ extern "C" void pico_audio_key(int c) {
     case 'H': pico_audio_set_output(1); return;
     case 'S': pico_audio_set_output(2); return;
     case 'B': pico_audio_set_output(3); return;
+#ifdef A8_HDMI_AUDIO
+    case 'o': case 'O': pico_audio_toggle_hdmi(); return;   /* Fruit Jam codec <-> HDMI (not saved) */
+#endif
     case 'I': pico_audio_report(); return;
     case 'q':                            /* diagnosis: stop / resume feeding the sound */
         g_diag_no_feed = !g_diag_no_feed;
@@ -427,7 +447,7 @@ extern "C" void pico_audio_report(void) {
     if (g_hdmi) {
         static uint32_t last_gaps = 0;
         uint32_t gaps = a8_display_hdmi_audio_gaps();
-        Serial.printf("[audio] HDMI 44100 Hz, ring low %d of %d samples, %lu stretched, "
+        Serial.printf("[audio] HDMI 48000 Hz, ring low %d of %d samples, %lu stretched, "
                       "%lu gaps (silence packets), volume %d %%%s%c",
                       minq > HDMI_RING ? -1 : minq, HDMI_RING, (unsigned long)str,
                       (unsigned long)(gaps - last_gaps), g_volume_pct, g_amp_on ? "" : " (muted)", 10);
