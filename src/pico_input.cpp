@@ -250,15 +250,16 @@ static unsigned char serial_state(void) {
 static const uint8_t KEY_ENTER = 0x28, KEY_ESC = 0x29, KEY_SPACE = 0x2C, KEY_1 = 0x1E, KEY_5 = 0x22,
                      KEY_C = 0x06, KEY_RIGHT = 0x4F, KEY_LEFT = 0x50, KEY_DOWN = 0x51, KEY_UP = 0x52;
 
+/* Core 0, once, from pico_input_init — where Pico2Atari8 starts it
+ * (a8_input_init, before its display and sound). */
+static void usb_start(void) {
+    static const usb_pads_config_t cfg = USB_PADS_FRUITJAM;   /* D+ 1, 5 V on 11, PIO 2, DMA 11 */
+    usb_pads_begin(&cfg);
+    s_usbStarted = true;
+}
+
 static void usb_poll(void) {
-    if (!s_usbStarted) {
-        /* Started on the first poll, from the game list: after Video::begin,
-         * whose HDMI start-up moves clk_sys to 240 MHz (PIO-USB's timing is
-         * set from clk_sys when it starts). */
-        static const usb_pads_config_t cfg = USB_PADS_FRUITJAM;   /* D+ 1, 5 V on 11, PIO 2, DMA 11 */
-        usb_pads_begin(&cfg);
-        s_usbStarted = true;
-    }
+    if (!s_usbStarted) return;
     usb_pads_task();
     serial_poll();
     unsigned char st = 0;
@@ -331,6 +332,9 @@ extern "C" void pico_input_init(void) {
     for (int p : db9Pins) pinMode(p, INPUT_PULLUP);
 #endif
     rc_stick_init();
+#ifdef PICO_USB_HOST
+    usb_start();
+#endif
 #else
     pinMode(PIN_SELECT, INPUT_PULLUP);
     pinMode(PIN_START,  INPUT_PULLUP);

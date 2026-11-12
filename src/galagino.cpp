@@ -1019,9 +1019,13 @@ void setup() {
 #endif  /* !PICO_CUSTOM_INPUT */
 
   // initialize audio to default bitrate (24khz unless dkong is
-  // the only game installed, then audio will directly be 
+  // the only game installed, then audio will directly be
   // initialized to dkongs 11765hz)
+#ifndef PICO_HDMI
   audio_init();
+#endif
+  /* (HDMI / Fruit Jam: after tft.begin below — the HDMI output first, then
+   * the sound, in Pico2Atari8's order.) */
 
 #ifdef LED_PIN
   leds_init();
@@ -1048,6 +1052,9 @@ void setup() {
 #endif
 
   tft.begin();
+#ifdef PICO_HDMI
+  audio_init();          /* the Fruit Jam's I2S + codec, once HDMI runs (see above) */
+#endif
 
 #ifdef PICO_USB_DRIVE
   /* USB ROM drive mode (menu row, or standalone: MENU held / first boot). */
