@@ -206,7 +206,7 @@ static uint16_t row_map[HDMI_MAX_LINES];                /* output line -> source
  *                   as Drop (crisp across, steady lines when scrolling)
  *          Smooth - the same for columns too (default)
  *   Width  372 (the true shape at 480 lines, 5:3 both ways), 448 (each
- *          column twice, 1.2x wide), 536, 640 - 2x the Quad's 186 / 224 /
+ *          column twice, 1.2x wide), 560 (2.5x), 672 (3x) - about 2x the Quad's 186 / 224 /
  *          268 / 320 - each also "crop": the middle 240 of the 288 rows,
  *          each exactly twice (24 cut off top and bottom: 3 tile rows of
  *          score / lives each), 20 % taller. Other HDMI heights: in
@@ -218,7 +218,7 @@ static uint16_t row_map[HDMI_MAX_LINES];                /* output line -> source
 extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; volatile int g_stretch = 0; }
 extern "C" void pico_config_save_stretch(int idx);
 extern "C" void pico_config_save_scale(int mode);
-static const int HDMI_WIDTHS[4] = { 372, 448, 536, 640 };
+static const int HDMI_WIDTHS[4] = { 372, 448, 560, 672 };   /* (536 / 640 at first: no direct path, up to 87 % of core 0) */
 static int pic_mode = -1, pic_step = -1;                /* what the maps were built for */
 
 #pragma GCC push_options
@@ -271,10 +271,19 @@ static void __not_in_flash_func(hdmi_line)(uint32_t v_scanline, uint32_t active_
  * (5:3: Drop (s0 s0) (s1 s2) (s2 s3) (s3 s4) (s5 s5) by the pixel centres,
  * Smooth (s0 m01) (s1 m12) (s2 s3) (m34 s4) (m45 s5)) and 448 (each pixel
  * twice); other widths the column map. And the interrupt is on core 0 now.) */
-static int pic_fast = 0;                                /* 1: 372 Drop / Sharp, 3: 372 Smooth, 2: 448, 0: col_map */
+static int pic_fast = 0;   /* 1: 372 Drop / Sharp, 3: 372 Smooth, 2: 448, 4 / 5: 560 (Smooth 5), 6: 672, 0: col_map */
 static uint32_t *border_buf[4];                         /* line buffers whose sides are black (game) */
 static int border_n = 0;
 static bool border_game = false;                        /* border_buf is for the game picture */
+/* The overlay box (Show FPS: fps and CPU, and the Scale / Width; the Scale /
+ * Width alone for 3 s after a change and at game start): OV_W x OV_H pixels
+ * drawn by core 0 (hdmi_overlay_draw, TFT_eSprite) into the back one of two
+ * buffers, then swapped in; shown 2 x 2 at word OV_X, line OV_Y. Over the
+ * picture where it reaches it (the widest widths), else in the side band. */
+static const int OV_W = 66, OV_H = 42, OV_X = 4, OV_Y = 8;
+static uint16_t ov_buf[2][OV_W * OV_H];                 /* RGB565 (not byte-swapped) */
+static const uint16_t * volatile ov_front = ov_buf[0];
+static volatile bool ov_show = false, ov_clear = false;
 static uint32_t row_buf[2][HDMI_MAX_PX / 2];            /* two source rows, scaled across */
 static int row_buf_r[2] = { -1, -1 };
 
@@ -329,6 +338,30 @@ static inline __attribute__((always_inline)) void hdmi_make_row(int r, uint32_t 
       const uint32_t p = hdmi_rev16(s[x]) & 0xFFFFu;
       o[x] = p | (p << 16);
     }
+  } else if (pic_fast == 4 || pic_fast == 5) {
+    /* 560 = 2.5x: each 2 source pixels -> 5: s0 s0 X s1 s1, X = s0 (Drop /
+     * Sharp; its centre is on the boundary) or their mean (Smooth) */
+    const uint32_t *w = (const uint32_t *)s;
+    const bool smooth = pic_fast == 5;
+    for (int g = 0; g < GAME_W / 4; g++, w += 2, o += 5) {
+      const uint32_t a = hdmi_rev16(w[0]), b = hdmi_rev16(w[1]);   /* s0|s1, s2|s3 */
+      const uint32_t s0 = a & 0xFFFFu, s1 = a >> 16, s2 = b & 0xFFFFu, s3 = b >> 16;
+      const uint32_t x01 = smooth ? hdmi_mean(s0, s1) : s0, x23 = smooth ? hdmi_mean(s2, s3) : s2;
+      o[0] = s0 | (s0 << 16);
+      o[1] = x01 | (s1 << 16);
+      o[2] = s1 | (s2 << 16);
+      o[3] = s2 | (x23 << 16);
+      o[4] = s3 | (s3 << 16);
+    }
+  } else if (pic_fast == 6) {
+    /* 672 = 3x: each source pixel three times */
+    const uint32_t *w = (const uint32_t *)s;
+    for (int g = 0; g < GAME_W / 2; g++, w++, o += 3) {
+      const uint32_t a = hdmi_rev16(w[0]), s0 = a & 0xFFFFu, s1 = a >> 16;
+      o[0] = s0 | (s0 << 16);
+      o[1] = a;
+      o[2] = s1 | (s1 << 16);
+    }
   } else {
     const uint16_t *cm = col_map;
     for (int w = 0; w < pic_words; w++, cm += 2) {
@@ -372,6 +405,7 @@ static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active
     return;
   }
   if (!border_game) { border_game = true; border_n = 0; }   /* the canvas used other sides */
+  if (ov_clear) { ov_clear = false; border_n = 0; }         /* the box went: sides black again */
   if (active_line == 0) row_buf_r[0] = row_buf_r[1] = -1;   /* a new frame: frame_buf may have changed */
   const int rm = active_line < (uint32_t)out_lines ? row_map[active_line] : NO_ROW;
   if (rm == NO_ROW) {
@@ -394,6 +428,19 @@ static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active
     for (int w = 0; w < n; w++) d[w] = hdmi_mean(a[w], b[w]);
   } else {
     hdmi_copy(d, a, n);
+  }
+  /* the overlay box (FPS / Scale / Width), top left, each pixel 2 x 2; on
+   * the other lines its columns are made black where they are side band
+   * (a driver line buffer may still hold the box from an earlier line) */
+  if (ov_show) {
+    const int ol = (int)active_line - OV_Y;
+    if (ol >= 0 && ol < 2 * OV_H) {
+      const uint16_t *s = ov_front + (ol >> 1) * OV_W;
+      uint32_t *o = dst + OV_X;
+      for (int x = 0; x < OV_W; x++) { const uint32_t p = s[x]; o[x] = p | (p << 16); }
+    } else if (OV_X < pad) {
+      hdmi_fill(dst + OV_X, (OV_X + OV_W < pad ? OV_W : pad - OV_X), 0);
+    }
   }
 }
 
@@ -437,7 +484,8 @@ static void hdmi_geometry(void) {
   pic_words = px / 2;
   pic_pad = (out_words - pic_words) / 2;
   /* the direct paths (hdmi_make_row): 372 at 480 lines = 5:3, 448 = 2x across */
-  pic_fast = (px == 372 && lines == 480) ? (mode == SCALE_SMOOTH ? 3 : 1) : (px == 2 * GAME_W) ? 2 : 0;
+  pic_fast = px == 372 ? (mode == SCALE_SMOOTH ? 3 : 1) : px == 2 * GAME_W ? 2
+           : px == 560 ? (mode == SCALE_SMOOTH ? 5 : 4) : px == 672 ? 6 : 0;
   pic_mode = mode;
   pic_step = step;
   border_n = 0;                                         /* the sides moved */
@@ -497,6 +545,8 @@ static void hdmi_begin(void) {
 /* Core 0, the game's first strip: the output goes black (canvas8 = null),
  * the canvas lets go of frame_buf once the line interrupt is off it (two
  * frames), frame_buf is cleared and the lines come from it. */
+static uint32_t ov_until = 0;                           /* the overlay box: Scale / Width shown alone until */
+
 static void hdmi_game_start(void) {
   canvas8 = nullptr;
   __dmb();
@@ -506,6 +556,7 @@ static void hdmi_game_start(void) {
   memset(frame_buf, 0, sizeof(frame_buf));
   __dmb();
   hdmi_game = true;
+  ov_until = millis() + 3000;                         /* the Scale / Width shown at the start */
   Serial.printf("[video] HDMI: game picture (heap free %d)\n", rp2040.getFreeHeap());
 }
 
@@ -519,6 +570,77 @@ void video_hdmi_wait_vblank(void) {
   uint32_t f;
   while ((f = hdmi.get_frame_count()) == last && time_us_32() - t0 < 50000) __wfe();
   last = f;
+}
+
+/* ---- the overlay box and the Scale / Width changes (core 0) -------------- */
+extern "C" volatile int g_show_fps;                     /* pico_config.cpp: the Show FPS row */
+static TFT_eSprite ov_spr(&tft);                        /* 16-bit, OV_W x OV_H (heap, 5.5 KB) */
+static float ov_fps = 0, ov_load = 0;
+static bool ov_have_fps = false;
+static uint32_t cfg_save_at = 0;                        /* save Scale / Width then (0: nothing to) */
+static const char *const SCALE_NAMES[3] = { "Smooth", "Sharp", "Drop" };
+
+/* Draw the box into the back buffer and swap it in. */
+static void hdmi_overlay_draw(void) {
+  if (!ov_spr.getPointer()) {
+    ov_spr.setColorDepth(16);
+    if (!ov_spr.createSprite(OV_W, OV_H)) return;
+  }
+  ov_spr.fillSprite(TFT_BLACK);
+  ov_spr.setTextSize(1);
+  int y = 2;
+  if (g_show_fps && ov_have_fps) {
+    ov_spr.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    ov_spr.setCursor(2, y); ov_spr.printf("%4.1f fps", ov_fps); y += 10;
+    ov_spr.setTextColor(ov_load < 80.0f ? TFT_GREEN : ov_load < 95.0f ? TFT_YELLOW : TFT_RED, TFT_BLACK);
+    ov_spr.setCursor(2, y); ov_spr.printf("CPU %3.0f%%", ov_load); y += 10;
+  }
+  const int step = pic_step < 0 ? 0 : pic_step;
+  ov_spr.setTextColor(TFT_CYAN, TFT_BLACK);
+  ov_spr.setCursor(2, y); ov_spr.print(SCALE_NAMES[(pic_mode >= 0 && pic_mode < 3) ? pic_mode : 0]); y += 10;
+  ov_spr.setCursor(2, y); ov_spr.printf("%d%s", HDMI_WIDTHS[(step >> 1) & 3], (step & 1) ? " crop" : "");
+  const uint16_t *src = (const uint16_t *)ov_spr.getPointer();   /* byte-swapped (the sprite's) */
+  uint16_t *back = (ov_front == ov_buf[0]) ? ov_buf[1] : ov_buf[0];
+  for (int i = 0; i < OV_W * OV_H; i++) back[i] = __builtin_bswap16(src[i]);
+  __dmb();
+  ov_front = back;
+}
+
+/* Once a second (fps_stats_tick): the numbers, if Show FPS is on. */
+static void hdmi_overlay_fps(float scr_fps, float emu_fps, float load) {
+  (void)scr_fps;
+  ov_fps = emu_fps;
+  ov_load = load;
+  ov_have_fps = true;
+  if (ov_show && g_show_fps) hdmi_overlay_draw();
+}
+
+/* Each frame's first strip (Video::write, in the vertical blank): a changed
+ * Scale / Width (game list rows, serial keys z / v) gets new maps and is shown
+ * for 3 s, and saved 3 s after the last change - a flash write power-cycles
+ * the USB ports, so not on every key; then the box on or off. */
+static void hdmi_frame_start(void) {
+  const uint32_t now = millis();
+  if (g_scale_mode != pic_mode || g_stretch != pic_step) {
+    hdmi_geometry();
+    ov_until = now + 3000;
+    cfg_save_at = now + 3000;
+    if (ov_show) hdmi_overlay_draw();
+  }
+  if (cfg_save_at && (int32_t)(now - cfg_save_at) >= 0) {
+    cfg_save_at = 0;
+    pico_config_save_scale(g_scale_mode);       /* no-op if unchanged */
+    pico_config_save_stretch(g_stretch);
+  }
+  const bool want = g_show_fps || (ov_until && (int32_t)(ov_until - now) > 0);
+  if (!want) ov_until = 0;
+  if (want && !ov_show) {
+    hdmi_overlay_draw();
+    ov_show = true;
+  } else if (!want && ov_show) {
+    ov_show = false;
+    ov_clear = true;                            /* the line interrupt makes the sides black again */
+  }
 }
 #endif  /* PICO_HDMI */
 
@@ -966,13 +1088,7 @@ void Video::write(uint16_t *colors, uint32_t len) {
   if (cur_row + rows > GAME_H) rows = GAME_H - cur_row;
 #ifdef PICO_HDMI
   if (!hdmi_game) hdmi_game_start();                  /* the game's first strip: frame_buf is its now */
-  if (cur_row == 0 && (g_scale_mode != pic_mode || g_stretch != pic_step)) {
-    /* Scale / Width changed (the serial keys z / v in a game): new maps now,
-     * in the vertical blank (update_screen waited for it), and saved */
-    hdmi_geometry();
-    pico_config_save_scale(g_scale_mode);       /* no-op if unchanged */
-    pico_config_save_stretch(g_stretch);
-  }
+  if (cur_row == 0) hdmi_frame_start();               /* Scale / Width, the overlay box */
 #endif
   memcpy(&frame_buf[cur_row * GAME_W], colors, (size_t)rows * GAME_W * 2);
 
@@ -1135,7 +1251,8 @@ void Video::fps_stats_tick(void) {
   }
 #endif
 #ifdef PICO_HDMI
-  (void)shown;                 /* TODO: an HDMI overlay; the serial line above only */
+  (void)shown;                 /* (HDMI: the overlay box, hdmi_overlay_fps) */
+  hdmi_overlay_fps(scr_fps, emu_fps, emu_ms / FRAME_BUDGET_MS * 100.0f);
   if (0) {
 #else
   if (g_show_fps) {

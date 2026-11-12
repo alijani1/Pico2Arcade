@@ -404,7 +404,7 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
       case ROW_STRETCH:
       {
 #if defined(PICO_HDMI)
-        static const int W[4] = { 372, 448, 536, 640 }; /* video.cpp HDMI_WIDTHS (at 480 lines), in pairs */
+        static const int W[4] = { 372, 448, 560, 672 }; /* video.cpp HDMI_WIDTHS (at 480 lines), in pairs */
 #elif defined(PICO_TINY_SCREEN)
         static const int W[4] = { 62, 75, 112, 160 };   /* video.cpp TINY_WIDTHS, in pairs */
 #else
