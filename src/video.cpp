@@ -57,7 +57,15 @@ static int cur_row = 0;
 /* Single buffer (double-buffer variant kept as commented-out reference).
  * At 200 MHz sys / 100 MHz SPI, blocking pushImage may be fast enough to
  * still hit real speed with half the RAM footprint. */
+#ifdef PICO_HDMI
+/* HDMI: on the heap, made when the game's first frame comes (hdmi_game_start),
+ * after the 77 KB menu canvas is freed. As a static it sat idle through the
+ * menu and the ROM load next to the canvas, and Xevious (~200 KB of heap at
+ * its peak while loading) failed to load on the Fruit Jam. */
+static uint16_t *frame_buf = nullptr;
+#else
 static uint16_t frame_buf[GAME_W * GAME_H];
+#endif
 
 #ifdef PICO_HDMI
 /* ---- HDMI output (Adafruit Fruit Jam) -------------------------------------
@@ -348,18 +356,28 @@ static void hdmi_begin(void) {
                 (unsigned long)clock_get_hz(clk_hstx), (unsigned long)hstx_ctrl_hw->csr, funcs);
 }
 
-/* Core 0, the game's first full frame: the lines come from frame_buf now;
- * the canvas is freed once the output has moved off it (two frames). */
-static void hdmi_game_start(void) {
-  hdmi_game = true;
+/* Core 0, the game's first strip: the output goes black (canvas8 = null),
+ * the canvas is freed once the line interrupt is off it (two frames), then
+ * frame_buf is made in its place and the lines come from it. False if there
+ * is no RAM for it (the frame is dropped; tried again on the next strip). */
+static bool hdmi_game_start(void) {
+  if (canvas8) {
+    canvas8 = nullptr;
+    __dmb();
+    const uint32_t f0 = hdmi.get_frame_count();
+    for (uint32_t t0 = millis(); hdmi.get_frame_count() - f0 < 2 && millis() - t0 < 100; ) delay(1);
+    canvas.deleteSprite();
+  }
+  frame_buf = (uint16_t *)calloc(GAME_W * GAME_H, sizeof(uint16_t));
+  if (!frame_buf) {
+    Serial.printf("[video] HDMI: no RAM for the %u-byte frame buffer%c", (unsigned)(GAME_W * GAME_H * 2), 10);
+    return false;
+  }
   __dmb();
-  if (!canvas8) return;
-  const uint32_t f0 = hdmi.get_frame_count();
-  for (uint32_t t0 = millis(); hdmi.get_frame_count() - f0 < 2 && millis() - t0 < 100; ) delay(1);
-  canvas8 = nullptr;
-  canvas.deleteSprite();
-  Serial.printf("[video] HDMI: game picture, menu canvas freed (frames %lu)\n",
-                (unsigned long)hdmi.get_frame_count());
+  hdmi_game = true;
+  Serial.printf("[video] HDMI: game picture, menu canvas freed, frame buffer made (heap free %d)\n",
+                rp2040.getFreeHeap());
+  return true;
 }
 #endif  /* PICO_HDMI */
 
@@ -805,13 +823,15 @@ void Video::write(uint16_t *colors, uint32_t len) {
   if (rows <= 0) return;
 
   if (cur_row + rows > GAME_H) rows = GAME_H - cur_row;
+#ifdef PICO_HDMI
+  if (!frame_buf && !hdmi_game_start()) return;      /* the game's first strip: frame_buf now */
+#endif
   memcpy(&frame_buf[cur_row * GAME_W], colors, (size_t)rows * GAME_W * 2);
 
   cur_row += rows;
   if (cur_row >= GAME_H) {
 #if defined(PICO_HDMI)
     /* nothing to push: the HDMI lines are read from frame_buf as they go out */
-    if (!hdmi_game) hdmi_game_start();
 #elif defined(PICO_TINY_SCREEN)
     if (is_landscape_locked && g_stretch != tiny_stretch) {   /* Width changed (menu / MENU tap) */
       tiny_stretch = g_stretch;
