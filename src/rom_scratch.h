@@ -12,10 +12,18 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#ifdef PICO_FRUITJAM
+#include <Arduino.h>     /* pcalloc (PSRAM) */
+#endif
 
 class RomScratch {
 public:
+#ifdef PICO_FRUITJAM
+    /* Fruit Jam: in PSRAM (8 MB) - the SRAM heap is short with HDMI sound */
+    explicit RomScratch(size_t n) : p_((uint8_t *)pcalloc(n, 1)) { if (!p_) p_ = (uint8_t *)calloc(n, 1); }
+#else
     explicit RomScratch(size_t n) : p_((uint8_t *)calloc(n, 1)) {}
+#endif
     ~RomScratch() { free(p_); }
     RomScratch(const RomScratch &) = delete;
     RomScratch &operator=(const RomScratch &) = delete;

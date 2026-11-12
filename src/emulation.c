@@ -19,6 +19,7 @@
 
 #include "z80_core.h"
 #include "pico.h"     // __not_in_flash_func
+#include "pico_board.h"   // PICO_HOT_RAM (Fruit Jam: in RAM)
 #include "config.h"
 
 #define CPU_EMULATION
@@ -285,7 +286,7 @@ unsigned char namco_read_dd(unsigned short Addr) {
 #endif
 
 
-void OutZ80(unsigned short Port, unsigned char Value) {
+void PICO_HOT_RAM(OutZ80)(unsigned short Port, unsigned char Value) {
 #ifdef ENABLE_PACMAN
   if(MACHINE_IS_PACMAN) {
     pacman_OutZ80(Port, Value);
@@ -315,7 +316,7 @@ void OutZ80(unsigned short Port, unsigned char Value) {
 #endif
 }
   
-unsigned char InZ80(unsigned short Port) {
+unsigned char PICO_HOT_RAM(InZ80)(unsigned short Port) {
 #ifdef ENABLE_FROGGER
   if(MACHINE_IS_FROGGER)
     return frogger_InZ80(Port);
@@ -733,7 +734,7 @@ void prepare_emulation(void) {
 #endif       
 }
 
-void emulate_frame(void) {
+void PICO_HOT_RAM(emulate_frame)(void) {
   unsigned long sof = micros();
   current_cpu = 0;
 

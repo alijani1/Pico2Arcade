@@ -389,7 +389,7 @@ static inline void xevious_blit_sprite(short row, unsigned char s) {
 /* Both tilemaps, scrolled on both axes (MAME scrolldx/dy: ground -20/-16,
  * text -32/-18). Tile bitmaps are pre-rotated: row = MAME x within the
  * tile, bit = MAME y. Drawn per scanline in runs of up to 8 pixels. */
-static inline void xevious_blit_tilemap_row(short row, unsigned char bg) {
+static inline void PICO_HOT_RAM(xevious_blit_tilemap_row)(short row, unsigned char bg) {   /* (Fruit Jam: RAM, as render_line) */
   unsigned short scrollx = bg ? xevious_scroll[0] : xevious_scroll[1];
   unsigned short scrolly = bg ? xevious_scroll[2] : xevious_scroll[3];
   short dx = bg ? -20 : -32;

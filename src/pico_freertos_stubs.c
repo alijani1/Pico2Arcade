@@ -74,3 +74,29 @@ uint32_t ulTaskNotifyTake(int clearOnExit, TickType_t timeoutTicks) {
 void __pico_notify_give(void) {
   g_vblank_pulses++;
 }
+
+#ifdef PICO_USB_HOST
+/* Fruit Jam USB host: the C half of the shared usb_pads module
+ * (extern/usb_pads/usb_pads_glue.c — Pico-PIO-USB's sources and TinyUSB's HID
+ * mount callbacks, which must sit in a C file that doesn't include TinyUSB's
+ * headers, see there). In this existing file, not one of its own: an extra
+ * object file can reorder the other boards' linker veneers. */
+#include "usb_pads_glue.c"
+#endif
+
+#ifdef A8_HDMI_AUDIO
+/* Fruit Jam HDMI sound: pico_hdmi's packet encoder and queue as
+ * Adafruit-DVI-HSTX vendors them - C, so here, in a C file built anyway (an
+ * extra object file can reorder the other boards' veneers), as Pico2Atari8
+ * does in its a8_stubs.c. video.cpp has the rest of the driver. */
+#include "drivers/dvhstx/audio_packet.c"
+#include "drivers/dvhstx/audio_queue.c"
+#endif
+
+#ifdef PICO_HDMI
+/* Frames the emulator may still run (vblank pulses not taken yet) - the
+ * Fruit Jam's fast start keeps it topped up (galagino.cpp update_screen). */
+uint32_t __pico_notify_pending(void) {
+  return g_vblank_pulses;
+}
+#endif

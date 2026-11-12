@@ -49,6 +49,41 @@ void    pico_audio_amp_on(void);
 void    pico_audio_amp_off(void);
 uint8_t pico_audio_get_volume(void);
 
+#ifdef PICO_FRUITJAM
+/* I2S / TLV320DAC3100 (pico_audio.cpp, as Pico2Atari8's): */
+/* From the main loop: follows the headphone jack (auto output). */
+void    pico_audio_poll(void);
+/* Output: 0 auto (headphones when plugged in, else the speaker),
+ * 1 headphones, 2 speaker, 3 both. */
+void    pico_audio_set_output(int mode);
+/* Log the ring's health since the last call (under-runs, lowest level). */
+void    pico_audio_report(void);
+/* A key from the serial monitor: + - volume, A H S B output, I report. */
+void    pico_audio_key(int c);
+/* Output 0 - 3 as pico_audio_set_output (4 HDMI: not yet here). */
+/* (Since: 4 = HDMI, A8_HDMI_AUDIO.) */
+void    pico_audio_set_sound_output(int o);
+int     pico_audio_get_sound_output(void);
+#ifdef A8_HDMI_AUDIO
+/* Sound over HDMI instead of the codec (serial key o toggles). */
+void    pico_audio_set_hdmi(int on);
+void    pico_audio_toggle_hdmi(void);
+/* video.cpp's feed (core 0): n samples (all or none) of the HDMI ring, its
+ * rate (the game's: 24000 / 11765 Hz) and how many are in it. */
+size_t  pico_audio_hdmi_take(int16_t *dst, size_t n);
+int     pico_audio_hdmi_rate(void);
+size_t  pico_audio_hdmi_avail(void);
+#endif
+#ifdef A8_MENU_MUSIC
+/* The game list's sound (as Pico2Atari8's): on (the sound's rate) with or
+ * without the menu tune, off (0) once a game is picked; a tone on each
+ * move; poll from the list's input polling - it feeds the sound. */
+void    pico_audio_menu_sound(int sample_rate, int music);
+void    pico_audio_menu_beep(void);
+void    pico_audio_menu_poll(void);
+#endif
+#endif
+
 #ifdef __cplusplus
 }
 #endif

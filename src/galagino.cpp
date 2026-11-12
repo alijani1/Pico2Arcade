@@ -13,6 +13,9 @@
 #include "driver/i2s.h"     /* Pico2Arcade: local no-op stub, see src/driver/i2s.h */
 #include "video.h"
 #include "leds.h"
+#ifdef PICO_FRUITJAM
+#include "pico_audio.h"     /* pico_audio_poll / pico_audio_report (loop) */
+#endif
 
 #include "emulation.h"
 
@@ -25,6 +28,9 @@ extern "C" bool pico_sd_init(void);
 #include "pico_drive.h"
 #include "pico_hiscore.h"
 extern "C" void pico_input_poll(void);
+#ifdef PICO_USB_HOST
+extern "C" void pico_input_core1_usb_poll(void);   /* pico_input.cpp: the USB host, core 1 */
+#endif
 extern "C" void pico_config_load(void);
 #endif
 
@@ -253,7 +259,7 @@ const unsigned short *logos[] = {
 #endif
 
 // render one of 36 tile rows (8 x 224 pixel lines)
-void render_line(short row) {
+void PICO_HOT_RAM(render_line)(short row) {   /* (Fruit Jam: in RAM - 60 renders a second on HDMI; Xevious took ~11 ms of core 0 a frame from flash) */
   // the upper screen half of frogger has a blue background
   // using 8 in fact adds a tiny fraction of red as well. But that does not hurt
   memset(frame_buffer, 
@@ -407,7 +413,7 @@ static unsigned short snd_buffer[128]; // buffer space for two channels
 static unsigned short snd_buffer[64];  // buffer space for a single channel
 #endif
 
-void snd_render_buffer(void) {
+void PICO_HOT_RAM(snd_render_buffer)(void) {
 #ifdef AY_EMULATION
   // AY-3-8910s of this machine: count, clock step per 24 kHz sample
   // (AY clock / 8 / 24000) and volume (count * 3 * 15 * AY_VOL <= ~500)
@@ -622,7 +628,7 @@ DKONG_END
 }
 
 #ifdef USE_NAMCO_WAVETABLE
-void audio_namco_waveregs_parse(void) {
+void PICO_HOT_RAM(audio_namco_waveregs_parse)(void) {
 #ifndef SINGLE_MACHINE
   if(
 #ifdef ENABLE_PACMAN
@@ -720,7 +726,7 @@ void dkong_trigger_sound(char snd) {
 }
 #endif
 
-void snd_transmit() {
+void PICO_HOT_RAM(snd_transmit)() {
   // (try to) transmit as much audio data as possible. Since we
   // write data in exact the size of the DMA buffers we can be sure
   // that either all or nothing is actually being written
@@ -800,7 +806,16 @@ void audio_init(void) {
 #endif
 }
 
+#ifdef PICO_HDMI
+int video_hdmi_wait_vblank(void);    /* video.cpp: the HDMI frames gone by */
+int video_hdmi_emu_frames(int vblanks);   /* video.cpp */
+extern "C" uint32_t __pico_notify_pending(void);   /* pico_freertos_stubs.c */
+unsigned short *video_hdmi_strip(int row);   /* video.cpp: tile row row (8 lines) of its frame buffer, or null */
+#endif
 void update_screen(void) {
+#ifdef PICO_HDMI
+  const int hdmi_vblanks = video_hdmi_wait_vblank();   /* each frame from the HDMI vertical blank (see below) */
+#endif
   uint32_t t0 = micros();
   // Start of this two-frame video cycle (see the half-rate pacing below).
   static uint32_t frame_base = 0;
@@ -879,7 +894,54 @@ XEVIOUS_END
 #define VIDEO_HALF_RATE
 #endif
 
-#ifdef VIDEO_HALF_RATE
+#if defined(PICO_HDMI)
+  // Pico2Arcade, HDMI (Fruit Jam): every frame, whole, from the HDMI vertical
+  // blank (video_hdmi_wait_vblank at the top). The half-rate path below
+  // renders the top half in one emulated frame and the bottom half in the
+  // next, for SPI panels that can't take 60 fps; on HDMI, scanned out at 60 Hz
+  // at its own moment, that showed as a wavy, flickering background in
+  // Xevious (scrolling all the time). Rendering the 288 rows takes far less
+  // than one scan-out, so starting at the blank it stays ahead of the beam
+  // and each frame shown is one emulated frame. The emulator is paced by
+  // the HDMI frame rate (one vblank pulse per frame).
+  extern volatile uint32_t g_hdmi_render_us, g_hdmi_render_n;   /* video.cpp stats line */
+  const uint32_t render_t0 = micros();
+  /* each strip drawn straight into the HDMI frame buffer once the game
+   * picture is up (video_hdmi_strip; render_line keeps ahead of the beam):
+   * no 3.5 KB copy per strip; before that, into the strip buffer as ever */
+  static unsigned short *const strip_buf = frame_buffer;
+  for(int c=0;c<36;c+=6) {
+    for(int k=0;k<6;k++) {
+      unsigned short *in_place = video_hdmi_strip(c+k);
+      frame_buffer = in_place ? in_place : strip_buf;
+      render_line(c+k); tft.write(frame_buffer, 224*8);
+    }
+    snd_transmit();
+  }
+  frame_buffer = strip_buf;
+  g_hdmi_render_us += micros() - render_t0;
+  g_hdmi_render_n++;
+#ifdef PICO_USB_HOST
+  pico_input_poll();     /* the serial monitor, once a frame (the USB host: core 1, emulation_task) */
+#endif
+  /* (one 60 Hz game frame per HDMI frame; in the 50 / 70 Hz modes now and
+   * then two / none, so the game keeps its speed: video_hdmi_emu_frames) */
+  /* Fast start: for the game's first 5 s the emulator runs as fast as core 1
+   * allows (kept 3 frames ahead), so boot / test screens go by quickly -
+   * Xevious's render-heavy test screens had it at ~48 fps for seconds; the
+   * sound is muted meanwhile (sped up, it would be noise). Then the game's
+   * 60 Hz, a frame for every HDMI frame gone by (one not drawn keeps the
+   * game's speed). */
+  static uint32_t fast_until = 0;
+  if (!fast_until) { fast_until = (millis() + 5000) | 1; pico_audio_amp_off(); }
+  if (fast_until != 2 && (int32_t)(fast_until - millis()) > 0) {
+    while (__pico_notify_pending() < 3) xTaskNotifyGive(emulationtask);
+  } else {
+    if (fast_until != 2) { fast_until = 2; pico_audio_amp_on(); }
+    for (int n = video_hdmi_emu_frames(hdmi_vblanks); n > 0; n--) xTaskNotifyGive(emulationtask);
+  }
+  (void)frame_base;
+#elif defined(VIDEO_HALF_RATE)
   // render and transmit screen in two halfs as the display
   // running at 40Mhz can only update every second 60 hz game frame
   for(int half=0;half<2;half++) {
@@ -942,7 +1004,11 @@ XEVIOUS_END
 #ifdef ENABLE_GALAGA
   /* the screen is only updated every second frame, scroll speed is thus doubled */
   static const signed char speeds[8] = { -1, -2, -3, 0, 3, 2, 1, 0 };
+#ifdef PICO_HDMI
+  stars_scroll_y += speeds[starcontrol & 7];      /* (HDMI: every frame) */
+#else
   stars_scroll_y += 2*speeds[starcontrol & 7];
+#endif
 #endif
 }
 
@@ -952,6 +1018,9 @@ void emulation_task(void *p) {
   while(1) {
     emulate_frame();
     pico_hiscore_frame();   /* restore / watch the high-score table (pico_hiscore.cpp) */
+#ifdef PICO_USB_HOST
+    pico_input_core1_usb_poll();   /* the USB host lives on this core (pico_core1.cpp): once a frame */
+#endif
   }
 }
 
@@ -1011,9 +1080,13 @@ void setup() {
 #endif  /* !PICO_CUSTOM_INPUT */
 
   // initialize audio to default bitrate (24khz unless dkong is
-  // the only game installed, then audio will directly be 
+  // the only game installed, then audio will directly be
   // initialized to dkongs 11765hz)
+#ifndef PICO_HDMI
   audio_init();
+#endif
+  /* (HDMI / Fruit Jam: after tft.begin below — the HDMI output first, then
+   * the sound, in Pico2Atari8's order.) */
 
 #ifdef LED_PIN
   leds_init();
@@ -1040,6 +1113,9 @@ void setup() {
 #endif
 
   tft.begin();
+#ifdef PICO_HDMI
+  audio_init();          /* the Fruit Jam's I2S + codec, once HDMI runs (see above) */
+#endif
 
 #ifdef PICO_USB_DRIVE
   /* USB ROM drive mode (menu row, or standalone: MENU held / first boot). */
@@ -1166,6 +1242,13 @@ void loop(void) {
   update_screen(); 
   pico_hiscore_service();   /* high-score saves + save-then-exit (core 0 owns flash / SD) */
   pico_input_poll();        /* core-0-only inputs, e.g. the 5200 stick (pico_input.cpp) */
+#ifdef PICO_FRUITJAM
+  pico_audio_poll();        /* the headphone jack (I2C, at most 4 times a second) */
+  {
+    static uint32_t last_report = 0;    /* the sound ring's health on the serial log */
+    if (millis() - last_report >= 5000) { last_report = millis(); pico_audio_report(); }
+  }
+#endif
 
 #ifdef LED_PIN
   leds_update();

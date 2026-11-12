@@ -50,6 +50,13 @@ static const unsigned long MENU_EXIT_HOLD_MS = 1000;
  * Then the B buttons report BUTTON_FIRE2 instead of their usual job, and a
  * single-button external joystick fires both. */
 extern "C" { volatile int g_two_fire = 0; }
+#ifdef PICO_HDMI
+extern "C" volatile int g_scale_mode, g_stretch;   /* video.cpp: Scale / Width (serial keys z / v) */
+extern "C" volatile int g_show_fps;                /* pico_config.cpp: Show FPS (serial key f) */
+extern "C" void video_hdmi_mode_key(void);         /* video.cpp: serial keys m / k (screen mode) */
+extern "C" void video_hdmi_keep_key(void);
+extern "C" void video_hdmi_audio_poll(void);       /* video.cpp: the HDMI sound feed (game list) */
+#endif
 
 #if defined(PICO_TINY_SCREEN) || defined(PICO_GALAGINO_LANDSCAPE_AREA)
 #  define INGAME_WIDTH_TAP 1
@@ -175,8 +182,164 @@ static void rc_stick_read(void) {
     s_stickDirs = dirs;
 }
 
-/* Core 0 (loop()): keep the 5200 stick fresh while core 1 runs a game. */
-extern "C" void pico_input_poll(void) { rc_stick_read(); }
+#ifdef PICO_USB_HOST
+/* ── USB gamepads / keyboard (Fruit Jam USB-A ports) + the serial monitor ──
+ * The host side is the module shared with Pico2Atari8, unchanged
+ * (extern/usb_pads: host start, HID descriptor parser, pad layout, unplug
+ * recovery, power-cycle after flash writes; its C half is compiled in
+ * pico_freertos_stubs.c). Compiled here, not as a file of its own: an extra
+ * object file can reorder the other boards' linker veneers.
+ * Everything USB runs on core 0 (the module's rule: all calls from the core
+ * that started it; its 1 ms frame timer runs there at the highest priority,
+ * away from core 1's HDMI line interrupt). Core 0 polls — the game list's
+ * buttons_get, and in a game update_screen's frame waits (pico_input_poll) —
+ * and leaves the result in s_usbState as BUTTON_* bits; buttons_get on
+ * either core ORs it in.
+ * Pad mapping (both pads, OR'd — Galagino reads one player): D-pad / hat and
+ * the left stick = directions, B (HID button 1, the main one) and X = FIRE,
+ * A and Y = FIRE2 in two-button games (else FIRE), START = START, SELECT =
+ * COIN. START + SELECT held = the game list (the START + COIN rule below).
+ * Keyboard (boot protocol, not tested on hardware): arrows, Space / Left Ctrl
+ * fire, Left Alt fire 2, Enter / 1 START, 5 / C COIN, Esc = the game list.
+ * Serial monitor (a terminal on the USB-C port): arrows or w a s d, Space
+ * fire, b fire 2, Enter or 1 START, c or 5 COIN, x the game list; + - volume,
+ * A H S B output (auto, headphones, speaker, both), I the sound report. A
+ * terminal sends no key-up, so a key counts as held for 150 ms after it
+ * last came (its auto-repeat keeps it held). */
+#include "usb_pads.cpp"
+
+static volatile unsigned char s_usbState = 0;   /* BUTTON_* from pads, keyboard, serial */
+static bool s_usbStarted = false;
+static const uint32_t SERIAL_HOLD_MS = 150;
+static uint32_t s_serUntil[8];                  /* per BUTTON_* bit: held until (millis) */
+
+static void serial_press(unsigned char bit) {
+    for (int i = 0; i < 8; i++) if (bit & (1u << i)) s_serUntil[i] = millis() + SERIAL_HOLD_MS;
+}
+
+static void serial_poll(void) {
+    static int esc = 0;                         /* 1 after ESC, 2 after ESC [ */
+    while (Serial.available() > 0) {
+        int c = Serial.read();
+        if (esc == 1) { esc = (c == '[') ? 2 : 0; continue; }
+        if (esc == 2) {
+            esc = 0;
+            if (c == 'A') serial_press(BUTTON_UP);
+            else if (c == 'B') serial_press(BUTTON_DOWN);
+            else if (c == 'C') serial_press(BUTTON_RIGHT);
+            else if (c == 'D') serial_press(BUTTON_LEFT);
+            continue;
+        }
+        switch (c) {
+        case 27: esc = 1; break;
+        case 'w': serial_press(BUTTON_UP); break;
+        case 's': serial_press(BUTTON_DOWN); break;
+        case 'a': serial_press(BUTTON_LEFT); break;
+        case 'd': serial_press(BUTTON_RIGHT); break;
+        case ' ': serial_press(BUTTON_FIRE); break;
+        case 'b': serial_press(g_two_fire ? BUTTON_FIRE2 : BUTTON_FIRE); break;
+        case '\r': case '\n': case '1': serial_press(BUTTON_START); break;
+        case 'c': case '5': serial_press(BUTTON_COIN); break;
+        case 'x': if (g_menu_done) pico_hiscore_exit_to_list(); break;
+#ifdef PICO_HDMI
+        /* Scale (Smooth / Sharp / Drop) and Width (372 ... 640 crop) in a game:
+         * the picture changes at the next frame and is saved (video.cpp) */
+        case 'z': if (g_menu_done) g_scale_mode = (g_scale_mode + 1) % 3; break;
+        case 'v': if (g_menu_done) g_stretch = (g_stretch + 1) % 8; break;
+        case 'f': g_show_fps = !g_show_fps; break;   /* the FPS box on / off (not saved: the Show FPS row is) */
+        /* the next HDMI screen mode (video.cpp): in the game list as FIRE on
+         * the Screen row (10 s to keep it with FIRE / START); in a game at
+         * once, k keeps it within 10 s, else it goes back */
+        case 'm': video_hdmi_mode_key(); break;
+        case 'k': video_hdmi_keep_key(); break;
+#endif
+        default: pico_audio_key(c); break;      /* + - A H S B I */
+        }
+    }
+}
+
+static unsigned char serial_state(void) {
+    unsigned char st = 0;
+    const uint32_t now = millis();
+    for (int i = 0; i < 8; i++) if ((int32_t)(s_serUntil[i] - now) > 0) st |= (unsigned char)(1u << i);
+    return st;
+}
+
+/* HID keyboard usages */
+static const uint8_t KEY_ENTER = 0x28, KEY_ESC = 0x29, KEY_SPACE = 0x2C, KEY_1 = 0x1E, KEY_5 = 0x22,
+                     KEY_C = 0x06, KEY_RIGHT = 0x4F, KEY_LEFT = 0x50, KEY_DOWN = 0x51, KEY_UP = 0x52;
+
+/* (2026-11-11, later: the USB host moved to core 1, the emulator's, so the
+ * HDMI line interrupt could move to core 0 — Pico2Atari8's split: the
+ * emulator and USB on one core, HDMI on the other. The line interrupt had
+ * taken 46 %, then 15 %, of the emulator's core, and the Scale modes cost
+ * more. The rule stays: never the PIO-USB frame timer and the HDMI line
+ * interrupt on one core.) Core 0 lets core 1 start the host once its own USB
+ * device side is up (pico_input_init: s_usbGo); core 1 then polls it —
+ * setup1's wait before a game, emulation_task once a frame in one — and
+ * leaves the pads in s_usbState. The serial monitor stays on core 0. */
+static volatile bool s_usbGo = false;
+static volatile bool s_usbPowerCycle = false;   /* core 0 asks (a flash write), core 1 does it */
+
+/* Core 1: start the host (once), then its task and the pads. */
+extern "C" void pico_input_core1_usb_poll(void) {
+    if (!s_usbStarted) {
+        if (!s_usbGo) return;
+        static const usb_pads_config_t cfg = USB_PADS_FRUITJAM;   /* D+ 1, 5 V on 11, PIO 2, DMA 11 */
+        usb_pads_begin(&cfg);                   /* (its frame timer: on this core) */
+        s_usbStarted = true;
+    }
+    if (s_usbPowerCycle) { s_usbPowerCycle = false; usb_pads_power_cycle(); }
+    usb_pads_task();
+    unsigned char st = 0;
+    const unsigned char B = g_two_fire ? BUTTON_FIRE2 : BUTTON_FIRE;
+    for (int n = 0; n < 2; n++) {
+        if (!usb_pads_connected(n)) continue;
+        const uint32_t b = usb_pads_buttons(n) | usb_pads_stick_dirs(n);
+        if (b & USBP_UP)     st |= BUTTON_UP;
+        if (b & USBP_DOWN)   st |= BUTTON_DOWN;
+        if (b & USBP_LEFT)   st |= BUTTON_LEFT;
+        if (b & USBP_RIGHT)  st |= BUTTON_RIGHT;
+        if (b & (USBP_B | USBP_X)) st |= BUTTON_FIRE;
+        if (b & (USBP_A | USBP_Y)) st |= B;
+        if (b & USBP_START)  st |= BUTTON_START;
+        if (b & USBP_SELECT) st |= BUTTON_COIN;
+    }
+    if (usb_pads_keyboard()) {
+        if (usb_pads_kbd_has(KEY_UP))    st |= BUTTON_UP;
+        if (usb_pads_kbd_has(KEY_DOWN))  st |= BUTTON_DOWN;
+        if (usb_pads_kbd_has(KEY_LEFT))  st |= BUTTON_LEFT;
+        if (usb_pads_kbd_has(KEY_RIGHT)) st |= BUTTON_RIGHT;
+        const uint8_t mods = usb_pads_kbd_report()[0];
+        if (usb_pads_kbd_has(KEY_SPACE) || (mods & 0x01)) st |= BUTTON_FIRE;   /* Left Ctrl */
+        if (mods & 0x04) st |= B;                                              /* Left Alt */
+        if (usb_pads_kbd_has(KEY_ENTER) || usb_pads_kbd_has(KEY_1)) st |= BUTTON_START;
+        if (usb_pads_kbd_has(KEY_5) || usb_pads_kbd_has(KEY_C)) st |= BUTTON_COIN;
+        if (usb_pads_kbd_has(KEY_ESC) && g_menu_done) pico_hiscore_exit_to_list();
+    }
+    s_usbState = st;
+}
+
+/* Core 0: the serial monitor (its keys are held in s_serUntil). */
+static void usb_poll(void) {
+    serial_poll();
+}
+
+/* After a flash write (core 0, interrupts were off): the USB devices
+ * suspended meanwhile and some never wake — the ports are power-cycled
+ * (by core 1, the host's core). */
+extern "C" void pico_input_flash_written(void) { s_usbPowerCycle = true; }
+#endif  /* PICO_USB_HOST */
+
+/* Core 0 (loop()): keep the 5200 stick fresh while core 1 runs a game.
+ * (USB host builds: also the pads and the serial monitor — called from
+ * update_screen's frame waits as well.) */
+extern "C" void pico_input_poll(void) {
+    rc_stick_read();
+#ifdef PICO_USB_HOST
+    usb_poll();
+#endif
+}
 #else
 extern "C" void pico_input_poll(void) {}
 #endif
@@ -204,6 +367,9 @@ extern "C" void pico_input_init(void) {
     for (int p : db9Pins) pinMode(p, INPUT_PULLUP);
 #endif
     rc_stick_init();
+#ifdef PICO_USB_HOST
+    s_usbGo = true;      /* core 1 starts the USB host now (pico_input_core1_usb_poll) */
+#endif
 #else
     pinMode(PIN_SELECT, INPUT_PULLUP);
     pinMode(PIN_START,  INPUT_PULLUP);
@@ -255,10 +421,20 @@ extern "C" void pico_input_init(void) {
  * stays low when nothing is happening, but every button transition
  * (press or release) forces an immediate fresh read — no short-tap
  * dropouts inside a poll window, no software debounce. */
-extern "C" unsigned char buttons_get(void) {
+extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
     static unsigned char cached_state = 0;
     static unsigned long last_ms = 0;
     unsigned long now = millis();
+#ifdef A8_MENU_MUSIC
+    /* Fruit Jam, the game list (core 0): its sound is fed from here - every
+     * list screen polls the buttons (pico_audio.cpp menu sound; the HDMI
+     * sound's packets too, as the frame wait does in a game) */
+    /* (Since: over HDMI a 4 ms timer feeds the list's sound and the packets
+     * - pico_audio.cpp menu_tick; here only the I2S feed and the jack.) */
+    if (!g_menu_done && get_core_num() == 0) {
+        pico_audio_menu_poll();
+    }
+#endif
     /* 1 ms cache — human rapid-tap max ~10 Hz gives a press duration
      * around 30-50 ms. 1 kHz polling catches every edge with plenty of
      * margin. Any INT-line pulse from the PCA9539 bypasses the cache
@@ -328,6 +504,12 @@ extern "C" unsigned char buttons_get(void) {
      * game) — core 1, the emulator, just uses the last result. */
     if (get_core_num() == 0) rc_stick_read();
     state |= s_stickDirs;
+#ifdef PICO_USB_HOST
+    /* USB pads / keyboard: polled on core 1 (pico_input_core1_usb_poll); the
+     * serial monitor on core 0 (the game list here; update_screen in a game). */
+    if (get_core_num() == 0) usb_poll();
+    state |= s_usbState | serial_state();
+#endif
 #else
     if (digitalRead(PIN_START)  == LOW) state |= BUTTON_START;
     if (digitalRead(PIN_SELECT) == LOW) state |= BUTTON_COIN;

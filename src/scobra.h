@@ -319,7 +319,7 @@ static inline void scobra_prepare_frame(void) {
   }
 }
 
-static inline void scobra_blit_tile_scroll(short row, signed char col, unsigned char scroll) {
+static inline void PICO_HOT_RAM(scobra_blit_tile_scroll)(short row, signed char col, unsigned char scroll) {   /* (Fruit Jam: RAM, as render_line) */
   unsigned short addr;
   unsigned short mask = 0xffff;
   int sub = scroll & 7;

@@ -18,9 +18,23 @@ void *          g_pending_task_arg = nullptr;
  * middle of showing our menu. */
 volatile int g_menu_done = 0;
 
+#ifdef PICO_USB_HOST
+/* pico_input.cpp: the USB host (Fruit Jam) runs on this core, next to the
+ * emulator; the HDMI line interrupt on core 0 (Pico2Atari8's split, its
+ * docs/FRUITJAM_PORTING.md: never the PIO-USB frame timer and the HDMI line
+ * interrupt on one core). (It was the other way round at first: the HDMI
+ * output was started here, video_core1_poll, and took up to 46 % of the
+ * emulator's core.) Started and polled here while we wait for a game, and
+ * once a frame in one (galagino.cpp emulation_task). */
+extern "C" void pico_input_core1_usb_poll(void);
+#endif
+
 void setup1(void) {
   /* No Serial here — USB CDC may not be enumerated yet. */
   while (g_pending_task_fn == nullptr || g_menu_done == 0) {
+#ifdef PICO_USB_HOST
+    pico_input_core1_usb_poll();
+#endif
     delay(5);
   }
   g_pending_task_fn(g_pending_task_arg);

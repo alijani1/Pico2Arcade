@@ -24,8 +24,8 @@ extern "C" bool pico_input_menu_tapped(void);
 #include "pico_drive.h"
 #include "pico_romcheck.h"
 #include "pico_hiscore.h"
-#ifdef PICO_TINY_SCREEN
-TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object */
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
+TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object (HDMI: the menu canvas) */
 #endif
 
 extern "C" bool runtime_load_pacman(void);
@@ -155,7 +155,7 @@ extern "C" void pico_config_save_landscape(int on);
 #endif
 extern "C" volatile int g_show_fps;
 extern "C" void pico_config_save_show_fps(int on);
-#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED) || defined(PICO_HDMI)
 extern "C" void pico_config_save_scale(int mode);
 #endif
 extern "C" int  pico_config_volume(void);
@@ -207,7 +207,28 @@ static void set_volume(int v) {
 /* Menu rows: available games, then (landscape builds) the display
  * toggle, the FPS-overlay toggle, (flash boards) ROM Drive, Volume, then
  * Exit. Row kinds are derived from the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT, ROW_SCREEN, ROW_SOUND };   /* (ROW_SOUND: the Fruit Jam's sound output) */   /* (ROW_SCREEN: HDMI, last so the others keep their values) */
+#ifdef PICO_HDMI
+extern "C" int video_hdmi_mode(void);                /* video.cpp: the Screen row (try_screen_mode below) */
+extern "C" const char *video_hdmi_mode_name(int m);
+extern "C" int video_hdmi_width(int step);
+extern "C" int video_hdmi_height(int step);
+extern "C" bool video_hdmi_take_mode_key(void);      /* serial key m pressed (once) */
+extern "C" void pico_config_save_sound_output(int o);   /* pico_config.cpp: the Sound row */
+extern "C" void pico_config_flush(void);              /* pico_config.cpp: write the settings now */
+#include "pico_audio.h"                              /* the Sound row: pico_audio_*_sound_output */
+#endif
+/* The list's fonts: HDMI (Fruit Jam) uses TFT_eSPI's Font 2 (rows) and Font 4
+ * (title, Loading, errors) as Pico2Atari8's menus do - the 5x7 GLCD font at
+ * size 2, shown doubled on HDMI, was 4x4-pixel blocks. MENU_FONT1: back to the
+ * GLCD font for the small lines after. Other boards: unchanged. */
+#ifdef PICO_HDMI
+#  define MENU_BIG(t)   ((t).setTextFont(4), (t).setTextSize(1))
+#  define MENU_FONT1(t) ((t).setTextFont(1))
+#else
+#  define MENU_BIG(t)   ((void)0)
+#  define MENU_FONT1(t) ((void)0)
+#endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
@@ -215,7 +236,8 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE
 #endif
 /* Scale row (Smooth / Sharp / Drop): area-scaling builds (landscape only)
  * and the 160x80 panel (both orientations; saved — pico_config.cpp). */
-#if defined(MENU_DISPLAY_TOGGLE) && ((defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))                                      || defined(PICO_TINY_SCREEN))
+#if defined(MENU_DISPLAY_TOGGLE) && ((defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))                                      || defined(PICO_TINY_SCREEN)) \
+    || defined(PICO_HDMI)   /* (Fruit Jam HDMI: one orientation, but the Scale / Width rows: video.cpp) */
 #  define MENU_SCALE_ROW 1
 extern "C" volatile int g_scale_mode;     /* video.cpp */
 #endif
@@ -226,7 +248,9 @@ extern "C" volatile int g_scale_mode;     /* video.cpp */
 extern "C" volatile int g_stretch;        /* video.cpp */
 extern "C" void pico_config_save_stretch(int idx);
 #endif
-#ifdef MENU_STRETCH_ROW
+#if defined(MENU_STRETCH_ROW) && !defined(MENU_DISPLAY_TOGGLE)
+static const int SETTING_ROWS_BASE = 5;   /* Screen, Scale, Width, Show FPS, Sound (HDMI: no Display row) */
+#elif defined(MENU_STRETCH_ROW)
 static const int SETTING_ROWS_BASE = 4;   /* Display, Scale, Width, Show FPS */
 #elif defined(MENU_SCALE_ROW)
 static const int SETTING_ROWS_BASE = 3;   /* Display, Scale, Show FPS */
@@ -251,12 +275,20 @@ static RowKind row_kind(int row) {
     if (row == 0) return ROW_DISPLAY;
     row--;
 #endif
+#ifdef PICO_HDMI
+    if (row == 0) return ROW_SCREEN;
+    row--;
+#endif
 #ifdef MENU_SCALE_ROW
     if (row == 0) return ROW_SCALE;
     row--;
 #endif
 #ifdef MENU_STRETCH_ROW
     if (row == 0) return ROW_STRETCH;
+    row--;
+#endif
+#ifdef A8_HDMI_AUDIO
+    if (row == 0) return ROW_SOUND;
     row--;
 #endif
     if (row == 0) return ROW_FPS;
@@ -328,7 +360,11 @@ static void menu_layout(TFT_eSPI &tft) {
 #ifdef PICO_TINY_SCREEN
     int top = note ? 32 : 14;
 #else
+#ifdef PICO_HDMI
+    int top = note ? 60 : 34;                  /* (HDMI: the title in Font 4, 26 px) */
+#else
     int top = note ? 60 : (s_wide ? 28 : 40);
+#endif
 #endif
     int step = (H - HINT_H - top) / menu_rows();
 #ifndef PICO_TINY_SCREEN
@@ -369,11 +405,23 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
     uint16_t bg = (i == sel) ? TFT_BLUE : TFT_BLACK;
     TFT_eSprite spr(&tft);
+#ifdef PICO_HDMI
+    /* HDMI: tft is the menu canvas, itself a sprite. A sprite pushed onto it
+     * would go out through TFT_eSPI's own pushImage (not virtual) — to the
+     * panel's SPI pins, which on the Fruit Jam are button 3 and the ESP32's
+     * UART. So the row is drawn straight onto the canvas. */
+    bool off = false;
+#else
     bool off = spr.createSprite(w, h) != nullptr;
+#endif
     TFT_eSPI &gfx = off ? (TFT_eSPI &)spr : tft;
     const int ox = off ? 0 : x, oy = off ? 0 : y;      /* row origin on gfx */
     gfx.fillRect(ox, oy, w, h, bg);
     gfx.setTextSize(ROW_TS);
+#ifdef PICO_HDMI
+    gfx.setTextFont(2);                        /* HDMI: Font 2, as Pico2Atari8's menus */
+    gfx.setTextSize(1);
+#endif
     gfx.setTextColor(fg, bg);
     char label[40];
     switch (row_kind(i)) {
@@ -381,6 +429,11 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #ifdef MENU_DISPLAY_TOGGLE
       case ROW_DISPLAY:
         snprintf(label, sizeof(label), "Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
+        break;
+#endif
+#ifdef PICO_HDMI
+      case ROW_SCREEN:
+        snprintf(label, sizeof(label), "Screen: %s", video_hdmi_mode_name(video_hdmi_mode()));
         break;
 #endif
 #ifdef MENU_SCALE_ROW
@@ -392,14 +445,30 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #ifdef MENU_STRETCH_ROW
       case ROW_STRETCH:
       {
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_HDMI)
+        static const int W[4] = { 372, 448, 560, 672 }; /* video.cpp HDMI_WIDTHS (at 480 lines), in pairs */
+#elif defined(PICO_TINY_SCREEN)
         static const int W[4] = { 62, 75, 112, 160 };   /* video.cpp TINY_WIDTHS, in pairs */
 #else
         static const int W[4] = { 186, 224, 268, 320 }; /* video.cpp WIDE_WIDTHS, in pairs */
 #endif
+#ifdef PICO_HDMI
+        (void)W;
+        if (g_stretch & 1) snprintf(label, sizeof(label), "Width: %dx%d", video_hdmi_width(g_stretch), video_hdmi_height(g_stretch));   /* zoomed out (the mode's) */
+        else                snprintf(label, sizeof(label), "Width: %d", video_hdmi_width(g_stretch));   /* (the mode's) */
+#else
         snprintf(label, sizeof(label), "Width: %d%s", W[(g_stretch >> 1) & 3], (g_stretch & 1) ? " crop" : "");
+#endif
       }
         break;
+#endif
+#ifdef A8_HDMI_AUDIO
+      case ROW_SOUND: {
+        static const char *const OUT[5] = { "Auto", "Headphones", "Speaker", "Both", "HDMI" };
+        const int o = pico_audio_get_sound_output();
+        snprintf(label, sizeof(label), "Sound: %s", OUT[(o >= 0 && o < 5) ? o : 0]);
+        break;
+      }
 #endif
       case ROW_FPS:
         snprintf(label, sizeof(label), "Show FPS: %s", g_show_fps ? "On" : "Off");
@@ -423,6 +492,7 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
     gfx.setCursor(ox + ROW_TEXT_X, oy + 1);
     gfx.print(label);
+    MENU_FONT1(gfx);
     if (off) {
         spr.pushSprite(x, y);
         spr.deleteSprite();
@@ -473,10 +543,16 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setCursor(2, 3);
 #else
     tft.setTextSize(2);
+    MENU_BIG(tft);
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
+#ifdef PICO_HDMI
+    tft.setCursor(10, 5);
+#else
     tft.setCursor(10, 8);
 #endif
+#endif
     tft.print("Arcade Games");
+    MENU_FONT1(tft);
     tft.setTextSize(1);
     tft.setCursor(NOTE_X, NOTE_Y);
     if (nAvail == 0) {
@@ -526,6 +602,62 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     draw_volume(tft);
 }
 
+#ifdef PICO_HDMI
+/* The Screen row (the Fruit Jam's HDMI modes, video.cpp): FIRE / START tries
+ * the next mode and asks for 10 s whether to keep it - FIRE / START keeps it
+ * (saved), anything else or nothing goes back: on a display that shows
+ * nothing in that mode, just wait. Button 3 held at power-on = the default
+ * mode. As Pico2Atari8's Settings > Screen mode (its a8_settings.cpp). */
+extern "C" int video_hdmi_modes(void);
+extern "C" int video_hdmi_mode(void);
+extern "C" int video_hdmi_mode_default(void);
+extern "C" const char *video_hdmi_mode_name(int m);
+extern "C" bool video_hdmi_set_mode(int m);
+extern "C" int video_hdmi_width(int step);
+extern "C" int video_hdmi_height(int step);
+extern "C" void pico_config_save_hdmi_mode(int m);
+
+static void try_screen_mode(TFT_eSPI &tft) {
+    const int old = video_hdmi_mode(), m = (old + 1) % video_hdmi_modes();
+    while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);   /* let go: the next press keeps */
+    Serial.printf("[menu] trying screen mode %s\n", video_hdmi_mode_name(m));
+    bool keep = false;
+    if (video_hdmi_set_mode(m)) {
+        const int bx = 30, by = 80, bw = 260, bh = 70;
+        int shown = -1;
+        for (uint32_t t0 = millis();;) {
+            const int left = 10 - (int)((millis() - t0) / 1000);
+            if (left <= 0) break;
+            if (left != shown) {
+                shown = left;
+                tft.fillRect(bx, by, bw, bh, TFT_BLUE);
+                tft.drawRect(bx, by, bw, bh, TFT_WHITE);
+                tft.setTextSize(1);
+                tft.setTextColor(TFT_WHITE, TFT_BLUE);
+                tft.setCursor(bx + 12, by + 10);
+                tft.printf("Keep %s?", video_hdmi_mode_name(m));
+                tft.setTextColor(TFT_YELLOW, TFT_BLUE);
+                tft.setCursor(bx + 12, by + 28);
+                tft.printf("FIRE / START: keep   back in %d s ", left);
+                tft.setTextColor(TFT_LIGHTGREY, TFT_BLUE);
+                tft.setCursor(bx + 12, by + 48);
+                tft.printf("Later: button 3 at power-on = %s", video_hdmi_mode_name(video_hdmi_mode_default()));
+            }
+            if (buttons_get() & (BUTTON_FIRE | BUTTON_START)) { keep = true; break; }
+            delay(20);
+        }
+        while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
+    }
+    if (keep) {
+        pico_config_save_hdmi_mode(m);
+        Serial.printf("[menu] screen mode %s kept\n", video_hdmi_mode_name(m));
+    } else {
+        video_hdmi_set_mode(old);
+        Serial.printf("[menu] screen mode back to %s\n", video_hdmi_mode_name(old));
+    }
+}
+#endif
+
 /* Show a load error and wait for a button press (then back to menu). */
 static void show_load_error(TFT_eSPI &tft, int g) {
 #ifdef PICO_TINY_SCREEN
@@ -540,9 +672,11 @@ static void show_load_error(TFT_eSPI &tft, int g) {
     tft.print("FIRE/START: back");
 #else
     tft.setTextSize(2);
+    MENU_BIG(tft);
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(10, 140);
     tft.print("LOAD FAILED");
+    MENU_FONT1(tft);
     tft.setTextSize(1);
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(10, 166);
@@ -574,9 +708,11 @@ static void show_bad_set(TFT_eSPI &tft, int g) {
     tft.print("FIRE/START: back");
 #else
     tft.setTextSize(2);
+    MENU_BIG(tft);
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(10, 40);
     tft.print("WRONG ROM SET");
+    MENU_FONT1(tft);
     tft.setTextSize(1);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setCursor(10, 70);
@@ -609,11 +745,16 @@ extern "C" void pico_menu_pick_and_load(void) {
     else hv = pico_config_volume();
 #endif
     pico_audio_set_volume_pct(hv >= 0 ? hv : 50);   /* default 50 % */
+#ifdef A8_MENU_MUSIC
+    /* Fruit Jam: the list's sound - the menu tune and a tone on each move (as
+     * Pico2Atari8's), at the game sound's 24000 Hz; fed from buttons_get */
+    pico_audio_menu_sound(24000, 1);
+#endif
     handoff_volume_write(pico_audio_get_volume_pct());
     Serial.printf("[menu] volume %d%% (%s)\n", pico_audio_get_volume_pct(),
                   hv >= 0 ? "from CartReader" : "default");
 
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
     TFT_eSPI &tft = video_tft();
 #else
     TFT_eSPI tft;
@@ -668,13 +809,22 @@ extern "C" void pico_menu_pick_and_load(void) {
 #endif
 
     while (g < 0) {
+#ifdef A8_MENU_MUSIC
+        pico_audio_menu_sound(24000, 1);  /* (again after a load that failed; else a no-op) */
+#endif
         unsigned char prev_mask = buttons_get();
         draw_menu(tft, sel);
         int vol_shown = pico_audio_get_volume_pct();
 
+#ifdef PICO_HDMI
+        bool screen_key = false;          /* serial key m: the Screen row's FIRE, from any row */
+#endif
         while (true) {
             unsigned char m = buttons_get();
             if (pico_input_menu_tapped()) exit_arcade();
+#ifdef PICO_HDMI
+            if (video_hdmi_take_mode_key()) { screen_key = true; break; }
+#endif
             if (pico_audio_get_volume_pct() != vol_shown) {
                 vol_shown = pico_audio_get_volume_pct();
                 draw_volume(tft);
@@ -697,7 +847,12 @@ extern "C" void pico_menu_pick_and_load(void) {
                     int n = sel + step;
                     if (fresh) n = (n + menu_rows()) % menu_rows();
                     else if (n < 0 || n >= menu_rows()) n = sel;
-                    if (n != sel) { int old = sel; sel = n; menu_select(tft, old, sel); }
+                    if (n != sel) {
+                        int old = sel; sel = n; menu_select(tft, old, sel);
+#ifdef A8_MENU_MUSIC
+                        pico_audio_menu_beep();   /* (the Fruit Jam's list sound) */
+#endif
+                    }
                 }
             }
             /* Volume row: LEFT/RIGHT step it in place. */
@@ -706,6 +861,9 @@ extern "C" void pico_menu_pick_and_load(void) {
                        : ((m & BUTTON_LEFT) && !(prev_mask & BUTTON_LEFT)) ? -VOLUME_STEP : 0;
                 if (dv) {
                     set_volume(pico_audio_get_volume_pct() + dv);
+#ifdef A8_MENU_MUSIC
+                    pico_audio_menu_beep();   /* (heard at the new volume) */
+#endif
                     vol_shown = pico_audio_get_volume_pct();
                     draw_row(tft, sel, sel);
                     draw_volume(tft);
@@ -716,6 +874,12 @@ extern "C" void pico_menu_pick_and_load(void) {
             prev_mask = m;
             delay(20);
         }
+#ifdef PICO_HDMI
+        if (screen_key) {
+            try_screen_mode(tft);
+            continue;                     /* redraw (in the mode kept) */
+        }
+#endif
 
         switch (row_kind(sel)) {
 #ifdef MENU_DISPLAY_TOGGLE
@@ -727,10 +891,15 @@ extern "C" void pico_menu_pick_and_load(void) {
             handoff_relaunch_arcade();
             break;
 #endif
+#ifdef PICO_HDMI
+          case ROW_SCREEN:
+            try_screen_mode(tft);
+            break;             /* loop redraws the menu in the mode kept */
+#endif
 #ifdef MENU_SCALE_ROW
           case ROW_SCALE:       /* Smooth -> Sharp -> Drop -> Smooth; landscape only */
             g_scale_mode = (g_scale_mode + 1) % 3;
-#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED) || defined(PICO_HDMI)
             pico_config_save_scale(g_scale_mode);
 #endif
             break;             /* loop redraws the menu with the new value */
@@ -739,6 +908,14 @@ extern "C" void pico_menu_pick_and_load(void) {
           case ROW_STRETCH:     /* landscape width 62 -> 62 crop -> 75 -> ... -> 160 crop -> 62 (186 ... 320 crop) */
             pico_config_save_stretch((g_stretch + 1) % 8);
             break;             /* loop redraws the menu with the new value */
+#endif
+#ifdef A8_HDMI_AUDIO
+          case ROW_SOUND: {     /* Auto -> Headphones -> Speaker -> Both -> HDMI -> Auto (saved) */
+            const int o = (pico_audio_get_sound_output() + 1) % 5;
+            pico_audio_set_sound_output(o);
+            pico_config_save_sound_output(o);
+            break;
+          }
 #endif
           case ROW_FPS:
             pico_config_save_show_fps(!g_show_fps);
@@ -770,10 +947,18 @@ extern "C" void pico_menu_pick_and_load(void) {
             tft.setCursor(2, 20);
 #else
             tft.setTextSize(2);
+            MENU_BIG(tft);
             tft.setTextColor(TFT_YELLOW, TFT_BLACK);
             tft.setCursor(10, 100);
 #endif
             tft.printf("Loading %s...", games[cand].label);
+            MENU_FONT1(tft);
+#ifdef PICO_HDMI
+#ifdef A8_MENU_MUSIC
+            pico_audio_menu_sound(0, 0);  /* the list's sound off (muted: the game unmutes it) */
+#endif
+            pico_config_flush();          /* the settings changed in the list: written now (pico_config.cpp) */
+#endif
             if (games[cand].loader()) g = cand;
             else show_load_error(tft, cand);
             break;

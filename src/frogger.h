@@ -278,7 +278,7 @@ static inline void frogger_blit_tile(short row, char col) {
 }
 
 // frogger can scroll single lines
-void frogger_blit_tile_scroll(short row, signed char col, short scroll) {
+void PICO_HOT_RAM(frogger_blit_tile_scroll)(short row, signed char col, short scroll) {   /* (Fruit Jam: RAM, as render_line) */
   if((row < 2) || (row >= 34))
     return;
 

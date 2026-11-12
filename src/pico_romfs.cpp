@@ -57,6 +57,124 @@ extern "C" const char *romfs_where(void) { return "/roms/ on the SD card"; }
 #include <hardware/structs/watchdog.h>
 #include "pico_handoff.h"
 
+#ifdef PICO_SD
+/* ── the SD card (PICO_SD; the Fruit Jam's microSD slot) ──────────────────
+ * As Pico2Atari8's (its pico_romfs.cpp, A8_SD): with a card in at start-up
+ * the games come from it, else from the flash drive (USB drive mode then
+ * shows the card; without one, the flash drive). The core's SD library on
+ * SPI0 (the slot's pins) at PICO_SD_SPI_MHZ. A zip is looked up as on the
+ * flash drive - /roms/<name>.zip, the name in ROMS, ARCADE, MAME, ROMS/ARCADE,
+ * ROMS/MAME or the root - then by name in any folder 3 deep. It is read
+ * whole into PSRAM (romfs_slurp; freed by the loader), so starting a game
+ * from the card writes no flash. */
+#include <SD.h>
+#include <SPI.h>
+#ifndef PICO_SD_SPI_MHZ
+#define PICO_SD_SPI_MHZ 25
+#endif
+static bool sd_on = false;
+static const int SD_SEARCH_DEPTH = 3;
+
+static bool sd_begin(void) {
+    SPI.setRX(PIN_SD_DAT0_MISO);
+    SPI.setTX(PIN_SD_CMD_MOSI);
+    SPI.setSCK(PIN_SD_CLK);
+    const bool ok = SD.begin(PIN_SD_DAT3_CS, SD_SCK_MHZ(PICO_SD_SPI_MHZ), SPI);
+    Serial.printf("[romfs] SD card (SPI, %d MHz): %s\n", PICO_SD_SPI_MHZ, ok ? "found" : "none");
+    return ok;
+}
+
+/* A file `name` in folder `dir` (path, "" = root), folders `depth` deep. */
+static bool sd_search(const char *dir, const char *name, int depth, char *out, size_t cap) {
+    File d = SD.open(dir[0] ? dir : "/");
+    if (!d || !d.isDirectory()) return false;
+    bool found = false;
+    char sub[128];
+    for (File e = d.openNextFile(); e && !found; e = d.openNextFile()) {
+        const char *nm = e.name();
+        if (e.isDirectory()) {
+            if (depth > 0 && nm[0] != '.' && strcasecmp(nm, "System Volume Information")) {
+                snprintf(sub, sizeof(sub), "%s/%s", dir, nm);
+                found = sd_search(sub, name, depth - 1, out, cap);
+            }
+        } else if (!strcasecmp(nm, name)) {
+            snprintf(out, cap, "%s/%s", dir, nm);
+            found = true;
+        }
+        e.close();
+    }
+    d.close();
+    return found;
+}
+
+/* The card's path for a game's "/roms/<name>.zip" (or any path). */
+static bool sd_find(const char *path, char *out, size_t cap) {
+    if (SD.exists(path)) { snprintf(out, cap, "%s", path); return true; }
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    static const char *const DIRS[] = { "/ROMS/", "/ARCADE/", "/MAME/", "/ROMS/ARCADE/", "/ROMS/MAME/", "/" };
+    for (const char *d : DIRS) {
+        snprintf(out, cap, "%s%s", d, name);
+        if (SD.exists(out)) return true;
+    }
+    return sd_search("", name, SD_SEARCH_DEPTH, out, cap);
+}
+
+/* A whole file from the card into PSRAM (else the heap). */
+static bool sd_slurp(const char *path, uint8_t **out, size_t *out_sz) {
+    char p[128];
+    if (!sd_find(path, p, sizeof(p))) { Serial.printf("[romfs] not on the card: %s\n", path); return false; }
+    File f = SD.open(p, FILE_READ);
+    if (!f) { Serial.printf("[romfs] open failed: %s\n", p); return false; }
+    const size_t sz = f.size();
+    uint8_t *buf = (uint8_t *)pmalloc(sz);
+    if (!buf) buf = (uint8_t *)malloc(sz);
+    if (!buf) { Serial.printf("[romfs] no memory for %u bytes\n", (unsigned)sz); f.close(); return false; }
+    const size_t got = f.read(buf, sz);
+    f.close();
+    if (got != sz) { Serial.printf("[romfs] short read: %u of %u\n", (unsigned)got, (unsigned)sz); free(buf); return false; }
+    *out = buf;
+    *out_sz = sz;
+    return true;
+}
+
+extern "C" bool romfs_on_card(void) { return sd_on; }
+
+/* The card's sectors as they are, for USB drive mode (pico_drive.cpp): the
+ * PC gets the whole card, with its own file system, as PicoCartReader and
+ * Pico2Atari8 do. A card of its own (SdFat's), started anew - the file
+ * system above is not used again before the restart. SPI: PICO_SD_SPI_MHZ,
+ * else slower if the card won't take it; the bus is the card's alone
+ * (DEDICATED_SPI). */
+static SdCard *sd_raw = nullptr;
+
+extern "C" uint32_t romfs_card_raw_open(void) {
+    if (!sd_on) return 0;
+    static SdCardFactory *factory = nullptr;
+    if (!factory) factory = new SdCardFactory;
+    static const int mhz[] = { PICO_SD_SPI_MHZ, 12, 4 };
+    for (int m : mhz) {
+        if (m > PICO_SD_SPI_MHZ) continue;
+        sd_raw = factory->newCard(SdSpiConfig(PIN_SD_DAT3_CS, DEDICATED_SPI, SD_SCK_MHZ(m), &SPI));
+        if (sd_raw && !sd_raw->errorCode()) {
+            Serial.printf("[romfs] SD card as a USB drive: SPI %d MHz\n", m);
+            break;
+        }
+        sd_raw = nullptr;
+    }
+    return sd_raw ? (uint32_t)sd_raw->sectorCount() : 0;
+}
+extern "C" bool romfs_card_raw_read(uint32_t lba, void *buf, uint32_t n) {
+    return sd_raw && sd_raw->readSectors(lba, (uint8_t *)buf, n);
+}
+extern "C" bool romfs_card_raw_write(uint32_t lba, const void *buf, uint32_t n) {
+    return sd_raw && sd_raw->writeSectors(lba, (const uint8_t *)buf, n);
+}
+extern "C" void romfs_card_raw_sync(void) {
+    if (sd_raw) sd_raw->syncDevice();
+}
+#endif  /* PICO_SD */
+
 /* Hosted builds: where the host's ROM drive is if it didn't pass it (set per
  * env in platformio.ini; defaults = the Quad). */
 #ifndef PICO_HOST_FAT_WINDOW_OFS
@@ -131,7 +249,20 @@ static bool fat_eoc(uint32_t c) { return fat16 ? c >= 0xFFF8 : c >= 0x0FF8; }
 static bool cluster_ok(uint32_t c) { return c >= 2 && c < clusterCount + 2; }
 static uint32_t cluster_ofs(uint32_t c) { return dataOfs + (c - 2) * clusterBytes; }
 
+#ifdef PICO_SD
+/* The card if there's one, and the flash drive (USB ROM drive mode writes it
+ * when there's no card, and it holds the games then) - as Pico2Atari8. */
+static bool romfs_init_flash(void);
 extern "C" bool romfs_init(void) {
+    sd_on = sd_begin();
+    const bool flash_ok = romfs_init_flash();
+    if (sd_on) Serial.println("[romfs] games: the SD card");
+    return sd_on || flash_ok;
+}
+static bool romfs_init_flash(void) {
+#else
+extern "C" bool romfs_init(void) {
+#endif
     if (!s_xip) locate_drive();
     vol = s_xip;
     volSize = s_size;
@@ -242,14 +373,31 @@ static const uint8_t *find_file(const char *path) {
     return nullptr;
 }
 
+#ifdef PICO_SD
+extern "C" bool romfs_exists(const char *path) {
+    if (sd_on) { char p[128]; return sd_find(path, p, sizeof(p)); }
+    return find_file(path) != nullptr;
+}
+#else
 extern "C" bool romfs_exists(const char *path) { return find_file(path) != nullptr; }
+#endif
 
 extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
+#ifdef PICO_SD
+    if (sd_on) return sd_slurp(path, out, out_sz);   /* (the card: into PSRAM) */
+#endif
     const uint8_t *e = find_file(path);
     if (!e) { Serial.printf("[romfs] not found: %s\n", path); return false; }
     uint32_t size = rd32(e + 28), cluster = rd16(e + 26);
     if (size == 0 || size > volSize) return false;
+#ifdef PICO_FRUITJAM
+    /* Fruit Jam: in PSRAM (read once, by the unpacking) - the SRAM heap is
+     * short with HDMI sound's 36 KB queue, and Xevious needs ~200 KB to load */
+    uint8_t *buf = (uint8_t *)pmalloc(size);
+    if (!buf) buf = (uint8_t *)malloc(size);
+#else
     uint8_t *buf = (uint8_t *)malloc(size);
+#endif
     if (!buf) { Serial.printf("[romfs] malloc %lu bytes failed\n", (unsigned long)size); return false; }
     /* Copy cluster by cluster (the file may be fragmented). */
     uint32_t done = 0;
@@ -267,5 +415,9 @@ extern "C" bool romfs_slurp(const char *path, uint8_t **out, size_t *out_sz) {
 
 /* Every flash board's drive is labelled ARCADE ROMS (the Quad's first drives
  * were "QUAD ROMS"; only the label differs). */
+#ifdef PICO_SD
+extern "C" const char *romfs_where(void) { return sd_on ? "the SD card" : "the ARCADE ROMS drive"; }
+#else
 extern "C" const char *romfs_where(void) { return "the ARCADE ROMS drive"; }
+#endif
 #endif

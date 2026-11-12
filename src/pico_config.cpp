@@ -94,11 +94,20 @@ struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, scale, stretch
 #else
 #define PICO_DEFAULT_LANDSCAPE 0
 #endif
+#ifdef PICO_HDMI
+static Cfg s_cfg = { CFG_MAGIC, PICO_DEFAULT_LANDSCAPE, 0, 50, 0, 2 };   /* HDMI: Smooth, Width 448 */
+#else
 static Cfg s_cfg = { CFG_MAGIC, PICO_DEFAULT_LANDSCAPE, 0, 50, 0 };
+#endif
 
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)   /* (HDMI: Scale / Width too) */
 extern "C" volatile int g_scale_mode;    /* video.cpp */
 extern "C" volatile int g_stretch;       /* video.cpp */
+#endif
+#ifdef PICO_HDMI
+/* The Fruit Jam's HDMI mode (video.cpp g_hdmi_mode): pad[0] = mode + 1 (0 = the
+ * default - also what older settings have there; 0xFF erased = the default). */
+extern "C" volatile int g_hdmi_mode;
 #endif
 extern "C" {
     volatile int g_landscape_mode = PICO_DEFAULT_LANDSCAPE;   /* default: portrait */
@@ -111,16 +120,66 @@ extern "C" void pico_config_load(void) {
     if (s_cfg.volume > 100) s_cfg.volume = 100;
     g_landscape_mode = s_cfg.landscape ? 1 : 0;
     g_show_fps = s_cfg.show_fps ? 1 : 0;
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
     g_scale_mode = s_cfg.scale <= SCALE_DROP ? s_cfg.scale : SCALE_SMOOTH;
+#ifdef PICO_HDMI
+    if (s_cfg.stretch > 7) s_cfg.stretch = 2;          /* (not set: 448) */
+#else
     if (s_cfg.stretch > 7) s_cfg.stretch = 0;
+#endif
     g_stretch = s_cfg.stretch;
+#ifdef PICO_HDMI
+    g_hdmi_mode = (s_cfg.pad[0] >= 1 && s_cfg.pad[0] <= 16) ? s_cfg.pad[0] - 1 : -1;
+#ifdef A8_HDMI_AUDIO
+    /* pad[1] = the Sound row's output + 1 (0 = Auto: older settings too) */
+    if (s_cfg.pad[1] >= 1 && s_cfg.pad[1] <= 5) pico_audio_set_sound_output(s_cfg.pad[1] - 1);
+#endif
+#endif
 #endif
     Serial.printf("[cfg] landscape=%d show_fps=%d volume=%d (%s)\n", g_landscape_mode,
                   g_show_fps, s_cfg.volume, f->magic == CFG_MAGIC ? "flash" : "defaults");
 }
 
+#ifdef PICO_FRUITJAM
+/* On the RP2350 the SDK's flash functions re-enter XIP in the boot ROM's slow
+ * default mode (they save / restore only the PSRAM chip select, m[1]). On the
+ * Fruit Jam the HDMI driver's start-up has set faster flash timings, and left
+ * like that everything run from flash afterwards — both cores — ran many
+ * times slower (Pico2Atari8: games at 1-5 fps; its a8_flash.cpp). So the
+ * flash's read settings (QMI m[0] timing / rcmd / rfmt) are put back right
+ * after, in RAM. Called with interrupts off and the other core parked. */
+#include <hardware/structs/qmi.h>
+extern "C" void __no_inline_not_in_flash_func(pico_flash_erase_program)(uint32_t ofs, const uint8_t *data,
+                                                                        size_t len) {
+    uint32_t timing = qmi_hw->m[0].timing, rcmd = qmi_hw->m[0].rcmd, rfmt = qmi_hw->m[0].rfmt;
+    flash_range_erase(ofs, FLASH_SECTOR_SIZE);
+    flash_range_program(ofs, data, len);
+    qmi_hw->m[0].timing = timing;
+    qmi_hw->m[0].rcmd = rcmd;
+    qmi_hw->m[0].rfmt = rfmt;
+    __compiler_memory_barrier();
+}
+#endif
+
+#ifdef PICO_HDMI
+/* HDMI (Fruit Jam): a flash write runs with interrupts off on core 0, which
+ * has the HDMI line interrupt - the picture dropped out and the display
+ * resynced on every Volume step. So a change is only noted here and written
+ * by pico_config_flush: when a game is picked (behind its "Loading" screen)
+ * and before any restart (exit, back to the game list, ROM drive mode) - as
+ * Pico2Atari8 saves its settings when a game starts or ends. */
+static bool s_cfg_dirty = false;
+static void pico_config_write(void);
+static void pico_config_save(void) { s_cfg_dirty = true; }
+extern "C" void pico_config_flush(void) {
+    if (!s_cfg_dirty) return;
+    s_cfg_dirty = false;
+    pico_config_write();
+}
+static void pico_config_write(void) {
+#else
 static void pico_config_save(void) {
+#endif
     s_cfg.magic = CFG_MAGIC;
     s_cfg.landscape = g_landscape_mode ? 1 : 0;
     s_cfg.show_fps = g_show_fps ? 1 : 0;
@@ -132,11 +191,18 @@ static void pico_config_save(void) {
     rp2040.idleOtherCore();
     pico_audio_suspend();                    /* PWM audio DMA can't miss IRQs (pico_audio.cpp) */
     uint32_t irq = save_and_disable_interrupts();
+#ifdef PICO_FRUITJAM
+    pico_flash_erase_program(PICO_CONFIG_PHYS, page, FLASH_PAGE_SIZE);
+#else
     flash_range_erase(PICO_CONFIG_PHYS, FLASH_SECTOR_SIZE);
     flash_range_program(PICO_CONFIG_PHYS, page, FLASH_PAGE_SIZE);
+#endif
     restore_interrupts(irq);
     pico_audio_resume();
     rp2040.resumeOtherCore();
+#ifdef PICO_USB_HOST
+    pico_input_flash_written();
+#endif
     Serial.printf("[cfg] saved landscape=%d show_fps=%d volume=%d\n",
                   s_cfg.landscape, s_cfg.show_fps, s_cfg.volume);
 }
@@ -149,7 +215,7 @@ extern "C" void pico_config_save_show_fps(int on) {
     g_show_fps = on ? 1 : 0;
     pico_config_save();
 }
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
 extern "C" void pico_config_save_scale(int mode) {
     s_cfg.scale = (uint8_t)mode;
     pico_config_save();
@@ -157,6 +223,19 @@ extern "C" void pico_config_save_scale(int mode) {
 extern "C" void pico_config_save_stretch(int idx) {
     g_stretch = (idx >= 0 && idx <= 7) ? idx : 0;
     s_cfg.stretch = (uint8_t)g_stretch;
+    pico_config_save();
+}
+#endif
+#ifdef PICO_HDMI
+#ifdef A8_HDMI_AUDIO
+extern "C" void pico_config_save_sound_output(int o) {
+    s_cfg.pad[1] = (uint8_t)(o >= 0 && o <= 4 ? o + 1 : 0);
+    pico_config_save();
+}
+#endif
+extern "C" void pico_config_save_hdmi_mode(int m) {
+    g_hdmi_mode = m;
+    s_cfg.pad[0] = (uint8_t)(m >= 0 ? m + 1 : 0);
     pico_config_save();
 }
 #endif

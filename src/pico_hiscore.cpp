@@ -358,10 +358,17 @@ static void store_write(void) {
 #ifdef PICO_BOARD_TABLE
     pico_audio_suspend();                    /* else its DMA desyncs: clicks + slowdown */
     uint32_t irq = save_and_disable_interrupts();
+#ifdef PICO_FRUITJAM
+    pico_flash_erase_program(s_phys, (const uint8_t *)&s_store, sizeof(s_store));   /* + XIP speed back */
+#else
     flash_range_erase(s_phys, FLASH_SECTOR_SIZE);
     flash_range_program(s_phys, (const uint8_t *)&s_store, sizeof(s_store));
+#endif
     restore_interrupts(irq);
     pico_audio_resume();
+#ifdef PICO_USB_HOST
+    pico_input_flash_written();              /* the USB pads slept through it */
+#endif
     g_hs_saves++;
 #else
     SD.remove("/gal_hi.bin");
