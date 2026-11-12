@@ -1590,8 +1590,30 @@ void Video::fps_stats_tick(void) {
  * driver's table entry is renamed out of the way and this one takes its
  * name. */
 #define dvi_timing_800x600p_60hz dvi_timing_800x600p_60hz_driver
+/* 800x480: the driver's is `cvt 800 480 60` at a 29.52 MHz pixel clock - 992 x
+ * 500 per frame = 59.52 Hz, and the game, paced by the HDMI frames, ran at
+ * 59.5 fps (2026-11-12). The same blanking at 29.76 MHz (bit clock 297.6
+ * MHz: HSTX 148.8 MHz, PLL_SYS 1488 MHz / 10 - exact, under HSTX's 150) =
+ * 60.00 Hz. Renamed out of the way as the 800x600 one. */
+#define dvi_timing_800x480p_60hz dvi_timing_800x480p_60hz_driver
 #include "drivers/dvhstx/dvi.cpp"
 #undef dvi_timing_800x600p_60hz
+#undef dvi_timing_800x480p_60hz
+const struct dvi_timing dvi_timing_800x480p_60hz = {
+    .h_sync_polarity = false,
+    .h_front_porch   = 24,
+    .h_sync_width    = 72,
+    .h_back_porch    = 96,
+    .h_active_pixels = 800,
+
+    .v_sync_polarity = true,
+    .v_front_porch   = 3,
+    .v_sync_width    = 10,
+    .v_back_porch    = 7,
+    .v_active_lines  = 480,
+
+    .bit_clk_khz     = 297600
+};
 const struct dvi_timing dvi_timing_800x600p_60hz = {
     .h_sync_polarity = false,
     .h_front_porch   = 40,
