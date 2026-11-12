@@ -600,7 +600,14 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
     if (s_wide) {
         tft.setCursor(6, H - HINT_H + 2);
+#ifdef PICO_FRUITJAM
+        /* the Fruit Jam has no MENU button: START + SELECT (pad) / START + COIN
+         * (buttons 2 + 1) held in a game = the list; LEFT / RIGHT act on the
+         * Volume and Screen rows only (<= 51 characters) */
+        tft.print("FIRE pick  L/R Volume, Screen  START+SELECT: list");
+#else
         tft.print("FIRE select  LT/RT volume  hold MENU in game: list");
+#endif
         draw_volume(tft);
         return;
     }
