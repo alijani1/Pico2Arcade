@@ -102,6 +102,9 @@ static uint16_t frame_buf[GAME_W * GAME_H];
  * TODO: tearing — Video::write fills frame_buf (30 Hz, half-rate pacing in
  * galagino.cpp update_screen) while the lines are read (60 Hz); if a tear line
  * shows, fill it at the HDMI vblank.
+ * (Done: it showed in Xevious - a wavy, flickering scrolling background. On
+ * HDMI update_screen now renders every frame whole from the vertical blank,
+ * video_hdmi_wait_vblank.)
  * TODO: flash writes (high scores, settings, ROM drive) park core 1
  * (rp2040.idleOtherCore), and with it maybe the line interrupt: the picture
  * may drop out for that moment (the driver restarts its stream after).
@@ -398,6 +401,18 @@ static void hdmi_game_start(void) {
   __dmb();
   hdmi_game = true;
   Serial.printf("[video] HDMI: game picture (heap free %d)\n", rp2040.getFreeHeap());
+}
+
+/* Core 0, galagino.cpp update_screen: wait for the next HDMI frame. The
+ * driver counts a frame where its vertical blank starts (and sends an event,
+ * __sev, then), so the frame rendered after this is in frame_buf before the
+ * beam gets to it. 50 ms at most (no output: don't hang the game). */
+void video_hdmi_wait_vblank(void) {
+  static uint32_t last = 0;
+  const uint32_t t0 = time_us_32();
+  uint32_t f;
+  while ((f = hdmi.get_frame_count()) == last && time_us_32() - t0 < 50000) __wfe();
+  last = f;
 }
 #endif  /* PICO_HDMI */
 

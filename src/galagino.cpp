@@ -803,7 +803,13 @@ void audio_init(void) {
 #endif
 }
 
+#ifdef PICO_HDMI
+void video_hdmi_wait_vblank(void);   /* video.cpp */
+#endif
 void update_screen(void) {
+#ifdef PICO_HDMI
+  video_hdmi_wait_vblank();          /* each frame from the HDMI vertical blank (see below) */
+#endif
   uint32_t t0 = micros();
   // Start of this two-frame video cycle (see the half-rate pacing below).
   static uint32_t frame_base = 0;
@@ -882,7 +888,31 @@ XEVIOUS_END
 #define VIDEO_HALF_RATE
 #endif
 
-#ifdef VIDEO_HALF_RATE
+#if defined(PICO_HDMI)
+  // Pico2Arcade, HDMI (Fruit Jam): every frame, whole, from the HDMI vertical
+  // blank (video_hdmi_wait_vblank at the top). The half-rate path below
+  // renders the top half in one emulated frame and the bottom half in the
+  // next, for SPI panels that can't take 60 fps; on HDMI, scanned out at 60 Hz
+  // at its own moment, that showed as a wavy, flickering background in
+  // Xevious (scrolling all the time). Rendering the 288 rows takes far less
+  // than one scan-out, so starting at the blank it stays ahead of the beam
+  // and each frame shown is one emulated frame. The emulator is paced by
+  // the HDMI frame rate (one vblank pulse per frame).
+  for(int c=0;c<36;c+=6) {
+    render_line(c+0); tft.write(frame_buffer, 224*8);
+    render_line(c+1); tft.write(frame_buffer, 224*8);
+    render_line(c+2); tft.write(frame_buffer, 224*8);
+    render_line(c+3); tft.write(frame_buffer, 224*8);
+    render_line(c+4); tft.write(frame_buffer, 224*8);
+    render_line(c+5); tft.write(frame_buffer, 224*8);
+    snd_transmit();
+  }
+#ifdef PICO_USB_HOST
+  pico_input_poll();     /* the USB host's task and the pads, once a frame (as Pico2Atari8) */
+#endif
+  xTaskNotifyGive(emulationtask);
+  (void)frame_base;
+#elif defined(VIDEO_HALF_RATE)
   // render and transmit screen in two halfs as the display
   // running at 40Mhz can only update every second 60 hz game frame
   for(int half=0;half<2;half++) {
@@ -904,14 +934,6 @@ XEVIOUS_END
     // overhead accumulated, so games ran at ~56 fps (screen ~28) instead
     // of 60. Sleep in 1 ms steps while far from the deadline, then spin.
     uint32_t deadline = frame_base + (half ? 33333u : 16667u);
-#ifdef PICO_USB_HOST
-    /* The USB host's task and the pads, on this core: once per half (60 Hz,
-     * as Pico2Atari8 pumps it once a frame). Called every 1 ms through this
-     * wait, its code (TinyUSB, run from flash) kept the XIP cache that both
-     * cores share busy, and the emulator on core 1 went from 60 fps with
-     * room to spare to ~48 fps (20 ms a frame) on the Fruit Jam. */
-    pico_input_poll();
-#endif
     while ((int32_t)(deadline - micros()) > 1500) delay(1);
     while ((int32_t)(deadline - micros()) > 0) tight_loop_contents();
 
@@ -953,7 +975,11 @@ XEVIOUS_END
 #ifdef ENABLE_GALAGA
   /* the screen is only updated every second frame, scroll speed is thus doubled */
   static const signed char speeds[8] = { -1, -2, -3, 0, 3, 2, 1, 0 };
+#ifdef PICO_HDMI
+  stars_scroll_y += speeds[starcontrol & 7];      /* (HDMI: every frame) */
+#else
   stars_scroll_y += 2*speeds[starcontrol & 7];
+#endif
 #endif
 }
 
