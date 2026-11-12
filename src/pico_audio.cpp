@@ -309,10 +309,28 @@ extern "C" size_t __not_in_flash_func(pico_audio_push)(const void *data, size_t 
         const uint16_t *u = (const uint16_t *)data;
         size_t n = bytes / 2;
         if (n > 128) n = 128;
-        if (HDMI_RING - (int)(g_hhead - g_htail) < (int)n + 8) return 0;
-        int16_t s16[128];
-        for (size_t i = 0; i < n; i++) s16[i] = (int16_t)((int32_t)u[i] - 32768);
-        return push_hdmi(s16, n);
+        /* (Not push_hdmi: its stretch - a sample played twice now and then
+         * while the ring is under half full, for atari800, which the ring
+         * paces - fired all the time here, where the feed keeps the ring
+         * about half full and the game's sound is pulled by it: a wavering
+         * pitch, "shadow tones" in Galaga on the board, 2026-11-11.) */
+        uint32_t head = g_hhead;
+        const int queued = (int)(head - g_htail);
+        if (HDMI_RING - queued < (int)n) return 0;
+        if (queued < g_min_queued) g_min_queued = queued;
+        const int32_t gain = g_amp_on ? g_gain : 0;
+        for (size_t i = 0; i < n; i++) {
+            const int32_t x = (int32_t)u[i] - 32768;
+            g_dc_y1 += ((x - g_dc_x1) << 8) - (g_dc_y1 >> 10);   /* y = x - x1 + (1 - 1/1024) y1 */
+            g_dc_x1 = x;
+            int32_t s = (g_dc_y1 >> 8) * gain / 10000;
+            if (s >  32767) s =  32767;
+            if (s < -32768) s = -32768;
+            g_hring[head++ % HDMI_RING] = (int16_t)s;
+        }
+        __dmb();                             /* the samples before the index (the feed reads) */
+        g_hhead = head;
+        return n * 2;
     }
 #endif
     if (g_i2s.getUnderflow()) g_underruns++;           /* the DMA found no buffer: silence played */
