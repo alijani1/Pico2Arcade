@@ -207,7 +207,12 @@ static void set_volume(int v) {
 /* Menu rows: available games, then (landscape builds) the display
  * toggle, the FPS-overlay toggle, (flash boards) ROM Drive, Volume, then
  * Exit. Row kinds are derived from the row index. */
-enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT };
+enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT, ROW_SCREEN };   /* (ROW_SCREEN: HDMI, last so the others keep their values) */
+#ifdef PICO_HDMI
+extern "C" int video_hdmi_mode(void);                /* video.cpp: the Screen row (try_screen_mode below) */
+extern "C" const char *video_hdmi_mode_name(int m);
+extern "C" int video_hdmi_width(int step);
+#endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
@@ -228,7 +233,7 @@ extern "C" volatile int g_stretch;        /* video.cpp */
 extern "C" void pico_config_save_stretch(int idx);
 #endif
 #if defined(MENU_STRETCH_ROW) && !defined(MENU_DISPLAY_TOGGLE)
-static const int SETTING_ROWS_BASE = 3;   /* Scale, Width, Show FPS (HDMI: no Display row) */
+static const int SETTING_ROWS_BASE = 4;   /* Screen, Scale, Width, Show FPS (HDMI: no Display row) */
 #elif defined(MENU_STRETCH_ROW)
 static const int SETTING_ROWS_BASE = 4;   /* Display, Scale, Width, Show FPS */
 #elif defined(MENU_SCALE_ROW)
@@ -252,6 +257,10 @@ static RowKind row_kind(int row) {
     row -= nAvail;
 #ifdef MENU_DISPLAY_TOGGLE
     if (row == 0) return ROW_DISPLAY;
+    row--;
+#endif
+#ifdef PICO_HDMI
+    if (row == 0) return ROW_SCREEN;
     row--;
 #endif
 #ifdef MENU_SCALE_ROW
@@ -394,6 +403,11 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
         snprintf(label, sizeof(label), "Display: %s", g_landscape_mode ? "Landscape" : "Portrait");
         break;
 #endif
+#ifdef PICO_HDMI
+      case ROW_SCREEN:
+        snprintf(label, sizeof(label), "Screen: %s", video_hdmi_mode_name(video_hdmi_mode()));
+        break;
+#endif
 #ifdef MENU_SCALE_ROW
       case ROW_SCALE:
         snprintf(label, sizeof(label), "Scale: %s", g_scale_mode == SCALE_SHARP ? "Sharp"
@@ -410,7 +424,12 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #else
         static const int W[4] = { 186, 224, 268, 320 }; /* video.cpp WIDE_WIDTHS, in pairs */
 #endif
+#ifdef PICO_HDMI
+        (void)W;
+        snprintf(label, sizeof(label), "Width: %d%s", video_hdmi_width(g_stretch), (g_stretch & 1) ? " crop" : "");   /* (the mode's) */
+#else
         snprintf(label, sizeof(label), "Width: %d%s", W[(g_stretch >> 1) & 3], (g_stretch & 1) ? " crop" : "");
+#endif
       }
         break;
 #endif
@@ -538,6 +557,61 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.print("LT/RT volume  in game hold MENU: list");
     draw_volume(tft);
 }
+
+#ifdef PICO_HDMI
+/* The Screen row (the Fruit Jam's HDMI modes, video.cpp): FIRE / START tries
+ * the next mode and asks for 10 s whether to keep it - FIRE / START keeps it
+ * (saved), anything else or nothing goes back: on a display that shows
+ * nothing in that mode, just wait. Button 3 held at power-on = the default
+ * mode. As Pico2Atari8's Settings > Screen mode (its a8_settings.cpp). */
+extern "C" int video_hdmi_modes(void);
+extern "C" int video_hdmi_mode(void);
+extern "C" int video_hdmi_mode_default(void);
+extern "C" const char *video_hdmi_mode_name(int m);
+extern "C" bool video_hdmi_set_mode(int m);
+extern "C" int video_hdmi_width(int step);
+extern "C" void pico_config_save_hdmi_mode(int m);
+
+static void try_screen_mode(TFT_eSPI &tft) {
+    const int old = video_hdmi_mode(), m = (old + 1) % video_hdmi_modes();
+    while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);   /* let go: the next press keeps */
+    Serial.printf("[menu] trying screen mode %s\n", video_hdmi_mode_name(m));
+    bool keep = false;
+    if (video_hdmi_set_mode(m)) {
+        const int bx = 30, by = 80, bw = 260, bh = 70;
+        int shown = -1;
+        for (uint32_t t0 = millis();;) {
+            const int left = 10 - (int)((millis() - t0) / 1000);
+            if (left <= 0) break;
+            if (left != shown) {
+                shown = left;
+                tft.fillRect(bx, by, bw, bh, TFT_BLUE);
+                tft.drawRect(bx, by, bw, bh, TFT_WHITE);
+                tft.setTextSize(1);
+                tft.setTextColor(TFT_WHITE, TFT_BLUE);
+                tft.setCursor(bx + 12, by + 10);
+                tft.printf("Keep %s?", video_hdmi_mode_name(m));
+                tft.setTextColor(TFT_YELLOW, TFT_BLUE);
+                tft.setCursor(bx + 12, by + 28);
+                tft.printf("FIRE / START: keep   back in %d s ", left);
+                tft.setTextColor(TFT_LIGHTGREY, TFT_BLUE);
+                tft.setCursor(bx + 12, by + 48);
+                tft.printf("Later: button 3 at power-on = %s", video_hdmi_mode_name(video_hdmi_mode_default()));
+            }
+            if (buttons_get() & (BUTTON_FIRE | BUTTON_START)) { keep = true; break; }
+            delay(20);
+        }
+        while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);
+    }
+    if (keep) {
+        pico_config_save_hdmi_mode(m);
+        Serial.printf("[menu] screen mode %s kept\n", video_hdmi_mode_name(m));
+    } else {
+        video_hdmi_set_mode(old);
+        Serial.printf("[menu] screen mode back to %s\n", video_hdmi_mode_name(old));
+    }
+}
+#endif
 
 /* Show a load error and wait for a button press (then back to menu). */
 static void show_load_error(TFT_eSPI &tft, int g) {
@@ -739,6 +813,11 @@ extern "C" void pico_menu_pick_and_load(void) {
              * we come back to this menu instead of the CartReader. */
             handoff_relaunch_arcade();
             break;
+#endif
+#ifdef PICO_HDMI
+          case ROW_SCREEN:
+            try_screen_mode(tft);
+            break;             /* loop redraws the menu in the mode kept */
 #endif
 #ifdef MENU_SCALE_ROW
           case ROW_SCALE:       /* Smooth -> Sharp -> Drop -> Smooth; landscape only */

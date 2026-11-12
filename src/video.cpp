@@ -170,19 +170,28 @@ static uint32_t hdmi_pal[256];                          /* RGB332 -> an RGB565 p
  * (Pico2Atari8's first one: nothing at 640x480, but 720x400, 720x576 and
  * 800x480; 800x600 only sometimes). The 800x600 timing is fixed at the end of
  * this file. */
-struct HdmiMode { uint16_t w, h; const char *name; };
+/* (Since: the game list's Screen row picks one, tried for 10 s before it is
+ * kept (pico_menu.cpp), saved; button 3 held at power-on = the default -
+ * as Pico2Atari8's Settings > Screen mode. hz: the game still runs at 60 Hz
+ * in the 50 / 70 Hz modes, video_hdmi_emu_frames.) */
+struct HdmiMode { uint16_t w, h; const char *name; uint8_t hz; };
 static const HdmiMode HDMI_MODES[] = {
-  { 320, 240, "640x480 60 Hz" },
-  { 360, 200, "720x400 70 Hz" },
-  { 360, 240, "720x480 60 Hz" },
-  { 360, 288, "720x576 50 Hz" },
-  { 400, 300, "800x600 60 Hz" },
-  { 400, 240, "800x480 60 Hz" },
+  { 320, 240, "640x480 60 Hz", 60 },
+  { 360, 200, "720x400 70 Hz", 70 },
+  { 360, 240, "720x480 60 Hz", 60 },
+  { 360, 288, "720x576 50 Hz", 50 },
+  { 400, 300, "800x600 60 Hz", 60 },
+  { 400, 240, "800x480 60 Hz", 60 },
 };
 static const int HDMI_NMODES = sizeof(HDMI_MODES) / sizeof(HDMI_MODES[0]);
 #ifndef PICO_HDMI_MODE
 #define PICO_HDMI_MODE 5                                /* index into HDMI_MODES: 800x480 @ 60 Hz */
 #endif
+/* The mode to start in: pico_config.cpp's (saved; -1 = the default). */
+extern "C" { volatile int g_hdmi_mode = -1; }
+extern "C" void pico_config_save_hdmi_mode(int m);      /* pico_config.cpp (-1: the default) */
+extern "C" int video_hdmi_mode_default(void);
+static int hdmi_vmode = PICO_HDMI_MODE;                 /* the mode running */
 
 static volatile bool hdmi_wanted = false, hdmi_started = false, hdmi_ok = false;
 static volatile bool hdmi_game = false;                 /* lines from frame_buf, else the canvas */
@@ -466,6 +475,28 @@ static void hdmi_axis(uint16_t *map, int out, int n, int first, int src_len, boo
   }
 }
 
+/* Width step -> output pixels for the mode running: the 480-line width in
+ * proportion to its lines, snapped to a width with a direct path (372, 448,
+ * 560, 672) when one is within 10 % and fits, else even and at most the
+ * line (the column map). 720x576: 448 / 560 / 672 / 672; 640x480: 372 /
+ * 448 / 560 / 560; 720x400: 310 / 372 / 448 / 560. */
+static int hdmi_width(int step) {
+  static const int FAST[4] = { 372, 448, 560, 672 };
+  const int lines = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
+  const int max = 2 * out_words < HDMI_MAX_PX ? 2 * out_words : HDMI_MAX_PX;
+  int px = HDMI_WIDTHS[(step >> 1) & 3] * lines / 480;
+  int best = -1;
+  if (px >= max) {                                      /* doesn't fit: the widest direct one that does */
+    for (int i = 0; i < 4; i++) if (FAST[i] <= max) best = FAST[i];
+    if (best > 0) return best;
+    px = max;
+  }
+  for (int i = 0; i < 4; i++)
+    if (FAST[i] <= max && 10 * abs(FAST[i] - px) <= px && (best < 0 || abs(FAST[i] - px) < abs(best - px)))
+      best = FAST[i];
+  return best > 0 ? best : (px & ~1);
+}
+
 /* The game picture's maps for the mode just started: full height, square
  * pixels (224 x 288 scaled the same both ways), centred across.
  * (Since: for the Scale / Width settings; core 0, in the vertical blank -
@@ -475,9 +506,7 @@ static void hdmi_geometry(void) {
   const int lines = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
   const bool crop = step & 1;
   const int rows = crop ? 240 : GAME_H, first = crop ? (GAME_H - 240) / 2 : 0;
-  int px = (HDMI_WIDTHS[(step >> 1) & 3] * lines / 480) & ~1;
-  if (px > 2 * out_words) px = 2 * out_words;
-  if (px > HDMI_MAX_PX) px = HDMI_MAX_PX;
+  const int px = hdmi_width(step);
   hdmi_axis(col_map, px, GAME_W, 0, GAME_W, mode == SCALE_SMOOTH, COL_BLEND);
   hdmi_axis(row_map, lines, rows, first, GAME_H, mode != SCALE_DROP, ROW_BLEND);
   for (int l = lines; l < HDMI_MAX_LINES; l++) row_map[l] = NO_ROW;
@@ -505,10 +534,12 @@ static void hdmi_pal_332(void) {
  * to core 1 next to the emulator (Pico2Atari8's split). (Was video_core1_poll,
  * called by setup1 on core 1: the line interrupt took 46 %, then 15 %, of the
  * emulator's core.) */
-static void hdmi_start(void) {
+static void hdmi_start(int m) {
   /* the Fruit Jam's HSTX pins (its variant): CK+ 13, D0+ 15, D1+ 17, D2+ 19 */
   static const pimoroni::DVHSTXPinout pins = { PIN_CKP, { PIN_D0P, PIN_D1P, PIN_D2P } };
-  const int m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
+  if (m < 0 || m >= HDMI_NMODES) m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
+  if (hdmi_started) hdmi.reset();                       /* a mode change (Screen row) */
+  hdmi_vmode = m;
   hdmi.set_scanline_callback(hdmi_line);
   hdmi_ok = hdmi.init(HDMI_MODES[m].w, HDMI_MODES[m].h, pimoroni::DVHSTX::MODE_RGB565, false, pins);
   if (hdmi_ok) {
@@ -529,8 +560,18 @@ static void hdmi_begin(void) {
   hdmi_pal_332();
   __dmb();
   hdmi_wanted = true;
-  hdmi_start();
-  const int m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
+  {
+    /* Button 3 (GPIO 5, low when pressed; an input with pull-up by now)
+     * held at power-on: the default mode, for a display that doesn't take
+     * the saved one (as Pico2Atari8; button 1 is BOOT). */
+    if (digitalRead(5) == LOW && g_hdmi_mode >= 0 && g_hdmi_mode != video_hdmi_mode_default()) {
+      Serial.println("[video] button 3 held: the default screen mode");
+      g_hdmi_mode = -1;
+      pico_config_save_hdmi_mode(-1);
+    }
+  }
+  hdmi_start(g_hdmi_mode);
+  const int m = hdmi_vmode;
   char funcs[9];
   for (int i = 0; i < 8; i++) funcs[i] = (char)('0' + (gpio_get_function(12 + i) & 0x1F) % 10);
   funcs[8] = 0;
@@ -572,6 +613,38 @@ void video_hdmi_wait_vblank(void) {
   last = f;
 }
 
+/* galagino.cpp update_screen, once per HDMI frame: how many 60 Hz game frames
+ * to run for it - 1 at 60 Hz; at 50 Hz now and then 2, at 70 Hz now and then
+ * 0 - so the game keeps its speed in every mode (a frame is shown twice, or
+ * one isn't shown). */
+int video_hdmi_emu_frames(void) {
+  static uint32_t acc = 0;
+  const uint32_t hz = HDMI_MODES[hdmi_vmode].hz;
+  acc += 60;
+  const int n = (int)(acc / hz);
+  acc -= (uint32_t)n * hz;
+  return n;
+}
+
+/* ---- the Screen row (pico_menu.cpp, core 0, before a game) --------------- */
+extern "C" int video_hdmi_modes(void) { return HDMI_NMODES; }
+extern "C" int video_hdmi_mode(void) { return hdmi_vmode; }
+extern "C" int video_hdmi_mode_default(void) {
+  return (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
+}
+extern "C" const char *video_hdmi_mode_name(int m) {
+  return m >= 0 && m < HDMI_NMODES ? HDMI_MODES[m].name : "?";
+}
+/* Switch the output (the menus' canvas stays); false if it didn't start. */
+extern "C" bool video_hdmi_set_mode(int m) {
+  hdmi_start(m);
+  Serial.printf("[video] HDMI mode %s: %s (%d x %d)\n", HDMI_MODES[hdmi_vmode].name,
+                hdmi_ok ? "running" : "FAILED", out_words * 2, out_lines);
+  return hdmi_ok;
+}
+/* The Width row's label: the pixels of width step for the mode running. */
+extern "C" int video_hdmi_width(int step) { return hdmi_width(step); }
+
 /* ---- the overlay box and the Scale / Width changes (core 0) -------------- */
 extern "C" volatile int g_show_fps;                     /* pico_config.cpp: the Show FPS row */
 static TFT_eSprite ov_spr(&tft);                        /* 16-bit, OV_W x OV_H (heap, 5.5 KB) */
@@ -598,7 +671,7 @@ static void hdmi_overlay_draw(void) {
   const int step = pic_step < 0 ? 0 : pic_step;
   ov_spr.setTextColor(TFT_CYAN, TFT_BLACK);
   ov_spr.setCursor(2, y); ov_spr.print(SCALE_NAMES[(pic_mode >= 0 && pic_mode < 3) ? pic_mode : 0]); y += 10;
-  ov_spr.setCursor(2, y); ov_spr.printf("%d%s", HDMI_WIDTHS[(step >> 1) & 3], (step & 1) ? " crop" : "");
+  ov_spr.setCursor(2, y); ov_spr.printf("%d%s", hdmi_width(step), (step & 1) ? " crop" : "");
   const uint16_t *src = (const uint16_t *)ov_spr.getPointer();   /* byte-swapped (the sprite's) */
   uint16_t *back = (ov_front == ov_buf[0]) ? ov_buf[1] : ov_buf[0];
   for (int i = 0; i < OV_W * OV_H; i++) back[i] = __builtin_bswap16(src[i]);

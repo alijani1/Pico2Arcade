@@ -808,6 +808,7 @@ void audio_init(void) {
 
 #ifdef PICO_HDMI
 void video_hdmi_wait_vblank(void);   /* video.cpp */
+int video_hdmi_emu_frames(void);     /* video.cpp */
 #endif
 void update_screen(void) {
 #ifdef PICO_HDMI
@@ -917,7 +918,9 @@ XEVIOUS_END
 #ifdef PICO_USB_HOST
   pico_input_poll();     /* the serial monitor, once a frame (the USB host: core 1, emulation_task) */
 #endif
-  xTaskNotifyGive(emulationtask);
+  /* (one 60 Hz game frame per HDMI frame; in the 50 / 70 Hz modes now and
+   * then two / none, so the game keeps its speed: video_hdmi_emu_frames) */
+  for (int n = video_hdmi_emu_frames(); n > 0; n--) xTaskNotifyGive(emulationtask);
   (void)frame_base;
 #elif defined(VIDEO_HALF_RATE)
   // render and transmit screen in two halfs as the display

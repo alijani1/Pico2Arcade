@@ -100,6 +100,11 @@ static Cfg s_cfg = { CFG_MAGIC, PICO_DEFAULT_LANDSCAPE, 0, 50, 0 };
 extern "C" volatile int g_scale_mode;    /* video.cpp */
 extern "C" volatile int g_stretch;       /* video.cpp */
 #endif
+#ifdef PICO_HDMI
+/* The Fruit Jam's HDMI mode (video.cpp g_hdmi_mode): pad[0] = mode + 1 (0 = the
+ * default - also what older settings have there; 0xFF erased = the default). */
+extern "C" volatile int g_hdmi_mode;
+#endif
 extern "C" {
     volatile int g_landscape_mode = PICO_DEFAULT_LANDSCAPE;   /* default: portrait */
     volatile int g_show_fps       = 0;   /* default: off */
@@ -115,6 +120,9 @@ extern "C" void pico_config_load(void) {
     g_scale_mode = s_cfg.scale <= SCALE_DROP ? s_cfg.scale : SCALE_SMOOTH;
     if (s_cfg.stretch > 7) s_cfg.stretch = 0;
     g_stretch = s_cfg.stretch;
+#ifdef PICO_HDMI
+    g_hdmi_mode = (s_cfg.pad[0] >= 1 && s_cfg.pad[0] <= 16) ? s_cfg.pad[0] - 1 : -1;
+#endif
 #endif
     Serial.printf("[cfg] landscape=%d show_fps=%d volume=%d (%s)\n", g_landscape_mode,
                   g_show_fps, s_cfg.volume, f->magic == CFG_MAGIC ? "flash" : "defaults");
@@ -185,6 +193,13 @@ extern "C" void pico_config_save_scale(int mode) {
 extern "C" void pico_config_save_stretch(int idx) {
     g_stretch = (idx >= 0 && idx <= 7) ? idx : 0;
     s_cfg.stretch = (uint8_t)g_stretch;
+    pico_config_save();
+}
+#endif
+#ifdef PICO_HDMI
+extern "C" void pico_config_save_hdmi_mode(int m) {
+    g_hdmi_mode = m;
+    s_cfg.pad[0] = (uint8_t)(m >= 0 ? m + 1 : 0);
     pico_config_save();
 }
 #endif
