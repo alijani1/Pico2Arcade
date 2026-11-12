@@ -50,6 +50,9 @@ static const unsigned long MENU_EXIT_HOLD_MS = 1000;
  * Then the B buttons report BUTTON_FIRE2 instead of their usual job, and a
  * single-button external joystick fires both. */
 extern "C" { volatile int g_two_fire = 0; }
+#ifdef PICO_HDMI
+extern "C" volatile int g_scale_mode, g_stretch;   /* video.cpp: Scale / Width (serial keys z / v) */
+#endif
 
 #if defined(PICO_TINY_SCREEN) || defined(PICO_GALAGINO_LANDSCAPE_AREA)
 #  define INGAME_WIDTH_TAP 1
@@ -234,6 +237,12 @@ static void serial_poll(void) {
         case '\r': case '\n': case '1': serial_press(BUTTON_START); break;
         case 'c': case '5': serial_press(BUTTON_COIN); break;
         case 'x': if (g_menu_done) pico_hiscore_exit_to_list(); break;
+#ifdef PICO_HDMI
+        /* Scale (Smooth / Sharp / Drop) and Width (372 ... 640 crop) in a game:
+         * the picture changes at the next frame and is saved (video.cpp) */
+        case 'z': if (g_menu_done) g_scale_mode = (g_scale_mode + 1) % 3; break;
+        case 'v': if (g_menu_done) g_stretch = (g_stretch + 1) % 8; break;
+#endif
         default: pico_audio_key(c); break;      /* + - A H S B I */
         }
     }

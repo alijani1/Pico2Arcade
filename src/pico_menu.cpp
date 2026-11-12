@@ -155,7 +155,7 @@ extern "C" void pico_config_save_landscape(int on);
 #endif
 extern "C" volatile int g_show_fps;
 extern "C" void pico_config_save_show_fps(int on);
-#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED) || defined(PICO_HDMI)
 extern "C" void pico_config_save_scale(int mode);
 #endif
 extern "C" int  pico_config_volume(void);
@@ -215,7 +215,8 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE
 #endif
 /* Scale row (Smooth / Sharp / Drop): area-scaling builds (landscape only)
  * and the 160x80 panel (both orientations; saved — pico_config.cpp). */
-#if defined(MENU_DISPLAY_TOGGLE) && ((defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))                                      || defined(PICO_TINY_SCREEN))
+#if defined(MENU_DISPLAY_TOGGLE) && ((defined(PICO_GALAGINO_LANDSCAPE_AREA) && defined(PICO_GALAGINO_LANDSCAPE_HSCALE))                                      || defined(PICO_TINY_SCREEN)) \
+    || defined(PICO_HDMI)   /* (Fruit Jam HDMI: one orientation, but the Scale / Width rows: video.cpp) */
 #  define MENU_SCALE_ROW 1
 extern "C" volatile int g_scale_mode;     /* video.cpp */
 #endif
@@ -226,7 +227,9 @@ extern "C" volatile int g_scale_mode;     /* video.cpp */
 extern "C" volatile int g_stretch;        /* video.cpp */
 extern "C" void pico_config_save_stretch(int idx);
 #endif
-#ifdef MENU_STRETCH_ROW
+#if defined(MENU_STRETCH_ROW) && !defined(MENU_DISPLAY_TOGGLE)
+static const int SETTING_ROWS_BASE = 3;   /* Scale, Width, Show FPS (HDMI: no Display row) */
+#elif defined(MENU_STRETCH_ROW)
 static const int SETTING_ROWS_BASE = 4;   /* Display, Scale, Width, Show FPS */
 #elif defined(MENU_SCALE_ROW)
 static const int SETTING_ROWS_BASE = 3;   /* Display, Scale, Show FPS */
@@ -400,7 +403,9 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #ifdef MENU_STRETCH_ROW
       case ROW_STRETCH:
       {
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_HDMI)
+        static const int W[4] = { 372, 448, 536, 640 }; /* video.cpp HDMI_WIDTHS (at 480 lines), in pairs */
+#elif defined(PICO_TINY_SCREEN)
         static const int W[4] = { 62, 75, 112, 160 };   /* video.cpp TINY_WIDTHS, in pairs */
 #else
         static const int W[4] = { 186, 224, 268, 320 }; /* video.cpp WIDE_WIDTHS, in pairs */
@@ -738,7 +743,7 @@ extern "C" void pico_menu_pick_and_load(void) {
 #ifdef MENU_SCALE_ROW
           case ROW_SCALE:       /* Smooth -> Sharp -> Drop -> Smooth; landscape only */
             g_scale_mode = (g_scale_mode + 1) % 3;
-#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED)
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HOSTED) || defined(PICO_HDMI)
             pico_config_save_scale(g_scale_mode);
 #endif
             break;             /* loop redraws the menu with the new value */

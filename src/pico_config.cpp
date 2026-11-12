@@ -96,7 +96,7 @@ struct Cfg { uint32_t magic; uint8_t landscape, show_fps, volume, scale, stretch
 #endif
 static Cfg s_cfg = { CFG_MAGIC, PICO_DEFAULT_LANDSCAPE, 0, 50, 0 };
 
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)   /* (HDMI: Scale / Width too) */
 extern "C" volatile int g_scale_mode;    /* video.cpp */
 extern "C" volatile int g_stretch;       /* video.cpp */
 #endif
@@ -111,7 +111,7 @@ extern "C" void pico_config_load(void) {
     if (s_cfg.volume > 100) s_cfg.volume = 100;
     g_landscape_mode = s_cfg.landscape ? 1 : 0;
     g_show_fps = s_cfg.show_fps ? 1 : 0;
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
     g_scale_mode = s_cfg.scale <= SCALE_DROP ? s_cfg.scale : SCALE_SMOOTH;
     if (s_cfg.stretch > 7) s_cfg.stretch = 0;
     g_stretch = s_cfg.stretch;
@@ -177,7 +177,7 @@ extern "C" void pico_config_save_show_fps(int on) {
     g_show_fps = on ? 1 : 0;
     pico_config_save();
 }
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
 extern "C" void pico_config_save_scale(int mode) {
     s_cfg.scale = (uint8_t)mode;
     pico_config_save();

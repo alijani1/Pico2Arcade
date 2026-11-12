@@ -191,11 +191,35 @@ static int out_words = 400, out_lines = 480;            /* the mode's line: word
 /* The game picture: pic_words words from word pic_pad of each line. */
 static const int HDMI_MAX_PX = 800, HDMI_MAX_LINES = 600;
 static const uint16_t NO_ROW = 0xFFFF;
+static const uint16_t ROW_BLEND = 0x8000;               /* row_map: the mean of this row and the next */
+static const uint16_t COL_BLEND = 0x100;                /* col_map: the mean of this column and the next */
 static int pic_words = 0, pic_pad = 0;
-static uint8_t  col_map[HDMI_MAX_PX];                   /* output pixel -> source column */
-static uint16_t row_map[HDMI_MAX_LINES];                /* output line -> source row, NO_ROW = black */
-static uint32_t line_cache[HDMI_MAX_PX / 2];            /* the last line made */
-static int cache_row = -1;
+static uint16_t col_map[HDMI_MAX_PX];                   /* output pixel -> source column (| COL_BLEND) */
+static uint16_t row_map[HDMI_MAX_LINES];                /* output line -> source row (| ROW_BLEND), NO_ROW = black */
+
+/* Scale and Width (the game list's rows, as the Quad / Duo 5200 / Duo; kept
+ * in the settings, pico_config.cpp; serial keys z / v in a game):
+ *   Scale  Drop   - each output pixel / line from the source one nearest
+ *                   its centre (at 5:3 some rows are 2 lines, some 1: a
+ *                   scrolling picture's lines change thickness as they go)
+ *          Sharp  - lines that straddle two rows show their mean; columns
+ *                   as Drop (crisp across, steady lines when scrolling)
+ *          Smooth - the same for columns too (default)
+ *   Width  372 (the true shape at 480 lines, 5:3 both ways), 448 (each
+ *          column twice, 1.2x wide), 536, 640 - 2x the Quad's 186 / 224 /
+ *          268 / 320 - each also "crop": the middle 240 of the 288 rows,
+ *          each exactly twice (24 cut off top and bottom: 3 tile rows of
+ *          score / lives each), 20 % taller. Other HDMI heights: in
+ *          proportion (lines / 480).
+ * A "mean" is a 50/50 blend (at 5:3 each straddling line / column is 1/3 -
+ * 2/3, so it is the nearer). Made in the line interrupt: each source row once
+ * per frame, scaled across into one of two row buffers; each line a copy of
+ * one, or the mean of two. */
+extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; volatile int g_stretch = 0; }
+extern "C" void pico_config_save_stretch(int idx);
+extern "C" void pico_config_save_scale(int mode);
+static const int HDMI_WIDTHS[4] = { 372, 448, 536, 640 };
+static int pic_mode = -1, pic_step = -1;                /* what the maps were built for */
 
 #pragma GCC push_options
 /* no-tree-loop-distribute-patterns: the fill / copy loops must stay loops — GCC
@@ -241,16 +265,29 @@ static void __not_in_flash_func(hdmi_line)(uint32_t v_scanline, uint32_t active_
  *     words — (s0 s0) (s1 s1) (s2 s3) (s3 s4) (s4 s5) — made from 3 word
  *     loads, no column map; 576 lines (2x): each source pixel twice;
  *   - rows shown twice: copied 8 words at a time.
- * Other heights: the column map, as before. */
-static int pic_fast = 0;                                /* 1: 5:3 (480 lines), 2: 2x (576), 0: col_map */
+ * Other heights: the column map, as before.
+ * (Since: the Scale / Width rows above. The row cache is two rows (a line
+ * may be the mean of two); the direct paths are by width: 372 at 480 lines
+ * (5:3: Drop (s0 s0) (s1 s2) (s2 s3) (s3 s4) (s5 s5) by the pixel centres,
+ * Smooth (s0 m01) (s1 m12) (s2 s3) (m34 s4) (m45 s5)) and 448 (each pixel
+ * twice); other widths the column map. And the interrupt is on core 0 now.) */
+static int pic_fast = 0;                                /* 1: 372 Drop / Sharp, 3: 372 Smooth, 2: 448, 0: col_map */
 static uint32_t *border_buf[4];                         /* line buffers whose sides are black (game) */
 static int border_n = 0;
 static bool border_game = false;                        /* border_buf is for the game picture */
+static uint32_t row_buf[2][HDMI_MAX_PX / 2];            /* two source rows, scaled across */
+static int row_buf_r[2] = { -1, -1 };
 
 static inline __attribute__((always_inline)) uint32_t hdmi_rev16(uint32_t v) {
   uint32_t r;
   __asm__("rev16 %0, %1" : "=r"(r) : "r"(v));
   return r;
+}
+
+/* The mean of two RGB565 pixel pairs (each field's lowest bit dropped first,
+ * so nothing carries into the next field or pixel). */
+static inline __attribute__((always_inline)) uint32_t hdmi_mean(uint32_t a, uint32_t b) {
+  return ((a & 0xF7DEF7DEu) >> 1) + ((b & 0xF7DEF7DEu) >> 1);
 }
 
 static inline __attribute__((always_inline)) void hdmi_copy(uint32_t *d, const uint32_t *s, int n) {
@@ -261,19 +298,30 @@ static inline __attribute__((always_inline)) void hdmi_copy(uint32_t *d, const u
   for (; n > 0; n--) *d++ = *s++;
 }
 
-/* Source row r into line_cache (pic_words words). */
-static inline __attribute__((always_inline)) void hdmi_make_row(int r) {
+/* Source row r, scaled across, into o (pic_words words). */
+static inline __attribute__((always_inline)) void hdmi_make_row(int r, uint32_t *o) {
   const uint16_t *s = frame_buf + r * GAME_W;
-  uint32_t *o = line_cache;
-  if (pic_fast == 1) {
+  if (pic_fast == 1 || pic_fast == 3) {
     const uint32_t *w = (const uint32_t *)s;            /* 2 pixels a word (rows start word-aligned) */
+    const bool smooth = pic_fast == 3;
     for (int g = 0; g < GAME_W / 6; g++, w += 3, o += 5) {
       const uint32_t a = hdmi_rev16(w[0]), b = hdmi_rev16(w[1]), c = hdmi_rev16(w[2]);   /* s0|s1, s2|s3, s4|s5 */
-      o[0] = (a & 0xFFFFu) | (a << 16);
-      o[1] = (a >> 16) | (a & 0xFFFF0000u);
-      o[2] = b;
-      o[3] = (b >> 16) | (c << 16);
-      o[4] = c;
+      const uint32_t s0 = a & 0xFFFFu, s1 = a >> 16, s2 = b & 0xFFFFu, s3 = b >> 16, s4 = c & 0xFFFFu, s5 = c >> 16;
+      if (smooth) {
+        const uint32_t m01 = hdmi_mean(s0, s1), m12 = hdmi_mean(s1, s2);
+        const uint32_t m34 = hdmi_mean(s3, s4), m45 = hdmi_mean(s4, s5);
+        o[0] = s0 | (m01 << 16);
+        o[1] = s1 | (m12 << 16);
+        o[2] = b;
+        o[3] = m34 | (s4 << 16);
+        o[4] = m45 | (s5 << 16);
+      } else {
+        o[0] = s0 | (s0 << 16);
+        o[1] = s1 | (s2 << 16);
+        o[2] = b;
+        o[3] = s3 | (s4 << 16);
+        o[4] = s5 | (s5 << 16);
+      }
     }
     *o = hdmi_rev16(w[0]);                              /* the last 2 of 224: s222 s223 */
   } else if (pic_fast == 2) {
@@ -282,9 +330,29 @@ static inline __attribute__((always_inline)) void hdmi_make_row(int r) {
       o[x] = p | (p << 16);
     }
   } else {
-    const uint8_t *cm = col_map;
-    for (int w = 0; w < pic_words; w++, cm += 2) o[w] = hdmi_px2(s[cm[0]], s[cm[1]]);
+    const uint16_t *cm = col_map;
+    for (int w = 0; w < pic_words; w++, cm += 2) {
+      uint32_t px[2];
+      for (int k = 0; k < 2; k++) {
+        const uint32_t m = cm[k], c = m & 0xFF;
+        uint32_t v = hdmi_rev16(s[c]) & 0xFFFFu;
+        if (m & COL_BLEND) v = hdmi_mean(v, hdmi_rev16(s[c + 1]) & 0xFFFFu);
+        px[k] = v;
+      }
+      o[w] = px[0] | (px[1] << 16);
+    }
   }
+}
+
+/* Row r scaled across, from the two-row cache (keep: a row not to evict). */
+static inline __attribute__((always_inline)) const uint32_t *hdmi_row(int r, int keep) {
+  if (row_buf_r[0] == r) return row_buf[0];
+  if (row_buf_r[1] == r) return row_buf[1];
+  const int k = (row_buf_r[0] == keep) ? 1 : (row_buf_r[1] == keep) ? 0
+              : (row_buf_r[0] < row_buf_r[1] ? 0 : 1);
+  hdmi_make_row(r, row_buf[k]);
+  row_buf_r[k] = r;
+  return row_buf[k];
 }
 
 static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active_line, uint32_t *dst) {
@@ -304,9 +372,9 @@ static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active
     return;
   }
   if (!border_game) { border_game = true; border_n = 0; }   /* the canvas used other sides */
-  if (active_line == 0) cache_row = -1;                 /* a new frame: frame_buf may have changed */
-  const int r = active_line < (uint32_t)out_lines ? row_map[active_line] : NO_ROW;
-  if (r == NO_ROW) {
+  if (active_line == 0) row_buf_r[0] = row_buf_r[1] = -1;   /* a new frame: frame_buf may have changed */
+  const int rm = active_line < (uint32_t)out_lines ? row_map[active_line] : NO_ROW;
+  if (rm == NO_ROW) {
     hdmi_fill(dst, words, 0);                           /* (sides black too: border_buf stays right) */
     return;
   }
@@ -318,28 +386,62 @@ static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active
     hdmi_fill(dst + pad + n, words - pad - n, 0);
     if (border_n < 4) border_buf[border_n++] = dst;
   }
-  if (r != cache_row) {
-    hdmi_make_row(r);
-    cache_row = r;
+  const int r = rm & 0x7FFF;
+  const uint32_t *a = hdmi_row(r, -1);
+  uint32_t *d = dst + pad;
+  if (rm & ROW_BLEND) {
+    const uint32_t *b = hdmi_row(r + 1, r);
+    for (int w = 0; w < n; w++) d[w] = hdmi_mean(a[w], b[w]);
+  } else {
+    hdmi_copy(d, a, n);
   }
-  hdmi_copy(dst + pad, line_cache, n);
 }
 
 #pragma GCC pop_options
 
+/* One axis's map: out output pixels / lines from n source ones starting at
+ * first, each from the source one under its centre (Drop), or the mean of
+ * two where it straddles them with at least a quarter in each (blend). */
+static void hdmi_axis(uint16_t *map, int out, int n, int first, int src_len, bool blend, uint16_t flag) {
+  for (int i = 0; i < out; i++) {
+    const int start = i * n, end = start + n;           /* in 1/out source pixels */
+    const int a = start / out, bound = (a + 1) * out;
+    int v = (2 * start + n) / (2 * out);                /* under the centre */
+    bool mix = false;
+    if (blend && end > bound) {                         /* straddles a and a + 1 */
+      const int in_a = bound - start, in_b = end - bound;
+      if (4 * in_a >= n && 4 * in_b >= n) { v = a; mix = true; }
+    }
+    v += first;
+    if (v >= src_len) v = src_len - 1;
+    if (mix && v + 1 >= src_len) mix = false;
+    map[i] = (uint16_t)(v | (mix ? flag : 0));
+  }
+}
+
 /* The game picture's maps for the mode just started: full height, square
- * pixels (224 x 288 scaled the same both ways), centred across. */
+ * pixels (224 x 288 scaled the same both ways), centred across.
+ * (Since: for the Scale / Width settings; core 0, in the vertical blank -
+ * Video::write's first strip of a frame - or before the game picture.) */
 static void hdmi_geometry(void) {
+  const int mode = g_scale_mode, step = (g_stretch >= 0 && g_stretch < 8) ? g_stretch : 0;
   const int lines = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
-  int px = (GAME_W * lines / GAME_H) & ~1;
+  const bool crop = step & 1;
+  const int rows = crop ? 240 : GAME_H, first = crop ? (GAME_H - 240) / 2 : 0;
+  int px = (HDMI_WIDTHS[(step >> 1) & 3] * lines / 480) & ~1;
   if (px > 2 * out_words) px = 2 * out_words;
-  for (int p = 0; p < px; p++) col_map[p] = (uint8_t)(p * GAME_W / px);
-  for (int l = 0; l < HDMI_MAX_LINES; l++)
-    row_map[l] = l < lines ? (uint16_t)(l * GAME_H / lines) : NO_ROW;
+  if (px > HDMI_MAX_PX) px = HDMI_MAX_PX;
+  hdmi_axis(col_map, px, GAME_W, 0, GAME_W, mode == SCALE_SMOOTH, COL_BLEND);
+  hdmi_axis(row_map, lines, rows, first, GAME_H, mode != SCALE_DROP, ROW_BLEND);
+  for (int l = lines; l < HDMI_MAX_LINES; l++) row_map[l] = NO_ROW;
   pic_words = px / 2;
   pic_pad = (out_words - pic_words) / 2;
-  /* the direct paths (hdmi_make_row): 480 lines = 5:3, 576 lines = 2x */
-  pic_fast = (lines == 480 && px == 372) ? 1 : (lines == 576 && px == 448) ? 2 : 0;
+  /* the direct paths (hdmi_make_row): 372 at 480 lines = 5:3, 448 = 2x across */
+  pic_fast = (px == 372 && lines == 480) ? (mode == SCALE_SMOOTH ? 3 : 1) : (px == 2 * GAME_W) ? 2 : 0;
+  pic_mode = mode;
+  pic_step = step;
+  border_n = 0;                                         /* the sides moved */
+  row_buf_r[0] = row_buf_r[1] = -1;
 }
 
 static void hdmi_pal_332(void) {
@@ -864,6 +966,13 @@ void Video::write(uint16_t *colors, uint32_t len) {
   if (cur_row + rows > GAME_H) rows = GAME_H - cur_row;
 #ifdef PICO_HDMI
   if (!hdmi_game) hdmi_game_start();                  /* the game's first strip: frame_buf is its now */
+  if (cur_row == 0 && (g_scale_mode != pic_mode || g_stretch != pic_step)) {
+    /* Scale / Width changed (the serial keys z / v in a game): new maps now,
+     * in the vertical blank (update_screen waited for it), and saved */
+    hdmi_geometry();
+    pico_config_save_scale(g_scale_mode);       /* no-op if unchanged */
+    pico_config_save_stretch(g_stretch);
+  }
 #endif
   memcpy(&frame_buf[cur_row * GAME_W], colors, (size_t)rows * GAME_W * 2);
 
