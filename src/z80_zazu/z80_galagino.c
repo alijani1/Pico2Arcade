@@ -2,6 +2,8 @@
  * See z80_galagino.h for the interrupt model. StepZ80/digdug_StepZ80 live
  * at the end of zazu_z80.c so they can call the opcode executor directly. */
 #include "z80_galagino.h"
+#include "pico.h"         /* __not_in_flash_func */
+#include "pico_board.h"   /* PICO_HOT_RAM (Fruit Jam: in RAM) */
 
 /* Same power-on state the previous core used (PC=0, SP=F000, all
  * registers/flags 0, IM0, interrupts off), so games boot identically. */
@@ -22,7 +24,7 @@ void ResetZ80(Z80 *R)
   R->halted = 0;
 }
 
-void IntZ80(Z80 *R, word Vector)
+void PICO_HOT_RAM(IntZ80)(Z80 *R, word Vector)
 {
   if (Vector == INT_NMI) { z80_take_nmi(R); return; }
   R->halted = 0;                         /* released even if dropped */

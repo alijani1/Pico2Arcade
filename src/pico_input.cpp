@@ -386,7 +386,7 @@ extern "C" void pico_input_init(void) {
  * stays low when nothing is happening, but every button transition
  * (press or release) forces an immediate fresh read — no short-tap
  * dropouts inside a poll window, no software debounce. */
-extern "C" unsigned char buttons_get(void) {
+extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
     static unsigned char cached_state = 0;
     static unsigned long last_ms = 0;
     unsigned long now = millis();

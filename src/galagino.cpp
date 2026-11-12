@@ -410,7 +410,7 @@ static unsigned short snd_buffer[128]; // buffer space for two channels
 static unsigned short snd_buffer[64];  // buffer space for a single channel
 #endif
 
-void snd_render_buffer(void) {
+void PICO_HOT_RAM(snd_render_buffer)(void) {
 #ifdef AY_EMULATION
   // AY-3-8910s of this machine: count, clock step per 24 kHz sample
   // (AY clock / 8 / 24000) and volume (count * 3 * 15 * AY_VOL <= ~500)
@@ -625,7 +625,7 @@ DKONG_END
 }
 
 #ifdef USE_NAMCO_WAVETABLE
-void audio_namco_waveregs_parse(void) {
+void PICO_HOT_RAM(audio_namco_waveregs_parse)(void) {
 #ifndef SINGLE_MACHINE
   if(
 #ifdef ENABLE_PACMAN
@@ -723,7 +723,7 @@ void dkong_trigger_sound(char snd) {
 }
 #endif
 
-void snd_transmit() {
+void PICO_HOT_RAM(snd_transmit)() {
   // (try to) transmit as much audio data as possible. Since we
   // write data in exact the size of the DMA buffers we can be sure
   // that either all or nothing is actually being written

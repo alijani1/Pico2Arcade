@@ -99,6 +99,7 @@ static uint16_t frame_buf[GAME_W * GAME_H];
  * at power-on back to the default) as in Pico2Atari8's a8_settings.cpp. */
 #include "drivers/dvhstx/dvhstx.hpp"
 #include "hardware/structs/hstx_ctrl.h"
+#include "hardware/structs/xip_ctrl.h"
 #include "hardware/gpio.h"
 
 static pimoroni::DVHSTX hdmi;
@@ -863,6 +864,18 @@ void Video::fps_stats_tick(void) {
 
   Serial.printf("[video] screen %.1f fps  emu %.1f fps  cpu %.2f ms/frame (%.0f%%)\n",
                 scr_fps, emu_fps, emu_ms, emu_ms / FRAME_BUDGET_MS * 100.0f);
+#ifdef PICO_HDMI
+  {
+    /* XIP cache (shared by both cores) over the last second: accesses and
+     * hits (the counters clear on write). Diagnosis of the emulator's speed. */
+    const uint32_t acc = xip_ctrl_hw->ctr_acc, hit = xip_ctrl_hw->ctr_hit;
+    xip_ctrl_hw->ctr_acc = 0;
+    xip_ctrl_hw->ctr_hit = 0;
+    Serial.printf("[video] XIP %lu k accesses/s, %lu k misses/s (%.1f%% hit), sys %lu MHz\n",
+                  (unsigned long)(acc / 1000), (unsigned long)((acc - hit) / 1000),
+                  acc ? 100.0 * hit / acc : 0.0, (unsigned long)(clock_get_hz(clk_sys) / 1000000));
+  }
+#endif
 #ifdef PICO_HDMI
   (void)shown;                 /* TODO: an HDMI overlay; the serial line above only */
   if (0) {
