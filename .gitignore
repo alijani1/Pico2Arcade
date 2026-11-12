@@ -8,3 +8,7 @@
 # that we can't legally redistribute. Clone from harbaum/galagino if you
 # need the reference alongside this port.
 upstream/
+
+# Personal / marketing material (blog post, video description) - kept locally,
+# not on GitHub.
+docs/marketing/
