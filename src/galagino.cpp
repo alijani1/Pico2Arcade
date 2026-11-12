@@ -28,6 +28,9 @@ extern "C" bool pico_sd_init(void);
 #include "pico_drive.h"
 #include "pico_hiscore.h"
 extern "C" void pico_input_poll(void);
+#ifdef PICO_USB_HOST
+extern "C" void pico_input_core1_usb_poll(void);   /* pico_input.cpp: the USB host, core 1 */
+#endif
 extern "C" void pico_config_load(void);
 #endif
 
@@ -898,6 +901,8 @@ XEVIOUS_END
   // than one scan-out, so starting at the blank it stays ahead of the beam
   // and each frame shown is one emulated frame. The emulator is paced by
   // the HDMI frame rate (one vblank pulse per frame).
+  extern volatile uint32_t g_hdmi_render_us, g_hdmi_render_n;   /* video.cpp stats line */
+  const uint32_t render_t0 = micros();
   for(int c=0;c<36;c+=6) {
     render_line(c+0); tft.write(frame_buffer, 224*8);
     render_line(c+1); tft.write(frame_buffer, 224*8);
@@ -907,8 +912,10 @@ XEVIOUS_END
     render_line(c+5); tft.write(frame_buffer, 224*8);
     snd_transmit();
   }
+  g_hdmi_render_us += micros() - render_t0;
+  g_hdmi_render_n++;
 #ifdef PICO_USB_HOST
-  pico_input_poll();     /* the USB host's task and the pads, once a frame (as Pico2Atari8) */
+  pico_input_poll();     /* the serial monitor, once a frame (the USB host: core 1, emulation_task) */
 #endif
   xTaskNotifyGive(emulationtask);
   (void)frame_base;
@@ -989,6 +996,9 @@ void emulation_task(void *p) {
   while(1) {
     emulate_frame();
     pico_hiscore_frame();   /* restore / watch the high-score table (pico_hiscore.cpp) */
+#ifdef PICO_USB_HOST
+    pico_input_core1_usb_poll();   /* the USB host lives on this core (pico_core1.cpp): once a frame */
+#endif
   }
 }
 

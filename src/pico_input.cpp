@@ -250,18 +250,28 @@ static unsigned char serial_state(void) {
 static const uint8_t KEY_ENTER = 0x28, KEY_ESC = 0x29, KEY_SPACE = 0x2C, KEY_1 = 0x1E, KEY_5 = 0x22,
                      KEY_C = 0x06, KEY_RIGHT = 0x4F, KEY_LEFT = 0x50, KEY_DOWN = 0x51, KEY_UP = 0x52;
 
-/* Core 0, once, from pico_input_init — where Pico2Atari8 starts it
- * (a8_input_init, before its display and sound). */
-static void usb_start(void) {
-    static const usb_pads_config_t cfg = USB_PADS_FRUITJAM;   /* D+ 1, 5 V on 11, PIO 2, DMA 11 */
-    usb_pads_begin(&cfg);
-    s_usbStarted = true;
-}
+/* (2026-11-11, later: the USB host moved to core 1, the emulator's, so the
+ * HDMI line interrupt could move to core 0 — Pico2Atari8's split: the
+ * emulator and USB on one core, HDMI on the other. The line interrupt had
+ * taken 46 %, then 15 %, of the emulator's core, and the Scale modes cost
+ * more. The rule stays: never the PIO-USB frame timer and the HDMI line
+ * interrupt on one core.) Core 0 lets core 1 start the host once its own USB
+ * device side is up (pico_input_init: s_usbGo); core 1 then polls it —
+ * setup1's wait before a game, emulation_task once a frame in one — and
+ * leaves the pads in s_usbState. The serial monitor stays on core 0. */
+static volatile bool s_usbGo = false;
+static volatile bool s_usbPowerCycle = false;   /* core 0 asks (a flash write), core 1 does it */
 
-static void usb_poll(void) {
-    if (!s_usbStarted) return;
+/* Core 1: start the host (once), then its task and the pads. */
+extern "C" void pico_input_core1_usb_poll(void) {
+    if (!s_usbStarted) {
+        if (!s_usbGo) return;
+        static const usb_pads_config_t cfg = USB_PADS_FRUITJAM;   /* D+ 1, 5 V on 11, PIO 2, DMA 11 */
+        usb_pads_begin(&cfg);                   /* (its frame timer: on this core) */
+        s_usbStarted = true;
+    }
+    if (s_usbPowerCycle) { s_usbPowerCycle = false; usb_pads_power_cycle(); }
     usb_pads_task();
-    serial_poll();
     unsigned char st = 0;
     const unsigned char B = g_two_fire ? BUTTON_FIRE2 : BUTTON_FIRE;
     for (int n = 0; n < 2; n++) {
@@ -288,12 +298,18 @@ static void usb_poll(void) {
         if (usb_pads_kbd_has(KEY_5) || usb_pads_kbd_has(KEY_C)) st |= BUTTON_COIN;
         if (usb_pads_kbd_has(KEY_ESC) && g_menu_done) pico_hiscore_exit_to_list();
     }
-    s_usbState = st | serial_state();
+    s_usbState = st;
+}
+
+/* Core 0: the serial monitor (its keys are held in s_serUntil). */
+static void usb_poll(void) {
+    serial_poll();
 }
 
 /* After a flash write (core 0, interrupts were off): the USB devices
- * suspended meanwhile and some never wake — the ports are power-cycled. */
-extern "C" void pico_input_flash_written(void) { usb_pads_power_cycle(); }
+ * suspended meanwhile and some never wake — the ports are power-cycled
+ * (by core 1, the host's core). */
+extern "C" void pico_input_flash_written(void) { s_usbPowerCycle = true; }
 #endif  /* PICO_USB_HOST */
 
 /* Core 0 (loop()): keep the 5200 stick fresh while core 1 runs a game.
@@ -333,7 +349,7 @@ extern "C" void pico_input_init(void) {
 #endif
     rc_stick_init();
 #ifdef PICO_USB_HOST
-    usb_start();
+    s_usbGo = true;      /* core 1 starts the USB host now (pico_input_core1_usb_poll) */
 #endif
 #else
     pinMode(PIN_SELECT, INPUT_PULLUP);
@@ -460,10 +476,10 @@ extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
     if (get_core_num() == 0) rc_stick_read();
     state |= s_stickDirs;
 #ifdef PICO_USB_HOST
-    /* USB pads / keyboard / serial monitor: polled on core 0 only (the game
-     * list here; update_screen's waits during a game), read on either. */
+    /* USB pads / keyboard: polled on core 1 (pico_input_core1_usb_poll); the
+     * serial monitor on core 0 (the game list here; update_screen in a game). */
     if (get_core_num() == 0) usb_poll();
-    state |= s_usbState;
+    state |= s_usbState | serial_state();
 #endif
 #else
     if (digitalRead(PIN_START)  == LOW) state |= BUTTON_START;

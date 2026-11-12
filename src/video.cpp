@@ -76,8 +76,8 @@ static uint16_t frame_buf[GAME_W * GAME_H];
  * built, at the end of this file) in scanline mode: there is no frame buffer
  * for the output. The driver's DMA interrupt asks for each output line just
  * before it goes out, and hdmi_line() makes it, two RGB565 pixels a word. It
- * runs on core 1 (the emulator's: the output is started by setup1, see
- * video_core1_poll) at the highest priority, from RAM, and reads only RAM.
+ * runs on core 0 (the renderer's; at first core 1, the emulator's — see
+ * hdmi_start) at the highest priority, from RAM, and reads only RAM.
  * The layout follows Pico2Atari8's src/a8_display.cpp (HDMI half) and its
  * docs/FRUITJAM_PORTING.md.
  *
@@ -217,6 +217,8 @@ static inline __attribute__((always_inline)) void hdmi_fill(uint32_t *d, int n, 
 
 /* Diagnosis: the line interrupt's time and calls (the stats line, once a second). */
 static volatile uint32_t hdmi_irq_us = 0, hdmi_irq_lines = 0;
+/* core 0's render time per frame (galagino.cpp update_screen), for the same line */
+volatile uint32_t g_hdmi_render_us = 0, g_hdmi_render_n = 0;
 
 /* One output line (the driver's interrupt, core 1). */
 static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active_line, uint32_t *dst);
@@ -348,10 +350,12 @@ static void hdmi_pal_332(void) {
   }
 }
 
-/* Core 1 (setup1, while it waits for the game): starts the output when
- * Video::begin asks. The driver's interrupt runs on the core that starts it. */
-void video_core1_poll(void) {
-  if (!hdmi_wanted || hdmi_started) return;
+/* Starts the output (Video::begin, core 0). The driver's interrupt runs on
+ * the core that starts it: core 0, the renderer's, since the USB host moved
+ * to core 1 next to the emulator (Pico2Atari8's split). (Was video_core1_poll,
+ * called by setup1 on core 1: the line interrupt took 46 %, then 15 %, of the
+ * emulator's core.) */
+static void hdmi_start(void) {
   /* the Fruit Jam's HSTX pins (its variant): CK+ 13, D0+ 15, D1+ 17, D2+ 19 */
   static const pimoroni::DVHSTXPinout pins = { PIN_CKP, { PIN_D0P, PIN_D1P, PIN_D2P } };
   const int m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
@@ -366,7 +370,7 @@ void video_core1_poll(void) {
   hdmi_started = true;
 }
 
-/* Core 0, Video::begin: the canvas, then core 1 starts the output. */
+/* Core 0, Video::begin: the canvas, then the output. */
 static void hdmi_begin(void) {
   canvas.setColorDepth(8);
   canvas8 = canvas.attach((uint8_t *)frame_buf, CANVAS_W, CANVAS_H);   /* (no heap: frame_buf's start) */
@@ -375,7 +379,7 @@ static void hdmi_begin(void) {
   hdmi_pal_332();
   __dmb();
   hdmi_wanted = true;
-  for (uint32_t t0 = millis(); !hdmi_started && millis() - t0 < 2000; ) delay(1);
+  hdmi_start();
   const int m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
   char funcs[9];
   for (int i = 0; i < 8; i++) funcs[i] = (char)('0' + (gpio_get_function(12 + i) & 0x1F) % 10);
@@ -1006,15 +1010,18 @@ void Video::fps_stats_tick(void) {
     Serial.printf("[video] XIP %lu k accesses/s, %lu k misses/s (%.1f%% hit), sys %lu MHz\n",
                   (unsigned long)(acc / 1000), (unsigned long)((acc - hit) / 1000),
                   acc ? 100.0 * hit / acc : 0.0, (unsigned long)(clock_get_hz(clk_sys) / 1000000));
-    /* the line interrupt on core 1: its time, lines and output frames this
-     * second (60 frames = no stream restarts) */
+    /* the line interrupt on core 0 (at first core 1): its time, lines and output
+     * frames this second (60 frames = no stream restarts), and core 0's render
+     * time per frame (galagino.cpp update_screen) */
     static uint32_t last_hdmi_frames = 0;
     const uint32_t us = hdmi_irq_us, lines = hdmi_irq_lines, fr = hdmi.get_frame_count();
     hdmi_irq_us = 0;
     hdmi_irq_lines = 0;
-    Serial.printf("[video] HDMI line IRQ %lu us/s (%.1f%% of core 1), %lu lines, %lu frames\n",
+    Serial.printf("[video] HDMI line IRQ %lu us/s (%.1f%% of core 0), %lu lines, %lu frames, render %lu us/frame\n",
                   (unsigned long)us, us / 10000.0, (unsigned long)lines,
-                  (unsigned long)(fr - last_hdmi_frames));
+                  (unsigned long)(fr - last_hdmi_frames),
+                  (unsigned long)(g_hdmi_render_n ? g_hdmi_render_us / g_hdmi_render_n : 0));
+    g_hdmi_render_us = g_hdmi_render_n = 0;
     last_hdmi_frames = fr;
   }
 #endif
