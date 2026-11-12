@@ -43,6 +43,18 @@ const char *romfs_where(void);
  * (formatted or not) — for USB ROM drive mode. */
 void romfs_location(const uint8_t **xip, uint32_t *phys, uint32_t *size);
 
+#ifdef PICO_SD
+/* The Fruit Jam's SD card (pico_romfs.cpp, as Pico2Atari8): true if the games
+ * come from a card (one was in at start-up). */
+bool romfs_on_card(void);
+/* USB drive mode with a card: its sectors as they are (sector count, 0 if
+ * none), read / write n 512-byte sectors, sync. */
+uint32_t romfs_card_raw_open(void);
+bool romfs_card_raw_read(uint32_t lba, void *buf, uint32_t n);
+bool romfs_card_raw_write(uint32_t lba, const void *buf, uint32_t n);
+void romfs_card_raw_sync(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

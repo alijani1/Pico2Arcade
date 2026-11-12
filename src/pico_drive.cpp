@@ -84,6 +84,20 @@ static int32_t drive_write(uint32_t lba, uint8_t *buffer, uint32_t bufsize) {
 
 static void drive_flush(void) { flush_cache(); }
 
+#ifdef PICO_SD
+/* The Fruit Jam's SD card instead, when there's one: the PC gets the whole
+ * card, its sectors as they are (romfs_card_raw_*), with its own file system
+ * - as Pico2Atari8 and PicoCartReader; never formatted here. */
+static bool s_card = false;
+static int32_t card_read(uint32_t lba, void *buffer, uint32_t bufsize) {
+    return romfs_card_raw_read(lba, buffer, bufsize / SECTOR) ? (int32_t)bufsize : -1;
+}
+static int32_t card_write(uint32_t lba, uint8_t *buffer, uint32_t bufsize) {
+    return romfs_card_raw_write(lba, buffer, bufsize / SECTOR) ? (int32_t)bufsize : -1;
+}
+static void card_flush(void) { romfs_card_raw_sync(); }
+#endif
+
 static void write_sector(uint32_t lba, const uint8_t *data) {
     drive_write(lba, (uint8_t *)data, SECTOR);
 }
@@ -183,7 +197,11 @@ extern "C" bool pico_drive_requested(void) {
     if (pin_low(g_pins.menu)) return true;                  /* held at power-on */
     const uint8_t *xip; uint32_t phys, size;
     romfs_location(&xip, &phys, &size);
+#ifdef PICO_SD
+    if (!(xip[510] == 0x55 && xip[511] == 0xAA) && !romfs_on_card()) return true;   /* first boot (games not on a card) */
+#else
     if (!(xip[510] == 0x55 && xip[511] == 0xAA)) return true;   /* first boot: set it up */
+#endif
 #endif
     return false;
 }
@@ -200,6 +218,16 @@ extern "C" void pico_drive_run(void) {
     uint32_t size;
     romfs_location(&s_xip, &s_phys, &size);
     s_sectors = size / SECTOR;
+#ifdef PICO_SD
+    {
+        const uint32_t cardSectors = romfs_card_raw_open();
+        s_card = cardSectors > 0;
+        if (s_card) {
+            s_sectors = cardSectors;
+            Serial.printf("[drive] USB drive mode: the SD card, %lu MB\n", (unsigned long)(cardSectors / 2048));
+        }
+    }
+#endif
     pico_audio_suspend();        /* no audio here; its DMA can't survive flash writes (pico_audio.cpp) */
     s_cache = (uint8_t *)malloc(FLASH_SECTOR_SIZE);
     Serial.printf("[drive] ROM drive mode: 0x%lx, %lu sectors\n",
@@ -209,7 +237,12 @@ extern "C" void pico_drive_run(void) {
      * already formatted drive keeps its label). */
     const char *driveName = "ARCADE ROMS";
     static const char LABEL[11] = {'A','R','C','A','D','E',' ','R','O','M','S'};
+#ifdef PICO_SD
+    if (s_card) driveName = "SD card's";            /* its own name; never formatted here */
+    if (!s_card && !is_formatted()) {
+#else
     if (!is_formatted()) {
+#endif
 #if defined(PICO_STANDALONE) && !defined(PICO_DUO) && !defined(PICO_FRUITJAM)
         static const char INI83[11] = {'A','R','C','A','D','E',' ',' ','I','N','I'};
         format_drive(LABEL, INI83, board_default_ini());
@@ -221,6 +254,10 @@ extern "C" void pico_drive_run(void) {
     /* USB: add the drive, then re-enumerate so the host sees it. */
     TinyUSBDevice.setProductDescriptor("Arcade ROM Drive");
     s_msc.setID("Galagino", "ROM Drive", "1.0");
+#ifdef PICO_SD
+    if (s_card) s_msc.setReadWriteCallback(card_read, card_write, card_flush);
+    else
+#endif
     s_msc.setReadWriteCallback(drive_read, drive_write, drive_flush);
     s_msc.setCapacity(s_sectors, SECTOR);
     s_msc.setUnitReady(true);
@@ -276,11 +313,18 @@ extern "C" void pico_drive_run(void) {
 
     for (;;) {
         /* Commit a partially written sector once the host goes quiet. */
+#ifdef PICO_SD
+        if (!s_card)
+#endif
         if (s_cacheDirty && millis() - s_lastWriteMs > 500) flush_cache();
         if (pin_low(g_pins.menu) || pin_low(g_pins.start)) break;
         delay(5);
     }
 
+#ifdef PICO_SD
+    if (s_card) romfs_card_raw_sync();
+    else
+#endif
     flush_cache();
     tft.fillScreen(TFT_BLACK);
     tft.setTextSize(2);
