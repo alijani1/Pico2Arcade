@@ -53,6 +53,8 @@ extern "C" { volatile int g_two_fire = 0; }
 #ifdef PICO_HDMI
 extern "C" volatile int g_scale_mode, g_stretch;   /* video.cpp: Scale / Width (serial keys z / v) */
 extern "C" volatile int g_show_fps;                /* pico_config.cpp: Show FPS (serial key f) */
+extern "C" void video_hdmi_mode_key(void);         /* video.cpp: serial keys m / k (screen mode) */
+extern "C" void video_hdmi_keep_key(void);
 #endif
 
 #if defined(PICO_TINY_SCREEN) || defined(PICO_GALAGINO_LANDSCAPE_AREA)
@@ -244,6 +246,11 @@ static void serial_poll(void) {
         case 'z': if (g_menu_done) g_scale_mode = (g_scale_mode + 1) % 3; break;
         case 'v': if (g_menu_done) g_stretch = (g_stretch + 1) % 8; break;
         case 'f': g_show_fps = !g_show_fps; break;   /* the FPS box on / off (not saved: the Show FPS row is) */
+        /* the next HDMI screen mode (video.cpp): in the game list as FIRE on
+         * the Screen row (10 s to keep it with FIRE / START); in a game at
+         * once, k keeps it within 10 s, else it goes back */
+        case 'm': video_hdmi_mode_key(); break;
+        case 'k': video_hdmi_keep_key(); break;
 #endif
         default: pico_audio_key(c); break;      /* + - A H S B I */
         }

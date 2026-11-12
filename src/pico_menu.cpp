@@ -212,6 +212,7 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE
 extern "C" int video_hdmi_mode(void);                /* video.cpp: the Screen row (try_screen_mode below) */
 extern "C" const char *video_hdmi_mode_name(int m);
 extern "C" int video_hdmi_width(int step);
+extern "C" bool video_hdmi_take_mode_key(void);      /* serial key m pressed (once) */
 #endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
@@ -759,9 +760,15 @@ extern "C" void pico_menu_pick_and_load(void) {
         draw_menu(tft, sel);
         int vol_shown = pico_audio_get_volume_pct();
 
+#ifdef PICO_HDMI
+        bool screen_key = false;          /* serial key m: the Screen row's FIRE, from any row */
+#endif
         while (true) {
             unsigned char m = buttons_get();
             if (pico_input_menu_tapped()) exit_arcade();
+#ifdef PICO_HDMI
+            if (video_hdmi_take_mode_key()) { screen_key = true; break; }
+#endif
             if (pico_audio_get_volume_pct() != vol_shown) {
                 vol_shown = pico_audio_get_volume_pct();
                 draw_volume(tft);
@@ -803,6 +810,12 @@ extern "C" void pico_menu_pick_and_load(void) {
             prev_mask = m;
             delay(20);
         }
+#ifdef PICO_HDMI
+        if (screen_key) {
+            try_screen_mode(tft);
+            continue;                     /* redraw (in the mode kept) */
+        }
+#endif
 
         switch (row_kind(sel)) {
 #ifdef MENU_DISPLAY_TOGGLE

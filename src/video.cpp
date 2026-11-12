@@ -289,7 +289,7 @@ static bool border_game = false;                        /* border_buf is for the
  * drawn by core 0 (hdmi_overlay_draw, TFT_eSprite) into the back one of two
  * buffers, then swapped in; shown 2 x 2 at word OV_X, line OV_Y. Over the
  * picture where it reaches it (the widest widths), else in the side band. */
-static const int OV_W = 66, OV_H = 42, OV_X = 4, OV_Y = 8;
+static const int OV_W = 80, OV_H = 42, OV_X = 4, OV_Y = 8;   /* (13 characters: "720x576 50 Hz") */
 static uint16_t ov_buf[2][OV_W * OV_H];                 /* RGB565 (not byte-swapped) */
 static const uint16_t * volatile ov_front = ov_buf[0];
 static volatile bool ov_show = false, ov_clear = false;
@@ -653,6 +653,22 @@ static bool ov_have_fps = false;
 static uint32_t cfg_save_at = 0;                        /* save Scale / Width then (0: nothing to) */
 static const char *const SCALE_NAMES[3] = { "Smooth", "Sharp", "Drop" };
 
+/* Serial keys m / k (pico_input.cpp): m = the next screen mode - in the game
+ * list the Screen row's FIRE (pico_menu.cpp takes it); in a game at once, for
+ * 10 s, kept with k (saved), else back to the one before. */
+static volatile bool mode_key = false, keep_key = false;
+static int trial_old = -1;                              /* in a game: the mode before the trial */
+static uint32_t trial_until = 0;                        /* the trial's end (0: none) */
+static int trial_left_shown = -1;
+extern "C" void video_hdmi_mode_key(void) { mode_key = true; }
+extern "C" void video_hdmi_keep_key(void) { keep_key = true; }
+extern "C" bool video_hdmi_take_mode_key(void) {        /* the game list */
+  const bool k = mode_key;
+  mode_key = false;
+  keep_key = false;
+  return k;
+}
+
 /* Draw the box into the back buffer and swap it in. */
 static void hdmi_overlay_draw(void) {
   if (!ov_spr.getPointer()) {
@@ -669,9 +685,17 @@ static void hdmi_overlay_draw(void) {
     ov_spr.setCursor(2, y); ov_spr.printf("CPU %3.0f%%", ov_load); y += 10;
   }
   const int step = pic_step < 0 ? 0 : pic_step;
+  if (trial_until) {                                    /* a screen mode on trial (key m) */
+    const int left = (int)((int32_t)(trial_until - millis()) + 999) / 1000;
+    ov_spr.setTextColor(TFT_YELLOW, TFT_BLACK);
+    ov_spr.setCursor(2, y); ov_spr.print(HDMI_MODES[hdmi_vmode].name); y += 10;
+    ov_spr.setCursor(2, y); ov_spr.printf("k: keep %2d s", left > 0 ? left : 0);
+    trial_left_shown = left;
+  } else {
   ov_spr.setTextColor(TFT_CYAN, TFT_BLACK);
   ov_spr.setCursor(2, y); ov_spr.print(SCALE_NAMES[(pic_mode >= 0 && pic_mode < 3) ? pic_mode : 0]); y += 10;
   ov_spr.setCursor(2, y); ov_spr.printf("%d%s", hdmi_width(step), (step & 1) ? " crop" : "");
+  }
   const uint16_t *src = (const uint16_t *)ov_spr.getPointer();   /* byte-swapped (the sprite's) */
   uint16_t *back = (ov_front == ov_buf[0]) ? ov_buf[1] : ov_buf[0];
   for (int i = 0; i < OV_W * OV_H; i++) back[i] = __builtin_bswap16(src[i]);
@@ -704,6 +728,37 @@ static void hdmi_frame_start(void) {
     cfg_save_at = 0;
     pico_config_save_scale(g_scale_mode);       /* no-op if unchanged */
     pico_config_save_stretch(g_stretch);
+  }
+  /* screen mode keys (m / k): the next mode now, on trial for 10 s */
+  if (mode_key) {
+    mode_key = false;
+    if (!trial_until) trial_old = hdmi_vmode;
+    video_hdmi_set_mode((hdmi_vmode + 1) % HDMI_NMODES);
+    trial_until = now + 10000;
+    if (!trial_until) trial_until = 1;
+    ov_until = trial_until;
+    keep_key = false;
+    if (ov_show) hdmi_overlay_draw();
+  }
+  if (trial_until) {
+    const int left = (int)((int32_t)(trial_until - now) + 999) / 1000;
+    if (keep_key) {
+      keep_key = false;
+      trial_until = 0;
+      pico_config_save_hdmi_mode(hdmi_vmode);
+      Serial.printf("[video] screen mode %s kept\n", HDMI_MODES[hdmi_vmode].name);
+      ov_until = now + 3000;
+      if (ov_show) hdmi_overlay_draw();
+    } else if (left <= 0) {
+      trial_until = 0;
+      video_hdmi_set_mode(trial_old);
+      ov_until = now + 3000;
+      if (ov_show) hdmi_overlay_draw();
+    } else if (left != trial_left_shown && ov_show) {
+      hdmi_overlay_draw();                      /* the countdown */
+    }
+  } else {
+    keep_key = false;
   }
   const bool want = g_show_fps || (ov_until && (int32_t)(ov_until - now) > 0);
   if (!want) ov_until = 0;
