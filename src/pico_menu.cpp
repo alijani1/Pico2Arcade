@@ -218,6 +218,17 @@ extern "C" void pico_config_save_sound_output(int o);   /* pico_config.cpp: the 
 extern "C" void pico_config_flush(void);              /* pico_config.cpp: write the settings now */
 #include "pico_audio.h"                              /* the Sound row: pico_audio_*_sound_output */
 #endif
+/* The list's fonts: HDMI (Fruit Jam) uses TFT_eSPI's Font 2 (rows) and Font 4
+ * (title, Loading, errors) as Pico2Atari8's menus do - the 5x7 GLCD font at
+ * size 2, shown doubled on HDMI, was 4x4-pixel blocks. MENU_FONT1: back to the
+ * GLCD font for the small lines after. Other boards: unchanged. */
+#ifdef PICO_HDMI
+#  define MENU_BIG(t)   ((t).setTextFont(4), (t).setTextSize(1))
+#  define MENU_FONT1(t) ((t).setTextFont(1))
+#else
+#  define MENU_BIG(t)   ((void)0)
+#  define MENU_FONT1(t) ((void)0)
+#endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
  * choice is kept by the Quad firmware via the handoff flags — pico_config.cpp.) */
 #if defined(PICO_GALAGINO_LANDSCAPE)
@@ -349,7 +360,11 @@ static void menu_layout(TFT_eSPI &tft) {
 #ifdef PICO_TINY_SCREEN
     int top = note ? 32 : 14;
 #else
+#ifdef PICO_HDMI
+    int top = note ? 60 : 34;                  /* (HDMI: the title in Font 4, 26 px) */
+#else
     int top = note ? 60 : (s_wide ? 28 : 40);
+#endif
 #endif
     int step = (H - HINT_H - top) / menu_rows();
 #ifndef PICO_TINY_SCREEN
@@ -403,6 +418,10 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     const int ox = off ? 0 : x, oy = off ? 0 : y;      /* row origin on gfx */
     gfx.fillRect(ox, oy, w, h, bg);
     gfx.setTextSize(ROW_TS);
+#ifdef PICO_HDMI
+    gfx.setTextFont(2);                        /* HDMI: Font 2, as Pico2Atari8's menus */
+    gfx.setTextSize(1);
+#endif
     gfx.setTextColor(fg, bg);
     char label[40];
     switch (row_kind(i)) {
@@ -473,6 +492,7 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     if (fit >= 0 && fit < (int)sizeof(label) && (int)strlen(label) > fit) label[fit] = 0;
     gfx.setCursor(ox + ROW_TEXT_X, oy + 1);
     gfx.print(label);
+    MENU_FONT1(gfx);
     if (off) {
         spr.pushSprite(x, y);
         spr.deleteSprite();
@@ -523,10 +543,16 @@ static void draw_menu(TFT_eSPI &tft, int sel) {
     tft.setCursor(2, 3);
 #else
     tft.setTextSize(2);
+    MENU_BIG(tft);
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
+#ifdef PICO_HDMI
+    tft.setCursor(10, 5);
+#else
     tft.setCursor(10, 8);
 #endif
+#endif
     tft.print("Arcade Games");
+    MENU_FONT1(tft);
     tft.setTextSize(1);
     tft.setCursor(NOTE_X, NOTE_Y);
     if (nAvail == 0) {
@@ -646,9 +672,11 @@ static void show_load_error(TFT_eSPI &tft, int g) {
     tft.print("FIRE/START: back");
 #else
     tft.setTextSize(2);
+    MENU_BIG(tft);
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(10, 140);
     tft.print("LOAD FAILED");
+    MENU_FONT1(tft);
     tft.setTextSize(1);
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.setCursor(10, 166);
@@ -680,9 +708,11 @@ static void show_bad_set(TFT_eSPI &tft, int g) {
     tft.print("FIRE/START: back");
 #else
     tft.setTextSize(2);
+    MENU_BIG(tft);
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(10, 40);
     tft.print("WRONG ROM SET");
+    MENU_FONT1(tft);
     tft.setTextSize(1);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setCursor(10, 70);
@@ -917,10 +947,12 @@ extern "C" void pico_menu_pick_and_load(void) {
             tft.setCursor(2, 20);
 #else
             tft.setTextSize(2);
+            MENU_BIG(tft);
             tft.setTextColor(TFT_YELLOW, TFT_BLACK);
             tft.setCursor(10, 100);
 #endif
             tft.printf("Loading %s...", games[cand].label);
+            MENU_FONT1(tft);
 #ifdef PICO_HDMI
 #ifdef A8_MENU_MUSIC
             pico_audio_menu_sound(0, 0);  /* the list's sound off (muted: the game unmutes it) */
