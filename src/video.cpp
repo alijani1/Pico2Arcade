@@ -57,12 +57,14 @@ static int cur_row = 0;
 /* Single buffer (double-buffer variant kept as commented-out reference).
  * At 200 MHz sys / 100 MHz SPI, blocking pushImage may be fast enough to
  * still hit real speed with half the RAM footprint. */
+/* (HDMI: the menu canvas's 77 KB are the start of this buffer too — HdmiCanvas
+ * below. As a canvas of its own on the heap, next to this idle buffer,
+ * Xevious (~200 KB of heap at its peak while loading) failed to load on the
+ * Fruit Jam; made on the heap at game start instead, the freed zip and canvas
+ * left no 129 KB in one piece after the load.) */
 #ifdef PICO_HDMI
-/* HDMI: on the heap, made when the game's first frame comes (hdmi_game_start),
- * after the 77 KB menu canvas is freed. As a static it sat idle through the
- * menu and the ROM load next to the canvas, and Xevious (~200 KB of heap at
- * its peak while loading) failed to load on the Fruit Jam. */
-static uint16_t *frame_buf = nullptr;
+/* (word-aligned: the line interrupt's 5:3 path reads its rows a word at a time) */
+static uint16_t __attribute__((aligned(4))) frame_buf[GAME_W * GAME_H];
 #else
 static uint16_t frame_buf[GAME_W * GAME_H];
 #endif
@@ -89,8 +91,9 @@ static uint16_t frame_buf[GAME_W * GAME_H];
  *
  * Menus (game list, load errors, ROM drive mode): the existing TFT_eSPI
  * drawing code draws into an 8-bit (RGB332) sprite, the 320x240 canvas,
- * shown doubled (640x480) through a palette of doubled RGB565 words. It is
- * freed when the game starts (frame_buf takes over).
+ * shown doubled (640x480) through a palette of doubled RGB565 words. Its
+ * pixels are the first 77 KB of frame_buf (HdmiCanvas::attach), which the
+ * game takes over when it starts.
  *
  * Clock: the driver's start-up moves clk_sys to PLL_USB / 2 = 240 MHz and
  * runs HSTX from PLL_SYS at the mode's exact clock; platformio.ini leaves
@@ -121,6 +124,35 @@ public:
   void set_screen_size(int32_t w, int32_t h) {
     _init_width = _width = w;
     _init_height = _height = h;
+  }
+  /* An 8-bit sprite on memory we own (the start of frame_buf), set up as
+   * TFT_eSprite::createSprite does — it has no way to take a buffer, and its
+   * fields are protected. Never deleteSprite() it (that would free the
+   * buffer): detach() instead. */
+  uint8_t *attach(uint8_t *buf, int16_t w, int16_t h) {
+    setColorDepth(8);
+    _iwidth = _dwidth = _bitwidth = w;
+    _iheight = _dheight = h;
+    cursor_x = cursor_y = 0;
+    _sx = _sy = 0;
+    _sw = w;
+    _sh = h;
+    _scolor = TFT_BLACK;
+    _img8 = _img8_1 = _img8_2 = buf;
+    _img = (uint16_t *)buf;
+    _img4 = buf;
+    _created = true;
+    rotation = 0;
+    setViewport(0, 0, _dwidth, _dheight);
+    setPivot(_iwidth / 2, _iheight / 2);
+    return buf;
+  }
+  void detach(void) {
+    _created = false;
+    _img8 = _img8_1 = _img8_2 = nullptr;
+    _img = nullptr;
+    _img4 = nullptr;
+    _vpOoB = true;
   }
 };
 static HdmiCanvas canvas(&tft);
@@ -334,12 +366,9 @@ void video_core1_poll(void) {
 /* Core 0, Video::begin: the canvas, then core 1 starts the output. */
 static void hdmi_begin(void) {
   canvas.setColorDepth(8);
-  canvas8 = (uint8_t *)canvas.createSprite(CANVAS_W, CANVAS_H);
-  if (!canvas8) Serial.println("[video] no RAM for the 320x240 menu canvas");
-  else {
-    canvas.set_screen_size(CANVAS_W, CANVAS_H);   /* fillScreen(): all of it */
-    canvas.fillSprite(TFT_BLACK);
-  }
+  canvas8 = canvas.attach((uint8_t *)frame_buf, CANVAS_W, CANVAS_H);   /* (no heap: frame_buf's start) */
+  canvas.set_screen_size(CANVAS_W, CANVAS_H);   /* fillScreen(): all of it */
+  canvas.fillSprite(TFT_BLACK);
   hdmi_pal_332();
   __dmb();
   hdmi_wanted = true;
@@ -357,27 +386,18 @@ static void hdmi_begin(void) {
 }
 
 /* Core 0, the game's first strip: the output goes black (canvas8 = null),
- * the canvas is freed once the line interrupt is off it (two frames), then
- * frame_buf is made in its place and the lines come from it. False if there
- * is no RAM for it (the frame is dropped; tried again on the next strip). */
-static bool hdmi_game_start(void) {
-  if (canvas8) {
-    canvas8 = nullptr;
-    __dmb();
-    const uint32_t f0 = hdmi.get_frame_count();
-    for (uint32_t t0 = millis(); hdmi.get_frame_count() - f0 < 2 && millis() - t0 < 100; ) delay(1);
-    canvas.deleteSprite();
-  }
-  frame_buf = (uint16_t *)calloc(GAME_W * GAME_H, sizeof(uint16_t));
-  if (!frame_buf) {
-    Serial.printf("[video] HDMI: no RAM for the %u-byte frame buffer%c", (unsigned)(GAME_W * GAME_H * 2), 10);
-    return false;
-  }
+ * the canvas lets go of frame_buf once the line interrupt is off it (two
+ * frames), frame_buf is cleared and the lines come from it. */
+static void hdmi_game_start(void) {
+  canvas8 = nullptr;
+  __dmb();
+  const uint32_t f0 = hdmi.get_frame_count();
+  for (uint32_t t0 = millis(); hdmi.get_frame_count() - f0 < 2 && millis() - t0 < 100; ) delay(1);
+  canvas.detach();
+  memset(frame_buf, 0, sizeof(frame_buf));
   __dmb();
   hdmi_game = true;
-  Serial.printf("[video] HDMI: game picture, menu canvas freed, frame buffer made (heap free %d)\n",
-                rp2040.getFreeHeap());
-  return true;
+  Serial.printf("[video] HDMI: game picture (heap free %d)\n", rp2040.getFreeHeap());
 }
 #endif  /* PICO_HDMI */
 
@@ -824,7 +844,7 @@ void Video::write(uint16_t *colors, uint32_t len) {
 
   if (cur_row + rows > GAME_H) rows = GAME_H - cur_row;
 #ifdef PICO_HDMI
-  if (!frame_buf && !hdmi_game_start()) return;      /* the game's first strip: frame_buf now */
+  if (!hdmi_game) hdmi_game_start();                  /* the game's first strip: frame_buf is its now */
 #endif
   memcpy(&frame_buf[cur_row * GAME_W], colors, (size_t)rows * GAME_W * 2);
 
