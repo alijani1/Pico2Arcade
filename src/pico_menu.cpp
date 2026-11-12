@@ -212,6 +212,7 @@ enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE
 extern "C" int video_hdmi_mode(void);                /* video.cpp: the Screen row (try_screen_mode below) */
 extern "C" const char *video_hdmi_mode_name(int m);
 extern "C" int video_hdmi_width(int step);
+extern "C" int video_hdmi_height(int step);
 extern "C" bool video_hdmi_take_mode_key(void);      /* serial key m pressed (once) */
 #endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
@@ -427,7 +428,8 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #endif
 #ifdef PICO_HDMI
         (void)W;
-        snprintf(label, sizeof(label), "Width: %d%s", video_hdmi_width(g_stretch), (g_stretch & 1) ? " crop" : "");   /* (the mode's) */
+        if (g_stretch & 1) snprintf(label, sizeof(label), "Width: %dx%d", video_hdmi_width(g_stretch), video_hdmi_height(g_stretch));   /* zoomed out (the mode's) */
+        else                snprintf(label, sizeof(label), "Width: %d", video_hdmi_width(g_stretch));   /* (the mode's) */
 #else
         snprintf(label, sizeof(label), "Width: %d%s", W[(g_stretch >> 1) & 3], (g_stretch & 1) ? " crop" : "");
 #endif
@@ -571,6 +573,7 @@ extern "C" int video_hdmi_mode_default(void);
 extern "C" const char *video_hdmi_mode_name(int m);
 extern "C" bool video_hdmi_set_mode(int m);
 extern "C" int video_hdmi_width(int step);
+extern "C" int video_hdmi_height(int step);
 extern "C" void pico_config_save_hdmi_mode(int m);
 
 static void try_screen_mode(TFT_eSPI &tft) {

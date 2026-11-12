@@ -224,7 +224,7 @@ static uint16_t row_map[HDMI_MAX_LINES];                /* output line -> source
  * 2/3, so it is the nearer). Made in the line interrupt: each source row once
  * per frame, scaled across into one of two row buffers; each line a copy of
  * one, or the mean of two. */
-extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; volatile int g_stretch = 0; }
+extern "C" { volatile int g_scale_mode = SCALE_SMOOTH; volatile int g_stretch = 2; }   /* (HDMI default: Smooth 448) */
 extern "C" void pico_config_save_stretch(int idx);
 extern "C" void pico_config_save_scale(int mode);
 static const int HDMI_WIDTHS[4] = { 372, 448, 560, 672 };   /* (536 / 640 at first: no direct path, up to 87 % of core 0) */
@@ -362,6 +362,24 @@ static inline __attribute__((always_inline)) void hdmi_make_row(int r, uint32_t 
       o[3] = s2 | (x23 << 16);
       o[4] = s3 | (s3 << 16);
     }
+  } else if (pic_fast == 7 || pic_fast == 8) {
+    /* 336 = 1.5x: each 4 source pixels -> 6: Drop / Sharp s0 s1 s1 s2 s3 s3
+     * (by the pixel centres), Smooth s0 m01 s1 s2 m23 s3 */
+    const uint32_t *w = (const uint32_t *)s;
+    const bool smooth = pic_fast == 8;
+    for (int g = 0; g < GAME_W / 4; g++, w += 2, o += 3) {
+      const uint32_t a = hdmi_rev16(w[0]), b = hdmi_rev16(w[1]);   /* s0|s1, s2|s3 */
+      const uint32_t s0 = a & 0xFFFFu, s1 = a >> 16, s2 = b & 0xFFFFu, s3 = b >> 16;
+      if (smooth) {
+        o[0] = s0 | (hdmi_mean(s0, s1) << 16);
+        o[1] = s1 | (s2 << 16);
+        o[2] = hdmi_mean(s2, s3) | (s3 << 16);
+      } else {
+        o[0] = a;
+        o[1] = s1 | (s2 << 16);
+        o[2] = s3 | (s3 << 16);
+      }
+    }
   } else if (pic_fast == 6) {
     /* 672 = 3x: each source pixel three times */
     const uint32_t *w = (const uint32_t *)s;
@@ -479,42 +497,71 @@ static void hdmi_axis(uint16_t *map, int out, int n, int first, int src_len, boo
  * proportion to its lines, snapped to a width with a direct path (372, 448,
  * 560, 672) when one is within 10 % and fits, else even and at most the
  * line (the column map). 720x576: 448 / 560 / 672 / 672; 640x480: 372 /
- * 448 / 560 / 560; 720x400: 310 / 372 / 448 / 560. */
-static int hdmi_width(int step) {
-  static const int FAST[4] = { 372, 448, 560, 672 };
-  const int lines = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
-  const int max = 2 * out_words < HDMI_MAX_PX ? 2 * out_words : HDMI_MAX_PX;
-  int px = HDMI_WIDTHS[(step >> 1) & 3] * lines / 480;
+ * 448 / 560 / 560; 720x400: 310 / 372 / 448 / 560.
+ * (Since: odd steps are "zoomed out", not cropped - the user found the crop
+ * (the middle 240 rows, 20 % taller) zoomed the wrong way: the whole game,
+ * smaller, at an exact height - hdmi_size.) */
+static const int HDMI_FAST[5] = { 336, 372, 448, 560, 672 };   /* widths with a direct path */
+static int hdmi_snap(int px, int max) {
   int best = -1;
   if (px >= max) {                                      /* doesn't fit: the widest direct one that does */
-    for (int i = 0; i < 4; i++) if (FAST[i] <= max) best = FAST[i];
+    for (int i = 0; i < 5; i++) if (HDMI_FAST[i] <= max) best = HDMI_FAST[i];
     if (best > 0) return best;
     px = max;
   }
-  for (int i = 0; i < 4; i++)
-    if (FAST[i] <= max && 10 * abs(FAST[i] - px) <= px && (best < 0 || abs(FAST[i] - px) < abs(best - px)))
-      best = FAST[i];
+  for (int i = 0; i < 5; i++)
+    if (HDMI_FAST[i] <= max && 10 * abs(HDMI_FAST[i] - px) <= px && (best < 0 || abs(HDMI_FAST[i] - px) < abs(best - px)))
+      best = HDMI_FAST[i];
   return best > 0 ? best : (px & ~1);
 }
+
+/* Width step -> the picture's size in the mode running. Even steps: full
+ * height, widths 372 / 448 / 560 / 672 at 480 lines (in proportion
+ * elsewhere). Odd steps ("zoomed out"): the whole game smaller, at the
+ * largest exact height below full - a multiple of 144 (1.5x = 432 at 480
+ * and 576 lines, 2x = 576 at 600, 1x = 288 at 400) - and widths 336 (the
+ * true shape: 1.5x both ways at 432) / 448 / 560 / 672 in proportion;
+ * black all round. */
+static void hdmi_size(int step, int *px_out, int *lines_out) {
+  static const int OUT_W[4] = { 336, 448, 560, 672 };   /* at 432 lines */
+  const int full = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
+  const int max = 2 * out_words < HDMI_MAX_PX ? 2 * out_words : HDMI_MAX_PX;
+  int lines = full, px;
+  if (step & 1) {
+    lines = 0;
+    for (int h = 288; h < full; h += 144) lines = h;
+    if (lines == 0) lines = full;
+    px = OUT_W[(step >> 1) & 3] * lines / 432;
+  } else {
+    px = HDMI_WIDTHS[(step >> 1) & 3] * lines / 480;
+  }
+  *px_out = hdmi_snap(px, max);
+  *lines_out = lines;
+}
+static int hdmi_width(int step) { int px, l; hdmi_size(step, &px, &l); return px; }
+static int hdmi_height(int step) { int px, l; hdmi_size(step, &px, &l); return l; }
 
 /* The game picture's maps for the mode just started: full height, square
  * pixels (224 x 288 scaled the same both ways), centred across.
  * (Since: for the Scale / Width settings; core 0, in the vertical blank -
- * Video::write's first strip of a frame - or before the game picture.) */
+ * Video::write's first strip of a frame - or before the game picture. And
+ * the zoomed-out steps: fewer lines, centred down too.) */
 static void hdmi_geometry(void) {
   const int mode = g_scale_mode, step = (g_stretch >= 0 && g_stretch < 8) ? g_stretch : 0;
   const int lines = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
-  const bool crop = step & 1;
-  const int rows = crop ? 240 : GAME_H, first = crop ? (GAME_H - 240) / 2 : 0;
-  const int px = hdmi_width(step);
+  int px, pic_lines;
+  hdmi_size(step, &px, &pic_lines);
+  const int top = (lines - pic_lines) / 2;
   hdmi_axis(col_map, px, GAME_W, 0, GAME_W, mode == SCALE_SMOOTH, COL_BLEND);
-  hdmi_axis(row_map, lines, rows, first, GAME_H, mode != SCALE_DROP, ROW_BLEND);
-  for (int l = lines; l < HDMI_MAX_LINES; l++) row_map[l] = NO_ROW;
+  for (int l = 0; l < HDMI_MAX_LINES; l++) row_map[l] = NO_ROW;
+  hdmi_axis(row_map + top, pic_lines, GAME_H, 0, GAME_H, mode != SCALE_DROP, ROW_BLEND);
   pic_words = px / 2;
   pic_pad = (out_words - pic_words) / 2;
-  /* the direct paths (hdmi_make_row): 372 at 480 lines = 5:3, 448 = 2x across */
+  /* the direct paths (hdmi_make_row): 372 = 5:3, 448 = 2x, 560 = 2.5x,
+   * 672 = 3x, 336 = 1.5x across */
   pic_fast = px == 372 ? (mode == SCALE_SMOOTH ? 3 : 1) : px == 2 * GAME_W ? 2
-           : px == 560 ? (mode == SCALE_SMOOTH ? 5 : 4) : px == 672 ? 6 : 0;
+           : px == 560 ? (mode == SCALE_SMOOTH ? 5 : 4) : px == 672 ? 6
+           : px == 336 ? (mode == SCALE_SMOOTH ? 8 : 7) : 0;
   pic_mode = mode;
   pic_step = step;
   border_n = 0;                                         /* the sides moved */
@@ -644,6 +691,7 @@ extern "C" bool video_hdmi_set_mode(int m) {
 }
 /* The Width row's label: the pixels of width step for the mode running. */
 extern "C" int video_hdmi_width(int step) { return hdmi_width(step); }
+extern "C" int video_hdmi_height(int step) { return hdmi_height(step); }   /* (zoomed-out steps: below full) */
 
 /* ---- the overlay box and the Scale / Width changes (core 0) -------------- */
 extern "C" volatile int g_show_fps;                     /* pico_config.cpp: the Show FPS row */
@@ -694,7 +742,8 @@ static void hdmi_overlay_draw(void) {
   } else {
   ov_spr.setTextColor(TFT_CYAN, TFT_BLACK);
   ov_spr.setCursor(2, y); ov_spr.print(SCALE_NAMES[(pic_mode >= 0 && pic_mode < 3) ? pic_mode : 0]); y += 10;
-  ov_spr.setCursor(2, y); ov_spr.printf("%d%s", hdmi_width(step), (step & 1) ? " crop" : "");
+  if (step & 1) { ov_spr.setCursor(2, y); ov_spr.printf("%dx%d", hdmi_width(step), hdmi_height(step)); }   /* zoomed out */
+  else           { ov_spr.setCursor(2, y); ov_spr.printf("%d", hdmi_width(step)); }
   }
   const uint16_t *src = (const uint16_t *)ov_spr.getPointer();   /* byte-swapped (the sprite's) */
   uint16_t *back = (ov_front == ov_buf[0]) ? ov_buf[1] : ov_buf[0];
