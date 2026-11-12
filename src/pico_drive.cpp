@@ -11,8 +11,8 @@
 #include "pico_romfs.h"
 #include "pico_handoff.h"
 #include "pico_audio.h"
-#ifdef PICO_TINY_SCREEN
-TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object */
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
+TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object (HDMI: the menu canvas) */
 #endif
 
 #ifdef PICO_GALAGINO_LANDSCAPE
@@ -206,7 +206,7 @@ extern "C" void pico_drive_run(void) {
     const char *driveName = "ARCADE ROMS";
     static const char LABEL[11] = {'A','R','C','A','D','E',' ','R','O','M','S'};
     if (!is_formatted()) {
-#if defined(PICO_STANDALONE) && !defined(PICO_DUO)
+#if defined(PICO_STANDALONE) && !defined(PICO_DUO) && !defined(PICO_FRUITJAM)
         static const char INI83[11] = {'A','R','C','A','D','E',' ',' ','I','N','I'};
         format_drive(LABEL, INI83, board_default_ini());
 #else
@@ -225,7 +225,7 @@ extern "C" void pico_drive_run(void) {
     delay(20);
     TinyUSBDevice.attach();
 
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
     TFT_eSPI &tft = video_tft();
 #else
     TFT_eSPI tft;
@@ -257,7 +257,7 @@ extern "C" void pico_drive_run(void) {
     tft.setCursor(10, y);      tft.printf("Copy the MAME ROM zips to the");
     tft.setCursor(10, y += 12); tft.printf("%s drive: in the root or an", driveName);
     tft.setCursor(10, y += 12); tft.print("ARCADE, MAME or ROMS folder.");
-#if defined(PICO_STANDALONE) && !defined(PICO_DUO)
+#if defined(PICO_STANDALONE) && !defined(PICO_DUO) && !defined(PICO_FRUITJAM)
     tft.setCursor(10, y += 20); tft.print("Pins: edit ARCADE.INI on the drive.");
 #endif
     tft.setCursor(10, y += 20); tft.print("Zips: puckman mspacman galaga");

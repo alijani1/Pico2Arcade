@@ -64,6 +64,27 @@ board_pins_t g_pins = {
     /* backlight          */ 5,
     /* stick_x stick_y    */ -1, -1,
 };
+#elif defined(PICO_FRUITJAM)
+/* Adafruit Fruit Jam (RP2350B, HDMI — PICO_HDMI), standalone, no ARCADE.INI:
+ * the board has only its three buttons (active LOW): 1 = GPIO 0 (also BOOT,
+ * so nothing is "held at power-on" on it) = COIN, and DOWN in the game list;
+ * 2 = GPIO 4 = START; 3 = GPIO 5 = FIRE. START + COIN (2 + 1) held in a game
+ * = the game list. No PWM audio: GPIO 22, the other boards' audio pin, is the
+ * codec's and the ESP32-C6's reset here.
+ * TODO: sound over I2S to the TLV320DAC3100 (PicoMultiTrackAudio 2.1.0 / Pico2Atari8's pico_audio.cpp).
+ * TODO: USB gamepads on the USB-A ports (Pico2Atari8's extern/usb_pads, unchanged). */
+board_pins_t g_pins = {
+    /* up down left right */ -1, -1, -1, -1,
+    /* fire fire2 fire3 fire4 */ 5, -1, -1, -1,
+    /* fireb fireb2 fireb3 */ -1, -1, -1,
+    /* start coin menu    */ 4, 0, -1,
+    /* nav_up nav_down    */ -1, 0,         /* button 1: also DOWN in the list */
+    /* joy_x joy_y        */ -1, -1,
+    /* joy_click          */ -1,
+    /* audio amp          */ -1, -1,
+    /* backlight          */ -1,
+    /* stick_x stick_y    */ -1, -1,
+};
 #else
 /* Plain Pico 2 defaults (also the contents of the default ARCADE.INI). Chosen
  * clear of the display (SPI0: SCLK 6, MOSI 7, CS 5, DC 8, RST 9). */
@@ -179,7 +200,7 @@ static void parse_ini(const char *text, size_t len) {
 #endif
 
 extern "C" void board_pins_load(void) {
-#if defined(PICO_STANDALONE) && !defined(PICO_DUO)   /* the Duo keeps its built-in profile */
+#if defined(PICO_STANDALONE) && !defined(PICO_DUO) && !defined(PICO_FRUITJAM)   /* the Duo / Fruit Jam keep their built-in profile */
     uint8_t *ini = nullptr;
     size_t n = 0;
     if (romfs_slurp("/ARCADE.INI", &ini, &n)) {

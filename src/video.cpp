@@ -59,6 +59,232 @@ static int cur_row = 0;
  * still hit real speed with half the RAM footprint. */
 static uint16_t frame_buf[GAME_W * GAME_H];
 
+#ifdef PICO_HDMI
+/* ---- HDMI output (Adafruit Fruit Jam) -------------------------------------
+ * 800x480 at 60 Hz (by default; see HDMI_MODES) through Pimoroni's dvhstx
+ * driver (from Adafruit's Adafruit-DVI-HSTX library; only its driver is
+ * built, at the end of this file) in scanline mode: there is no frame buffer
+ * for the output. The driver's DMA interrupt asks for each output line just
+ * before it goes out, and hdmi_line() makes it, two RGB565 pixels a word. It
+ * runs on core 1 (the emulator's: the output is started by setup1, see
+ * video_core1_poll) at the highest priority, from RAM, and reads only RAM.
+ * The layout follows Pico2Atari8's src/a8_display.cpp (HDMI half) and its
+ * docs/FRUITJAM_PORTING.md.
+ *
+ * In a game: the lines come straight from frame_buf (Galagino's 224x288 frame,
+ * byte-swapped RGB565, filled strip by strip by Video::write on core 0),
+ * scaled to the mode's full height with square pixels: 480 lines = 5:3 both
+ * ways (373 x 480 in the middle of 800, black at the sides), 576 = exactly
+ * 2x. Nearest neighbour through a column map and a row map built when the
+ * output starts. An output line whose source row is the one before's (a
+ * scale above 1) is copied from a one-line cache instead of being made again.
+ *
+ * Menus (game list, load errors, ROM drive mode): the existing TFT_eSPI
+ * drawing code draws into an 8-bit (RGB332) sprite, the 320x240 canvas,
+ * shown doubled (640x480) through a palette of doubled RGB565 words. It is
+ * freed when the game starts (frame_buf takes over).
+ *
+ * Clock: the driver's start-up moves clk_sys to PLL_USB / 2 = 240 MHz and
+ * runs HSTX from PLL_SYS at the mode's exact clock; platformio.ini leaves
+ * f_cpu at 150 MHz so the core's main() doesn't set clk_sys back.
+ *
+ * TODO: tearing — Video::write fills frame_buf (30 Hz, half-rate pacing in
+ * galagino.cpp update_screen) while the lines are read (60 Hz); if a tear line
+ * shows, fill it at the HDMI vblank.
+ * TODO: flash writes (high scores, settings, ROM drive) park core 1
+ * (rp2040.idleOtherCore), and with it maybe the line interrupt: the picture
+ * may drop out for that moment (the driver restarts its stream after).
+ * TODO: the FPS overlay (Show FPS) is on the serial log only here.
+ * TODO: a Screen mode setting (tried for 10 s before it is kept, button held
+ * at power-on back to the default) as in Pico2Atari8's a8_settings.cpp. */
+#include "drivers/dvhstx/dvhstx.hpp"
+#include "hardware/structs/hstx_ctrl.h"
+#include "hardware/gpio.h"
+
+static pimoroni::DVHSTX hdmi;
+
+/* The menus' canvas. fillScreen() fills TFT_eSPI's _width x _height, which a
+ * sprite leaves at the panel size of the build flags (240 x 320 — init() never
+ * runs on it), so it takes its real size (as Pico2Atari8's A8Canvas). */
+class HdmiCanvas : public TFT_eSprite {
+public:
+  explicit HdmiCanvas(TFT_eSPI *parent) : TFT_eSprite(parent) {}
+  void set_screen_size(int32_t w, int32_t h) {
+    _init_width = _width = w;
+    _init_height = _height = h;
+  }
+};
+static HdmiCanvas canvas(&tft);
+TFT_eSPI &video_tft(void) { return canvas; }
+
+static const int CANVAS_W = 320, CANVAS_H = 240;
+static uint8_t * volatile canvas8 = nullptr;           /* the canvas's pixels (RGB332) */
+static uint32_t hdmi_pal[256];                          /* RGB332 -> an RGB565 pixel twice */
+
+/* The video mode: w x h the driver's frame size; scanline mode doubles it
+ * (the callback draws whole output lines). Displays differ in what they take
+ * (Pico2Atari8's first one: nothing at 640x480, but 720x400, 720x576 and
+ * 800x480; 800x600 only sometimes). The 800x600 timing is fixed at the end of
+ * this file. */
+struct HdmiMode { uint16_t w, h; const char *name; };
+static const HdmiMode HDMI_MODES[] = {
+  { 320, 240, "640x480 60 Hz" },
+  { 360, 200, "720x400 70 Hz" },
+  { 360, 240, "720x480 60 Hz" },
+  { 360, 288, "720x576 50 Hz" },
+  { 400, 300, "800x600 60 Hz" },
+  { 400, 240, "800x480 60 Hz" },
+};
+static const int HDMI_NMODES = sizeof(HDMI_MODES) / sizeof(HDMI_MODES[0]);
+#ifndef PICO_HDMI_MODE
+#define PICO_HDMI_MODE 5                                /* index into HDMI_MODES: 800x480 @ 60 Hz */
+#endif
+
+static volatile bool hdmi_wanted = false, hdmi_started = false, hdmi_ok = false;
+static volatile bool hdmi_game = false;                 /* lines from frame_buf, else the canvas */
+static int out_words = 400, out_lines = 480;            /* the mode's line: words (2 pixels), lines */
+
+/* The game picture: pic_words words from word pic_pad of each line. */
+static const int HDMI_MAX_PX = 800, HDMI_MAX_LINES = 600;
+static const uint16_t NO_ROW = 0xFFFF;
+static int pic_words = 0, pic_pad = 0;
+static uint8_t  col_map[HDMI_MAX_PX];                   /* output pixel -> source column */
+static uint16_t row_map[HDMI_MAX_LINES];                /* output line -> source row, NO_ROW = black */
+static uint32_t line_cache[HDMI_MAX_PX / 2];            /* the last line made */
+static int cache_row = -1;
+
+#pragma GCC push_options
+/* no-tree-loop-distribute-patterns: the fill / copy loops must stay loops — GCC
+ * makes them memset / memcpy calls otherwise, which live in flash (the line
+ * interrupt must not touch flash). */
+#pragma GCC optimize("O2", "no-tree-loop-distribute-patterns")
+
+/* Two frame_buf pixels (byte-swapped RGB565) -> one output word, the first
+ * in the low half: REV16 swaps the bytes of both halves at once. */
+static inline __attribute__((always_inline)) uint32_t hdmi_px2(uint32_t a, uint32_t b) {
+  uint32_t v = a | (b << 16), r;
+  __asm__("rev16 %0, %1" : "=r"(r) : "r"(v));
+  return r;
+}
+
+static inline __attribute__((always_inline)) void hdmi_fill(uint32_t *d, int n, uint32_t v) {
+  for (int i = 0; i < n; i++) d[i] = v;
+}
+
+/* One output line (the driver's interrupt, core 1). */
+static void __not_in_flash_func(hdmi_line)(uint32_t v_scanline, uint32_t active_line, uint32_t *dst) {
+  (void)v_scanline;
+  const int words = out_words;
+  if (!hdmi_game) {
+    /* the canvas, each pixel twice across, each row twice down, centred */
+    const uint8_t *c = canvas8;
+    const int pad = (words - CANVAS_W) / 2;
+    const int r = ((int)active_line - (out_lines - 2 * CANVAS_H) / 2) >> 1;
+    if (!c || r < 0 || r >= CANVAS_H || pad < 0) { hdmi_fill(dst, words, 0); return; }
+    hdmi_fill(dst, pad, 0);
+    hdmi_fill(dst + pad + CANVAS_W, words - pad - CANVAS_W, 0);
+    const uint8_t *s = c + r * CANVAS_W;
+    uint32_t *d = dst + pad;
+    for (int x = 0; x < CANVAS_W; x++) d[x] = hdmi_pal[s[x]];
+    return;
+  }
+  if (active_line == 0) cache_row = -1;                 /* a new frame: frame_buf may have changed */
+  const int r = active_line < (uint32_t)out_lines ? row_map[active_line] : NO_ROW;
+  if (r == NO_ROW) { hdmi_fill(dst, words, 0); return; }
+  const int n = pic_words, pad = pic_pad;
+  hdmi_fill(dst, pad, 0);
+  hdmi_fill(dst + pad + n, words - pad - n, 0);
+  if (r != cache_row) {
+    const uint16_t *s = frame_buf + r * GAME_W;
+    const uint8_t *cm = col_map;
+    for (int w = 0; w < n; w++, cm += 2) line_cache[w] = hdmi_px2(s[cm[0]], s[cm[1]]);
+    cache_row = r;
+  }
+  uint32_t *d = dst + pad;
+  for (int w = 0; w < n; w++) d[w] = line_cache[w];
+}
+
+#pragma GCC pop_options
+
+/* The game picture's maps for the mode just started: full height, square
+ * pixels (224 x 288 scaled the same both ways), centred across. */
+static void hdmi_geometry(void) {
+  const int lines = out_lines < HDMI_MAX_LINES ? out_lines : HDMI_MAX_LINES;
+  int px = (GAME_W * lines / GAME_H) & ~1;
+  if (px > 2 * out_words) px = 2 * out_words;
+  for (int p = 0; p < px; p++) col_map[p] = (uint8_t)(p * GAME_W / px);
+  for (int l = 0; l < HDMI_MAX_LINES; l++)
+    row_map[l] = l < lines ? (uint16_t)(l * GAME_H / lines) : NO_ROW;
+  pic_words = px / 2;
+  pic_pad = (out_words - pic_words) / 2;
+}
+
+static void hdmi_pal_332(void) {
+  for (int i = 0; i < 256; i++) {
+    uint32_t r = (i >> 5) & 7, g = (i >> 2) & 7, b = i & 3;
+    uint32_t c = ((r * 31 / 7) << 11) | ((g * 63 / 7) << 5) | (b * 31 / 3);
+    hdmi_pal[i] = c | (c << 16);
+  }
+}
+
+/* Core 1 (setup1, while it waits for the game): starts the output when
+ * Video::begin asks. The driver's interrupt runs on the core that starts it. */
+void video_core1_poll(void) {
+  if (!hdmi_wanted || hdmi_started) return;
+  /* the Fruit Jam's HSTX pins (its variant): CK+ 13, D0+ 15, D1+ 17, D2+ 19 */
+  static const pimoroni::DVHSTXPinout pins = { PIN_CKP, { PIN_D0P, PIN_D1P, PIN_D2P } };
+  const int m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
+  hdmi.set_scanline_callback(hdmi_line);
+  hdmi_ok = hdmi.init(HDMI_MODES[m].w, HDMI_MODES[m].h, pimoroni::DVHSTX::MODE_RGB565, false, pins);
+  if (hdmi_ok) {
+    out_words = hdmi.get_width() / 2;
+    out_lines = hdmi.get_height();
+  }
+  hdmi_geometry();
+  __dmb();
+  hdmi_started = true;
+}
+
+/* Core 0, Video::begin: the canvas, then core 1 starts the output. */
+static void hdmi_begin(void) {
+  canvas.setColorDepth(8);
+  canvas8 = (uint8_t *)canvas.createSprite(CANVAS_W, CANVAS_H);
+  if (!canvas8) Serial.println("[video] no RAM for the 320x240 menu canvas");
+  else {
+    canvas.set_screen_size(CANVAS_W, CANVAS_H);   /* fillScreen(): all of it */
+    canvas.fillSprite(TFT_BLACK);
+  }
+  hdmi_pal_332();
+  __dmb();
+  hdmi_wanted = true;
+  for (uint32_t t0 = millis(); !hdmi_started && millis() - t0 < 2000; ) delay(1);
+  const int m = (PICO_HDMI_MODE >= 0 && PICO_HDMI_MODE < HDMI_NMODES) ? PICO_HDMI_MODE : 5;
+  char funcs[9];
+  for (int i = 0; i < 8; i++) funcs[i] = (char)('0' + (gpio_get_function(12 + i) & 0x1F) % 10);
+  funcs[8] = 0;
+  Serial.printf("[video] HDMI %s %s (%d x %d lines; game %d x %d at word %d), sys %lu MHz, "
+                "clk_hstx %lu Hz, HSTX csr %08lx, GPIO 12-19 functions %s (0 = HSTX)\n",
+                HDMI_MODES[m].name, !hdmi_started ? "NOT STARTED (core 1)" : hdmi_ok ? "running" : "FAILED",
+                out_words * 2, out_lines, pic_words * 2, out_lines, pic_pad,
+                (unsigned long)(clock_get_hz(clk_sys) / 1000000),
+                (unsigned long)clock_get_hz(clk_hstx), (unsigned long)hstx_ctrl_hw->csr, funcs);
+}
+
+/* Core 0, the game's first full frame: the lines come from frame_buf now;
+ * the canvas is freed once the output has moved off it (two frames). */
+static void hdmi_game_start(void) {
+  hdmi_game = true;
+  __dmb();
+  if (!canvas8) return;
+  const uint32_t f0 = hdmi.get_frame_count();
+  for (uint32_t t0 = millis(); hdmi.get_frame_count() - f0 < 2 && millis() - t0 < 100; ) delay(1);
+  canvas8 = nullptr;
+  canvas.deleteSprite();
+  Serial.printf("[video] HDMI: game picture, menu canvas freed (frames %lu)\n",
+                (unsigned long)hdmi.get_frame_count());
+}
+#endif  /* PICO_HDMI */
+
 #ifdef PICO_TINY_SCREEN
 /* 160x80 panel (Duo Ultimate test, PICO_DUO): the whole 224x288 frame is
  * box-filtered — each output pixel is the average of the ~2.8x2.8 source
@@ -376,6 +602,14 @@ Video::Video() {}
 TFT_eSPI &video_tft(void) { return tft; }
 #endif
 
+#ifdef PICO_HDMI
+/* HDMI (Fruit Jam): no panel — TFT_eSPI is never started, so its build-flag
+ * pins (Fruit Jam button 3, the ESP32's UART) are never touched. */
+void Video::begin(void) {
+  hdmi_begin();
+  cur_row = 0;
+}
+#else
 void Video::begin(void) {
   /* Re-tie clk_peri to clk_sys. When platformio's board_build.f_cpu
    * overrides sys clock, the framework leaves clk_peri on the USB PLL
@@ -435,6 +669,7 @@ void Video::begin(void) {
   Serial.printf("[video] ready %dx%d game area at (%d,%d)\n",
                 GAME_W, GAME_H, TFT_X_OFFSET, TFT_Y_OFFSET);
 }
+#endif  /* !PICO_HDMI */
 
 /* The finished frame is sent in bands with the audio topped up between
  * them. Sent in one go, a portrait frame blocks core 0 for ~10 ms at
@@ -496,7 +731,10 @@ void Video::write(uint16_t *colors, uint32_t len) {
 
   cur_row += rows;
   if (cur_row >= GAME_H) {
-#if defined(PICO_TINY_SCREEN)
+#if defined(PICO_HDMI)
+    /* nothing to push: the HDMI lines are read from frame_buf as they go out */
+    if (!hdmi_game) hdmi_game_start();
+#elif defined(PICO_TINY_SCREEN)
     if (is_landscape_locked && g_stretch != tiny_stretch) {   /* Width changed (menu / MENU tap) */
       tiny_stretch = g_stretch;
       tiny_setup(TINY_WIDTHS[tiny_stretch], TINY_LH, tft.width(), tft.height(), TINY_VHEIGHT[tiny_stretch]);
@@ -625,7 +863,12 @@ void Video::fps_stats_tick(void) {
 
   Serial.printf("[video] screen %.1f fps  emu %.1f fps  cpu %.2f ms/frame (%.0f%%)\n",
                 scr_fps, emu_fps, emu_ms, emu_ms / FRAME_BUDGET_MS * 100.0f);
+#ifdef PICO_HDMI
+  (void)shown;                 /* TODO: an HDMI overlay; the serial line above only */
+  if (0) {
+#else
   if (g_show_fps) {
+#endif
     draw_fps_overlay(scr_fps, emu_fps, emu_ms);
     shown = 1;
   } else if (shown) {
@@ -642,3 +885,40 @@ void Video::fps_stats_tick(void) {
     shown = 0;
   }
 }
+
+#ifdef PICO_HDMI
+/* The driver's code, compiled here (last: its file-level names stay out of
+ * the code above), as in Pico2Atari8's a8_display.cpp. platformio.ini fetches
+ * Adafruit-DVI-HSTX but keeps it out of the build — USE_TINYUSB links every
+ * object of a library whole, and the library's Arduino wrapper needs Adafruit
+ * GFX — so only Pimoroni's dvhstx driver is built: not its HDMI audio
+ * (dvhstx_audio.cpp), as nothing enables it yet. The text-mode font isn't
+ * used here, but init() refers to it. (In this file, not one of its own: in
+ * Pico2Atari8 even an empty extra object file reordered the linker's veneers
+ * in the other builds.) */
+#include "drivers/dvhstx/dvhstx.cpp"
+/* 800x600 @ 60 Hz by the VESA book: the driver's has a front porch of 44
+ * (lines of 1060 pixels, not 1056); Pico2Atari8's first display showed 7 thin
+ * vertical bars with it, a second one shows 40 clean (2026-11-11). The
+ * driver's table entry is renamed out of the way and this one takes its
+ * name. */
+#define dvi_timing_800x600p_60hz dvi_timing_800x600p_60hz_driver
+#include "drivers/dvhstx/dvi.cpp"
+#undef dvi_timing_800x600p_60hz
+const struct dvi_timing dvi_timing_800x600p_60hz = {
+    .h_sync_polarity = false,
+    .h_front_porch   = 40,
+    .h_sync_width    = 128,
+    .h_back_porch    = 88,
+    .h_active_pixels = 800,
+
+    .v_sync_polarity = false,
+    .v_front_porch   = 1,
+    .v_sync_width    = 4,
+    .v_back_porch    = 23,
+    .v_active_lines  = 600,
+
+    .bit_clk_khz     = 400000
+};
+#include "drivers/dvhstx/font_cp437.c"
+#endif  /* PICO_HDMI */

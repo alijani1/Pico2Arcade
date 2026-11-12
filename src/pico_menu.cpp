@@ -24,8 +24,8 @@ extern "C" bool pico_input_menu_tapped(void);
 #include "pico_drive.h"
 #include "pico_romcheck.h"
 #include "pico_hiscore.h"
-#ifdef PICO_TINY_SCREEN
-TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object */
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
+TFT_eSPI &video_tft(void);   /* video.cpp — the init'd panel object (HDMI: the menu canvas) */
 #endif
 
 extern "C" bool runtime_load_pacman(void);
@@ -369,7 +369,15 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
     uint16_t bg = (i == sel) ? TFT_BLUE : TFT_BLACK;
     TFT_eSprite spr(&tft);
+#ifdef PICO_HDMI
+    /* HDMI: tft is the menu canvas, itself a sprite. A sprite pushed onto it
+     * would go out through TFT_eSPI's own pushImage (not virtual) — to the
+     * panel's SPI pins, which on the Fruit Jam are button 3 and the ESP32's
+     * UART. So the row is drawn straight onto the canvas. */
+    bool off = false;
+#else
     bool off = spr.createSprite(w, h) != nullptr;
+#endif
     TFT_eSPI &gfx = off ? (TFT_eSPI &)spr : tft;
     const int ox = off ? 0 : x, oy = off ? 0 : y;      /* row origin on gfx */
     gfx.fillRect(ox, oy, w, h, bg);
@@ -613,7 +621,7 @@ extern "C" void pico_menu_pick_and_load(void) {
     Serial.printf("[menu] volume %d%% (%s)\n", pico_audio_get_volume_pct(),
                   hv >= 0 ? "from CartReader" : "default");
 
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_TINY_SCREEN) || defined(PICO_HDMI)
     TFT_eSPI &tft = video_tft();
 #else
     TFT_eSPI tft;

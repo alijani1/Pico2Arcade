@@ -18,9 +18,20 @@ void *          g_pending_task_arg = nullptr;
  * middle of showing our menu. */
 volatile int g_menu_done = 0;
 
+#ifdef PICO_HDMI
+/* video.cpp: starts the HDMI output when Video::begin asks for it — here,
+ * because the driver's line interrupt runs on the core that starts it, and
+ * core 0 is kept for the USB host (Pico2Atari8 docs/FRUITJAM_PORTING.md:
+ * never the PIO-USB frame timer and the HDMI line interrupt on one core). */
+void video_core1_poll(void);
+#endif
+
 void setup1(void) {
   /* No Serial here — USB CDC may not be enumerated yet. */
   while (g_pending_task_fn == nullptr || g_menu_done == 0) {
+#ifdef PICO_HDMI
+    video_core1_poll();
+#endif
     delay(5);
   }
   g_pending_task_fn(g_pending_task_arg);
