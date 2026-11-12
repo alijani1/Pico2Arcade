@@ -55,6 +55,7 @@ extern "C" volatile int g_scale_mode, g_stretch;   /* video.cpp: Scale / Width (
 extern "C" volatile int g_show_fps;                /* pico_config.cpp: Show FPS (serial key f) */
 extern "C" void video_hdmi_mode_key(void);         /* video.cpp: serial keys m / k (screen mode) */
 extern "C" void video_hdmi_keep_key(void);
+extern "C" void video_hdmi_audio_poll(void);       /* video.cpp: the HDMI sound feed (game list) */
 #endif
 
 #if defined(PICO_TINY_SCREEN) || defined(PICO_GALAGINO_LANDSCAPE_AREA)
@@ -424,6 +425,17 @@ extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
     static unsigned char cached_state = 0;
     static unsigned long last_ms = 0;
     unsigned long now = millis();
+#ifdef A8_MENU_MUSIC
+    /* Fruit Jam, the game list (core 0): its sound is fed from here - every
+     * list screen polls the buttons (pico_audio.cpp menu sound; the HDMI
+     * sound's packets too, as the frame wait does in a game) */
+    if (!g_menu_done && get_core_num() == 0) {
+        pico_audio_menu_poll();
+#ifdef A8_HDMI_AUDIO
+        video_hdmi_audio_poll();
+#endif
+    }
+#endif
     /* 1 ms cache — human rapid-tap max ~10 Hz gives a press duration
      * around 30-50 ms. 1 kHz polling catches every edge with plenty of
      * margin. Any INT-line pulse from the PCA9539 bypasses the cache

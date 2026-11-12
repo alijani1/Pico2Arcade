@@ -74,6 +74,14 @@ size_t  pico_audio_hdmi_take(int16_t *dst, size_t n);
 int     pico_audio_hdmi_rate(void);
 size_t  pico_audio_hdmi_avail(void);
 #endif
+#ifdef A8_MENU_MUSIC
+/* The game list's sound (as Pico2Atari8's): on (the sound's rate) with or
+ * without the menu tune, off (0) once a game is picked; a tone on each
+ * move; poll from the list's input polling - it feeds the sound. */
+void    pico_audio_menu_sound(int sample_rate, int music);
+void    pico_audio_menu_beep(void);
+void    pico_audio_menu_poll(void);
+#endif
 #endif
 
 #ifdef __cplusplus

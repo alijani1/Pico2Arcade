@@ -479,6 +479,90 @@ extern "C" void pico_audio_report(void) {
                   (unsigned long)str, (unsigned long)under, g_volume_pct,
                   output_name(g_codec.output()), g_amp_on ? "" : " (muted)");
 }
+
+#ifdef A8_MENU_MUSIC
+/* ---- the game list's sound (Fruit Jam) -------------------------------------
+ * As Pico2Atari8's menu sound (its pico_audio.cpp, "the menus' sound"): from
+ * the game list's start until a game is picked the sound runs and is fed
+ * from the list's input polling (buttons_get on core 0, every 20 ms or so) as
+ * far as the ring has room - the Game Adapter's menu tune (GameAdapterRGBPico
+ * include/sounds/menu16s8.h: 16 kHz signed 8-bit mono, a 7.8 s loop, 122 KB of
+ * flash) interpolated to the game's rate at half scale, and a short tone on
+ * each move (a triangle, 1.2 kHz, 40 ms, fading). Through the game's own path
+ * (pico_audio_push: whole blocks, the volume, I2S or HDMI), so Volume and
+ * Sound are heard as they change. (Not Pico2Atari8's push_s16 with its
+ * stretch: see the HDMI path above.) */
+#include "sounds/menu16s8.h"
+static const uint32_t MUSIC_LEN = sizeof(menu16s8);
+static const int BEEP_HZ = 1200, BEEP_MS = 40, BEEP_LEVEL = 9000;
+struct MenuSound {
+    uint32_t music_idx, music_frac;      /* where in menu16s8: sample, 1/65536 */
+    uint32_t beep_left, beep_phase;      /* the tone: samples to go, phase (32-bit turn) */
+};
+static MenuSound g_ms;
+static bool     g_menu = false, g_menu_music = false;
+static uint32_t g_music_step = 0, g_beep_step = 0, g_beep_len = 1;
+
+/* One sample, and the state one sample on. */
+static int16_t menu_sample(MenuSound &m) {
+    int32_t v = 0;
+    if (g_menu_music) {
+        int a = menu16s8[m.music_idx], b = menu16s8[m.music_idx + 1 < MUSIC_LEN ? m.music_idx + 1 : 0];
+        v = (a * 65536 + (b - a) * (int32_t)m.music_frac) >> 9;          /* 8-bit << 7: half scale */
+        m.music_frac += g_music_step;
+        if (m.music_frac >= 65536) { m.music_frac -= 65536; if (++m.music_idx >= MUSIC_LEN) m.music_idx = 0; }
+    }
+    if (m.beep_left) {
+        int32_t tri = (int32_t)(m.beep_phase >> 16);                    /* 0 .. 65535 */
+        tri = (tri < 32768 ? tri : 65535 - tri) * 2 - 32768;            /* -32768 .. 32766 */
+        v += tri * BEEP_LEVEL / 32768 * (int32_t)m.beep_left / (int32_t)g_beep_len;
+        m.beep_phase += g_beep_step;
+        m.beep_left--;
+    }
+    return (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+}
+
+/* The game list: on (its sound's rate) with or without the music, off (0)
+ * once a game is picked (muted: the game unmutes when it runs). */
+extern "C" void pico_audio_menu_sound(int sample_rate, int music) {
+    if (sample_rate && g_menu && g_menu_music == (music != 0)) return;   /* already on: the tune goes on */
+    g_menu_music = music != 0;
+    if (sample_rate) {
+        pico_audio_init(sample_rate);
+        const uint32_t rate = g_in_rate > 0 ? (uint32_t)g_in_rate : 24000u;
+        g_music_step = (uint32_t)((16000ull << 16) / rate);
+        g_beep_step = (uint32_t)(((uint64_t)BEEP_HZ << 32) / rate);
+        g_beep_len = rate * BEEP_MS / 1000;
+        g_ms = MenuSound();
+        g_menu = true;
+        pico_audio_amp_on();
+    } else if (g_menu) {
+        g_menu = false;
+        pico_audio_amp_off();
+    }
+}
+
+/* A move in the game list. */
+extern "C" void pico_audio_menu_beep(void) {
+    if (!g_menu) return;
+    g_ms.beep_left = g_beep_len;
+    g_ms.beep_phase = 0;
+}
+
+/* From the list's input polling: as many blocks as the ring takes. */
+extern "C" void pico_audio_menu_poll(void) {
+    if (!g_menu) return;
+    pico_audio_poll();                   /* the headphone jack, as in a game */
+    uint16_t buf[64];
+    for (int chunk = 0; chunk < 16; chunk++) {
+        MenuSound m = g_ms;
+        for (int i = 0; i < 64; i++) buf[i] = (uint16_t)(menu_sample(m) + 32768);
+        if (pico_audio_push(buf, sizeof(buf)) == 0) break;   /* full: the rest next time */
+        g_ms = m;
+    }
+}
+#endif  /* A8_MENU_MUSIC */
+
 #else   /* PWM */
 
 #ifdef PICO_BOARD_TABLE

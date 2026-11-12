@@ -634,6 +634,9 @@ static void __no_inline_not_in_flash_func(hdmi_audio_feed)(void) {
   }
 }
 
+/* The game list (pico_input.cpp buttons_get): the feed, as the frame wait does in a game. */
+extern "C" void video_hdmi_audio_poll(void) { hdmi_audio_feed(); }
+
 /* pico_audio.cpp: is the HDMI output carrying sound (before it starts: it
  * will). */
 bool a8_display_hdmi_audio(void) { return hdmi_started ? hdmi_audio_on : true; }

@@ -715,6 +715,11 @@ extern "C" void pico_menu_pick_and_load(void) {
     else hv = pico_config_volume();
 #endif
     pico_audio_set_volume_pct(hv >= 0 ? hv : 50);   /* default 50 % */
+#ifdef A8_MENU_MUSIC
+    /* Fruit Jam: the list's sound - the menu tune and a tone on each move (as
+     * Pico2Atari8's), at the game sound's 24000 Hz; fed from buttons_get */
+    pico_audio_menu_sound(24000, 1);
+#endif
     handoff_volume_write(pico_audio_get_volume_pct());
     Serial.printf("[menu] volume %d%% (%s)\n", pico_audio_get_volume_pct(),
                   hv >= 0 ? "from CartReader" : "default");
@@ -774,6 +779,9 @@ extern "C" void pico_menu_pick_and_load(void) {
 #endif
 
     while (g < 0) {
+#ifdef A8_MENU_MUSIC
+        pico_audio_menu_sound(24000, 1);  /* (again after a load that failed; else a no-op) */
+#endif
         unsigned char prev_mask = buttons_get();
         draw_menu(tft, sel);
         int vol_shown = pico_audio_get_volume_pct();
@@ -809,7 +817,12 @@ extern "C" void pico_menu_pick_and_load(void) {
                     int n = sel + step;
                     if (fresh) n = (n + menu_rows()) % menu_rows();
                     else if (n < 0 || n >= menu_rows()) n = sel;
-                    if (n != sel) { int old = sel; sel = n; menu_select(tft, old, sel); }
+                    if (n != sel) {
+                        int old = sel; sel = n; menu_select(tft, old, sel);
+#ifdef A8_MENU_MUSIC
+                        pico_audio_menu_beep();   /* (the Fruit Jam's list sound) */
+#endif
+                    }
                 }
             }
             /* Volume row: LEFT/RIGHT step it in place. */
@@ -818,6 +831,9 @@ extern "C" void pico_menu_pick_and_load(void) {
                        : ((m & BUTTON_LEFT) && !(prev_mask & BUTTON_LEFT)) ? -VOLUME_STEP : 0;
                 if (dv) {
                     set_volume(pico_audio_get_volume_pct() + dv);
+#ifdef A8_MENU_MUSIC
+                    pico_audio_menu_beep();   /* (heard at the new volume) */
+#endif
                     vol_shown = pico_audio_get_volume_pct();
                     draw_row(tft, sel, sel);
                     draw_volume(tft);
@@ -906,6 +922,9 @@ extern "C" void pico_menu_pick_and_load(void) {
 #endif
             tft.printf("Loading %s...", games[cand].label);
 #ifdef PICO_HDMI
+#ifdef A8_MENU_MUSIC
+            pico_audio_menu_sound(0, 0);  /* the list's sound off (muted: the game unmutes it) */
+#endif
             pico_config_flush();          /* the settings changed in the list: written now (pico_config.cpp) */
 #endif
             if (games[cand].loader()) g = cand;
