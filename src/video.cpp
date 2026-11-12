@@ -172,11 +172,80 @@ static inline __attribute__((always_inline)) void hdmi_fill(uint32_t *d, int n, 
   for (int i = 0; i < n; i++) d[i] = v;
 }
 
+/* Diagnosis: the line interrupt's time and calls (the stats line, once a second). */
+static volatile uint32_t hdmi_irq_us = 0, hdmi_irq_lines = 0;
+
 /* One output line (the driver's interrupt, core 1). */
+static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active_line, uint32_t *dst);
 static void __not_in_flash_func(hdmi_line)(uint32_t v_scanline, uint32_t active_line, uint32_t *dst) {
   (void)v_scanline;
+  const uint32_t t0 = timer_hw->timerawl;
+  hdmi_line_body(active_line, dst);
+  hdmi_irq_us += timer_hw->timerawl - t0;
+  hdmi_irq_lines++;
+}
+
+/* The game rows, made once each into line_cache (and copied out for a row
+ * shown twice). The line interrupt shares core 1 with the emulator: on the
+ * board the first version (column map for every word, black sides written
+ * on every line) took 16 us a line, 46 % of core 1, and the emulator ran at
+ * 48 fps (2026-11-11). Now:
+ *   - the black sides are written once per driver line buffer (it cycles
+ *     through a few fixed ones), not on every line (border_buf);
+ *   - 480 lines (5:3, the default): each 6 source pixels are exactly 5 output
+ *     words — (s0 s0) (s1 s1) (s2 s3) (s3 s4) (s4 s5) — made from 3 word
+ *     loads, no column map; 576 lines (2x): each source pixel twice;
+ *   - rows shown twice: copied 8 words at a time.
+ * Other heights: the column map, as before. */
+static int pic_fast = 0;                                /* 1: 5:3 (480 lines), 2: 2x (576), 0: col_map */
+static uint32_t *border_buf[4];                         /* line buffers whose sides are black (game) */
+static int border_n = 0;
+static bool border_game = false;                        /* border_buf is for the game picture */
+
+static inline __attribute__((always_inline)) uint32_t hdmi_rev16(uint32_t v) {
+  uint32_t r;
+  __asm__("rev16 %0, %1" : "=r"(r) : "r"(v));
+  return r;
+}
+
+static inline __attribute__((always_inline)) void hdmi_copy(uint32_t *d, const uint32_t *s, int n) {
+  for (; n >= 8; n -= 8, d += 8, s += 8) {
+    const uint32_t a = s[0], b = s[1], c = s[2], e = s[3], f = s[4], g = s[5], h = s[6], i = s[7];
+    d[0] = a; d[1] = b; d[2] = c; d[3] = e; d[4] = f; d[5] = g; d[6] = h; d[7] = i;
+  }
+  for (; n > 0; n--) *d++ = *s++;
+}
+
+/* Source row r into line_cache (pic_words words). */
+static inline __attribute__((always_inline)) void hdmi_make_row(int r) {
+  const uint16_t *s = frame_buf + r * GAME_W;
+  uint32_t *o = line_cache;
+  if (pic_fast == 1) {
+    const uint32_t *w = (const uint32_t *)s;            /* 2 pixels a word (rows start word-aligned) */
+    for (int g = 0; g < GAME_W / 6; g++, w += 3, o += 5) {
+      const uint32_t a = hdmi_rev16(w[0]), b = hdmi_rev16(w[1]), c = hdmi_rev16(w[2]);   /* s0|s1, s2|s3, s4|s5 */
+      o[0] = (a & 0xFFFFu) | (a << 16);
+      o[1] = (a >> 16) | (a & 0xFFFF0000u);
+      o[2] = b;
+      o[3] = (b >> 16) | (c << 16);
+      o[4] = c;
+    }
+    *o = hdmi_rev16(w[0]);                              /* the last 2 of 224: s222 s223 */
+  } else if (pic_fast == 2) {
+    for (int x = 0; x < GAME_W; x++) {
+      const uint32_t p = hdmi_rev16(s[x]) & 0xFFFFu;
+      o[x] = p | (p << 16);
+    }
+  } else {
+    const uint8_t *cm = col_map;
+    for (int w = 0; w < pic_words; w++, cm += 2) o[w] = hdmi_px2(s[cm[0]], s[cm[1]]);
+  }
+}
+
+static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active_line, uint32_t *dst) {
   const int words = out_words;
   if (!hdmi_game) {
+    border_game = false;
     /* the canvas, each pixel twice across, each row twice down, centred */
     const uint8_t *c = canvas8;
     const int pad = (words - CANVAS_W) / 2;
@@ -189,20 +258,26 @@ static void __not_in_flash_func(hdmi_line)(uint32_t v_scanline, uint32_t active_
     for (int x = 0; x < CANVAS_W; x++) d[x] = hdmi_pal[s[x]];
     return;
   }
+  if (!border_game) { border_game = true; border_n = 0; }   /* the canvas used other sides */
   if (active_line == 0) cache_row = -1;                 /* a new frame: frame_buf may have changed */
   const int r = active_line < (uint32_t)out_lines ? row_map[active_line] : NO_ROW;
-  if (r == NO_ROW) { hdmi_fill(dst, words, 0); return; }
+  if (r == NO_ROW) {
+    hdmi_fill(dst, words, 0);                           /* (sides black too: border_buf stays right) */
+    return;
+  }
   const int n = pic_words, pad = pic_pad;
-  hdmi_fill(dst, pad, 0);
-  hdmi_fill(dst + pad + n, words - pad - n, 0);
+  bool sides = false;
+  for (int i = 0; i < border_n; i++) if (border_buf[i] == dst) { sides = true; break; }
+  if (!sides) {
+    hdmi_fill(dst, pad, 0);
+    hdmi_fill(dst + pad + n, words - pad - n, 0);
+    if (border_n < 4) border_buf[border_n++] = dst;
+  }
   if (r != cache_row) {
-    const uint16_t *s = frame_buf + r * GAME_W;
-    const uint8_t *cm = col_map;
-    for (int w = 0; w < n; w++, cm += 2) line_cache[w] = hdmi_px2(s[cm[0]], s[cm[1]]);
+    hdmi_make_row(r);
     cache_row = r;
   }
-  uint32_t *d = dst + pad;
-  for (int w = 0; w < n; w++) d[w] = line_cache[w];
+  hdmi_copy(dst + pad, line_cache, n);
 }
 
 #pragma GCC pop_options
@@ -218,6 +293,8 @@ static void hdmi_geometry(void) {
     row_map[l] = l < lines ? (uint16_t)(l * GAME_H / lines) : NO_ROW;
   pic_words = px / 2;
   pic_pad = (out_words - pic_words) / 2;
+  /* the direct paths (hdmi_make_row): 480 lines = 5:3, 576 lines = 2x */
+  pic_fast = (lines == 480 && px == 372) ? 1 : (lines == 576 && px == 448) ? 2 : 0;
 }
 
 static void hdmi_pal_332(void) {
@@ -874,6 +951,16 @@ void Video::fps_stats_tick(void) {
     Serial.printf("[video] XIP %lu k accesses/s, %lu k misses/s (%.1f%% hit), sys %lu MHz\n",
                   (unsigned long)(acc / 1000), (unsigned long)((acc - hit) / 1000),
                   acc ? 100.0 * hit / acc : 0.0, (unsigned long)(clock_get_hz(clk_sys) / 1000000));
+    /* the line interrupt on core 1: its time, lines and output frames this
+     * second (60 frames = no stream restarts) */
+    static uint32_t last_hdmi_frames = 0;
+    const uint32_t us = hdmi_irq_us, lines = hdmi_irq_lines, fr = hdmi.get_frame_count();
+    hdmi_irq_us = 0;
+    hdmi_irq_lines = 0;
+    Serial.printf("[video] HDMI line IRQ %lu us/s (%.1f%% of core 1), %lu lines, %lu frames\n",
+                  (unsigned long)us, us / 10000.0, (unsigned long)lines,
+                  (unsigned long)(fr - last_hdmi_frames));
+    last_hdmi_frames = fr;
   }
 #endif
 #ifdef PICO_HDMI

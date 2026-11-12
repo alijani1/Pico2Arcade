@@ -289,8 +289,12 @@ extern "C" void pico_audio_toggle_hdmi(void) { pico_audio_set_hdmi(!g_hdmi); }
  * render loop's clock, and its sound by the ring.) The DC blocker and the
  * volume as there. Each sample goes out g_up times (2 below 16 kHz: see
  * pico_audio_init). In RAM, as there. */
+/* Diagnosis (serial keys q / Q, pico_audio_key): the game's sound not fed
+ * (q: snd_transmit then renders nothing), or I2S stopped as well (Q). */
+static volatile bool g_diag_no_feed = false, g_diag_i2s_off = false;
+
 extern "C" size_t __not_in_flash_func(pico_audio_push)(const void *data, size_t bytes) {
-    if (!g_started || bytes < 2) return 0;
+    if (!g_started || bytes < 2 || g_diag_no_feed || g_diag_i2s_off) return 0;
 #ifdef A8_HDMI_AUDIO
     // TODO: sound over HDMI (push_hdmi above) - Galagino's rates aren't 22050.
 #endif
@@ -398,6 +402,15 @@ extern "C" void pico_audio_key(int c) {
     case 'S': pico_audio_set_output(2); return;
     case 'B': pico_audio_set_output(3); return;
     case 'I': pico_audio_report(); return;
+    case 'q':                            /* diagnosis: stop / resume feeding the sound */
+        g_diag_no_feed = !g_diag_no_feed;
+        Serial.printf("[audio] DIAG feed %s%c", g_diag_no_feed ? "OFF (no sound rendered)" : "on", 10);
+        return;
+    case 'Q':                            /* diagnosis: I2S itself off / on */
+        g_diag_i2s_off = !g_diag_i2s_off;
+        if (g_diag_i2s_off) pico_audio_suspend(); else pico_audio_resume();
+        Serial.printf("[audio] DIAG I2S %s%c", g_diag_i2s_off ? "STOPPED" : "running", 10);
+        return;
     default: return;
     }
     Serial.printf("[audio] volume %d %%%c", g_volume_pct, 10);
