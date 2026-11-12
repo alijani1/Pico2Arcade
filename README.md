@@ -346,6 +346,7 @@ pio run -e pico2_std_ili9341 -t upload   # the same with an ILI9341 display
 | `pico2_arcade` | PicoCartReader (Olimex Pico2XL) | chain-booted from the CartReader's arcade window; `-t upload` writes only that window |
 | `pico2` | PicoCartReader | flashes at offset 0, **replacing** the CartReader firmware |
 | `bench` | PicoCartReader | Z80 benchmark (attract mode, logs to SD) |
+| `fruitjam` | Adafruit Fruit Jam (RP2350B) | **test build** for the next hardware: HDMI picture and sound, I2S sound to the TLV320 codec, USB gamepads, microSD — see [Adafruit Fruit Jam](#adafruit-fruit-jam-hdmi--test-build) |
 
 Which games are compiled in is set at the top of [`src/config.h`](src/config.h)
 (`ENABLE_PACMAN`, `ENABLE_GALAGA`, …). Comment a line to drop that game.
@@ -353,6 +354,39 @@ Which games are compiled in is set at the top of [`src/config.h`](src/config.h)
 The ST7789 init sequence is replaced by a custom one
 (`tft_espi_override/ST7789_Init.h.custom`); `tft_overlay.py` installs it
 into each env's TFT_eSPI copy automatically before every build.
+
+### Adafruit Fruit Jam (HDMI) — test build
+
+The prototype for the next GameAdapterRGBPico revision (TLV320 I2S DAC,
+HDMI, USB host). `pio run -e fruitjam`, then copy
+`.pio/build/fruitjam/firmware.uf2` to the board (hold button 1 = BOOT, press
+reset). It flashes at offset 0 like `pico2_std` (same flash layout below).
+
+- **Picture**: HDMI, 800x480 @ 60 Hz by default; every frame is rendered
+  whole from the vertical blank (no tearing). The game list's **Screen** row
+  tries another mode (640x480, 720x400, 720x480, 720x576 50 Hz, 800x600) for
+  10 s — FIRE / START keeps it, else it goes back; **button 3 held at
+  power-on** returns to 800x480. **Scale** (Smooth / Sharp / Drop) and
+  **Width** (372 / 448 / 560 / 672 at full height, each also "zoomed out":
+  the whole game smaller at an exact height, e.g. 336x432) follow the mode.
+  **Show FPS**: a box top left (fps, CPU, Scale, Width); with it off, Scale /
+  Width show there for 3 s at game start and after a change.
+- **Sound**: the **Sound** row picks Auto (headphones when plugged in, else
+  the speaker) / Headphones / Speaker / Both / HDMI. The game list plays the
+  menu tune and a tone on each move.
+- **Controls**: USB gamepads or a keyboard on the USB-A ports (D-pad / stick,
+  B / X fire, A / Y fire 2, START, SELECT = coin; START + SELECT held = the
+  game list); board buttons 1 = coin / list down, 2 = START, 3 = fire.
+- **Serial monitor** (USB-C) as a controller: arrows or w a s d, Space fire,
+  b fire 2, Enter / 1 START, c / 5 coin, x the game list; in a game z Scale,
+  v Width, f the FPS box, m the next screen mode (k keeps it), o codec /
+  HDMI sound; + / - volume.
+- **ROMs**: with a **microSD card** in at power-on the zips come from it
+  (root, ROMS, ARCADE, MAME or any folder 3 deep); without one, from the
+  flash ROM drive. The game list's ROM Drive row shows the card (or the flash
+  drive) to the PC over USB-C.
+- Settings are written when a game is picked or before a restart (a flash
+  write would drop the HDMI picture).
 
 ### Flash layout (standalone Pico 2, 4 MB)
 
