@@ -210,6 +210,8 @@ static void set_volume(int v) {
 enum RowKind { ROW_GAME, ROW_DISPLAY, ROW_SCALE, ROW_STRETCH, ROW_FPS, ROW_DRIVE, ROW_VOLUME, ROW_EXIT, ROW_SCREEN, ROW_SOUND };   /* (ROW_SOUND: the Fruit Jam's sound output) */   /* (ROW_SCREEN: HDMI, last so the others keep their values) */
 #ifdef PICO_HDMI
 extern "C" int video_hdmi_mode(void);                /* video.cpp: the Screen row (try_screen_mode below) */
+extern "C" int video_hdmi_modes(void);
+static int s_pend_mode = 0;                          /* the Screen row: the mode picked (LEFT / RIGHT) */
 extern "C" const char *video_hdmi_mode_name(int m);
 extern "C" int video_hdmi_width(int step);
 extern "C" int video_hdmi_height(int step);
@@ -403,6 +405,9 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     const int w = W - 22, h = s_step - 1;              /* stops short of the scroll arrows */
     /* Game names in yellow, settings / actions in white. */
     uint16_t fg = (row_kind(i) == ROW_GAME) ? (badSet[avail[i]] ? TFT_RED : TFT_YELLOW) : TFT_WHITE;
+#ifdef PICO_HDMI
+    if (row_kind(i) == ROW_SCREEN && s_pend_mode != video_hdmi_mode()) fg = TFT_CYAN;   /* picked, not tried yet */
+#endif
     uint16_t bg = (i == sel) ? TFT_BLUE : TFT_BLACK;
     TFT_eSprite spr(&tft);
 #ifdef PICO_HDMI
@@ -433,7 +438,10 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
 #endif
 #ifdef PICO_HDMI
       case ROW_SCREEN:
-        snprintf(label, sizeof(label), "Screen: %s", video_hdmi_mode_name(video_hdmi_mode()));
+        /* the mode picked with LEFT / RIGHT (FIRE tries it; as Pico2Atari8's
+         * Settings > Screen mode) - was: FIRE stepped to the next mode at once,
+         * so a mode the display can't show hid the ones after it */
+        snprintf(label, sizeof(label), "Screen: < %s >", video_hdmi_mode_name(s_pend_mode));
         break;
 #endif
 #ifdef MENU_SCALE_ROW
@@ -484,7 +492,9 @@ static void draw_row(TFT_eSPI &tft, int i, int sel) {
     }
     /* crop to what fits (12 px per size-2 char), leaving room for the
      * scroll arrows — a longer label would wrap onto the next row */
-#ifdef PICO_TINY_SCREEN
+#if defined(PICO_HDMI)
+    int fit = (W - 14 - 20) / 8;        /* (Font 2: ~8 px a character on average, 12 at most) */
+#elif defined(PICO_TINY_SCREEN)
     int fit = (w - ROW_TEXT_X) / 6;
 #else
     int fit = (W - 14 - 20) / 12;
@@ -617,8 +627,9 @@ extern "C" int video_hdmi_width(int step);
 extern "C" int video_hdmi_height(int step);
 extern "C" void pico_config_save_hdmi_mode(int m);
 
-static void try_screen_mode(TFT_eSPI &tft) {
-    const int old = video_hdmi_mode(), m = (old + 1) % video_hdmi_modes();
+static void try_screen_mode(TFT_eSPI &tft, int m) {
+    const int old = video_hdmi_mode();
+    if (m < 0 || m >= video_hdmi_modes() || m == old) { s_pend_mode = old; return; }
     while (buttons_get() & (BUTTON_FIRE | BUTTON_START)) delay(20);   /* let go: the next press keeps */
     Serial.printf("[menu] trying screen mode %s\n", video_hdmi_mode_name(m));
     bool keep = false;
@@ -655,6 +666,7 @@ static void try_screen_mode(TFT_eSPI &tft) {
         video_hdmi_set_mode(old);
         Serial.printf("[menu] screen mode back to %s\n", video_hdmi_mode_name(old));
     }
+    s_pend_mode = video_hdmi_mode();      /* (the row shows the mode running again) */
 }
 #endif
 
@@ -766,6 +778,9 @@ extern "C" void pico_menu_pick_and_load(void) {
     tft.setRotation(g_landscape_mode ? PICO_ROT_LANDSCAPE : PICO_ROT_PORTRAIT);
 #endif
     int sel = 0;
+#ifdef PICO_HDMI
+    s_pend_mode = video_hdmi_mode();
+#endif
     int g = -1;   /* chosen index into games[] */
 
 #ifdef Z80_BENCH
@@ -855,6 +870,20 @@ extern "C" void pico_menu_pick_and_load(void) {
                     }
                 }
             }
+#ifdef PICO_HDMI
+            /* Screen row: LEFT / RIGHT pick a mode (shown, not switched to) */
+            if (row_kind(sel) == ROW_SCREEN) {
+                const int dm = ((m & BUTTON_RIGHT) && !(prev_mask & BUTTON_RIGHT)) ? 1
+                             : ((m & BUTTON_LEFT) && !(prev_mask & BUTTON_LEFT)) ? -1 : 0;
+                if (dm) {
+                    s_pend_mode = (s_pend_mode + dm + video_hdmi_modes()) % video_hdmi_modes();
+#ifdef A8_MENU_MUSIC
+                    pico_audio_menu_beep();
+#endif
+                    draw_row(tft, sel, sel);
+                }
+            }
+#endif
             /* Volume row: LEFT/RIGHT step it in place. */
             if (row_kind(sel) == ROW_VOLUME) {
                 int dv = ((m & BUTTON_RIGHT) && !(prev_mask & BUTTON_RIGHT)) ? VOLUME_STEP
@@ -876,7 +905,7 @@ extern "C" void pico_menu_pick_and_load(void) {
         }
 #ifdef PICO_HDMI
         if (screen_key) {
-            try_screen_mode(tft);
+            try_screen_mode(tft, (video_hdmi_mode() + 1) % video_hdmi_modes());   /* (key m: the next one) */
             continue;                     /* redraw (in the mode kept) */
         }
 #endif
@@ -893,7 +922,7 @@ extern "C" void pico_menu_pick_and_load(void) {
 #endif
 #ifdef PICO_HDMI
           case ROW_SCREEN:
-            try_screen_mode(tft);
+            try_screen_mode(tft, s_pend_mode);   /* the one picked with LEFT / RIGHT */
             break;             /* loop redraws the menu in the mode kept */
 #endif
 #ifdef MENU_SCALE_ROW
