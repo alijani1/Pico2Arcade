@@ -226,7 +226,7 @@ static inline void timeplt_prepare_frame(void) {
 }
 
 /* cat: 0 = tiles under the sprites, 1 = over them (colour RAM bit 4) */
-static inline void timeplt_blit_tile(short row, char col, unsigned char cat) {
+static inline void PICO_HOT_RAM(timeplt_blit_tile)(short row, char col, unsigned char cat) {   /* (Fruit Jam: RAM, as render_line) */
   unsigned short addr = tileaddr[row][col];
   unsigned char cram = memory[TIMEPLT_COLORRAM + addr];
   if(((cram >> 4) & 1) != cat) return;

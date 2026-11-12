@@ -259,7 +259,7 @@ const unsigned short *logos[] = {
 #endif
 
 // render one of 36 tile rows (8 x 224 pixel lines)
-void render_line(short row) {
+void PICO_HOT_RAM(render_line)(short row) {   /* (Fruit Jam: in RAM - 60 renders a second on HDMI; Xevious took ~11 ms of core 0 a frame from flash) */
   // the upper screen half of frogger has a blue background
   // using 8 in fact adds a tiny fraction of red as well. But that does not hurt
   memset(frame_buffer, 
