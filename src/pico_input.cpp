@@ -429,11 +429,10 @@ extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
     /* Fruit Jam, the game list (core 0): its sound is fed from here - every
      * list screen polls the buttons (pico_audio.cpp menu sound; the HDMI
      * sound's packets too, as the frame wait does in a game) */
+    /* (Since: over HDMI a 4 ms timer feeds the list's sound and the packets
+     * - pico_audio.cpp menu_tick; here only the I2S feed and the jack.) */
     if (!g_menu_done && get_core_num() == 0) {
         pico_audio_menu_poll();
-#ifdef A8_HDMI_AUDIO
-        video_hdmi_audio_poll();
-#endif
     }
 #endif
     /* 1 ms cache — human rapid-tap max ~10 Hz gives a press duration

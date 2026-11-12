@@ -89,7 +89,8 @@ static volatile int      g_min_queued = 1 << 30;
  * 44100 Hz. The emulator is paced by this ring as by the I2S one. I2S is
  * stopped and the codec muted meanwhile: two outputs would run off two
  * clocks (the crystal, the HDMI pixel clock) and drift apart. */
-static const int HDMI_RING = 512;                      /* 23 ms; the packet queue adds 18 */
+static const int HDMI_RING = 2048;                     /* 85 ms (Pico2Arcade: the game list fills it all; a game 512) */
+/* (Pico2Atari8: 512, 23 ms; the packet queue adds 18) */
 static int16_t   g_hring[HDMI_RING];
 static volatile uint32_t g_hhead = 0, g_htail = 0;     /* core 0 writes, core 1 reads */
 static volatile bool g_hdmi = false;
@@ -107,7 +108,9 @@ static void i2s_start(int rate) {
     g_i2s.setDATA(A8_I2S_DATA_PIN);
     g_i2s.setBitsPerSample(16);
     // 8 buffers × 128 words = 1024 samples, as PWMAudio (see below).
-    g_i2s.setBuffers(8, 128);
+    // (Pico2Arcade: 16 x 128 - the game list fills it all, 85 ms at 24000 Hz;
+    // a game only 8 x 128 as before, pico_audio_push - its latency stays)
+    g_i2s.setBuffers(16, 128);
     bool ok = g_i2s.begin(rate);
     uint32_t sys = clock_get_hz(clk_sys), bclk = (uint32_t)rate * 32;
     Serial.printf("[audio] I2S %s: %d Hz, BCLK %lu Hz (GPIO %d, WS %d, DIN %d), "
@@ -210,7 +213,8 @@ extern "C" void pico_audio_set_sample_rate(int sample_rate) {
  * word (it in both halves), written a block at a time. In RAM: it runs for
  * every sample, and from flash its loop would compete with the emulator's
  * per-scanline code for the XIP cache (config.h, A8_RAM). */
-static const int RING_SAMPLES = 8 * 128;               /* setBuffers(8, 128): a word = a frame = a sample */
+static const int RING_SAMPLES = 16 * 128;              /* setBuffers(16, 128): a word = a frame = a sample */
+static const int RING_GAME = 8 * 128;                  /* a game fills it this far (latency: 42 ms at 24000 Hz) */
 static int32_t  g_dc_x1 = 0, g_dc_y1 = 0;              /* DC blocker: last in, last out (x256) */
 static uint32_t g_stretch_acc = 0;                     /* 16.16: due extra samples */
 
@@ -296,6 +300,10 @@ extern "C" size_t pico_audio_hdmi_avail(void) { return g_hhead - g_htail; }
  * pico_audio_init). In RAM, as there. */
 /* Diagnosis (serial keys q / Q, pico_audio_key): the game's sound not fed
  * (q: snd_transmit then renders nothing), or I2S stopped as well (Q). */
+/* Pico2Arcade: the game list's sound may fill the rings whole (85 ms): its
+ * feed (the list's input polling) can wait 20 ms and more (a redraw); a
+ * game keeps to RING_GAME / 512 samples (its sound's latency). */
+static volatile bool g_menu_deep = false;
 static volatile bool g_diag_no_feed = false, g_diag_i2s_off = false;
 
 extern "C" size_t __not_in_flash_func(pico_audio_push)(const void *data, size_t bytes) {
@@ -316,7 +324,7 @@ extern "C" size_t __not_in_flash_func(pico_audio_push)(const void *data, size_t 
          * pitch, "shadow tones" in Galaga on the board, 2026-11-11.) */
         uint32_t head = g_hhead;
         const int queued = (int)(head - g_htail);
-        if (HDMI_RING - queued < (int)n) return 0;
+        if ((g_menu_deep ? HDMI_RING : 512) - queued < (int)n) return 0;
         if (queued < g_min_queued) g_min_queued = queued;
         const int32_t gain = g_amp_on ? g_gain : 0;
         for (size_t i = 0; i < n; i++) {
@@ -342,6 +350,7 @@ extern "C" size_t __not_in_flash_func(pico_audio_push)(const void *data, size_t 
     int queued = RING_SAMPLES - room;
     if (queued < g_min_queued) g_min_queued = queued;
     if (room < (int)nsamp * up) return 0;              /* all or nothing */
+    if (!g_menu_deep && queued + (int)nsamp * up > RING_GAME) return 0;   /* (a game: as deep as before) */
     uint32_t block[128 * 2];
     int nb = 0;
     for (size_t i = 0; i < nsamp; i++) {
@@ -522,6 +531,46 @@ static int16_t menu_sample(MenuSound &m) {
     return (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
 }
 
+/* Feeding (2026-11-12: "the menu music sounds terrible" - it ran dry several
+ * times a second): the I2S ring is fed from the list's input polling as
+ * before, but may fill it whole (85 ms, g_menu_deep) so a 20 ms poll or a
+ * redraw doesn't empty it. Over HDMI the packet queue holds only 17 ms, so
+ * there the music and the packets are fed from a 4 ms timer (core 0, the
+ * HDMI core) while the list is up - the only feeder of the HDMI ring then;
+ * in a game the frame wait and the render strips feed it (video.cpp). */
+#include "pico/time.h"
+extern "C" void video_hdmi_audio_poll(void);    /* video.cpp: the HDMI packet feed */
+static repeating_timer_t g_menu_timer;
+static bool g_menu_timer_on = false;
+static volatile bool g_beep_req = false;
+
+/* The tune (and a requested tone) into the ring, as many blocks as it takes. */
+static void menu_fill(void) {
+    if (g_beep_req) {
+        g_beep_req = false;
+        g_ms.beep_left = g_beep_len;
+        g_ms.beep_phase = 0;
+    }
+    uint16_t buf[64];
+    for (int chunk = 0; chunk < 40; chunk++) {
+        MenuSound m = g_ms;
+        for (int i = 0; i < 64; i++) buf[i] = (uint16_t)(menu_sample(m) + 32768);
+        if (pico_audio_push(buf, sizeof(buf)) == 0) break;   /* full: the rest next time */
+        g_ms = m;
+    }
+}
+
+/* The 4 ms timer: over HDMI, the tune into the ring and the ring into packets. */
+static bool menu_tick(repeating_timer_t *) {
+#ifdef A8_HDMI_AUDIO
+    if (g_menu && g_hdmi) {
+        menu_fill();
+        video_hdmi_audio_poll();
+    }
+#endif
+    return true;
+}
+
 /* The game list: on (its sound's rate) with or without the music, off (0)
  * once a game is picked (muted: the game unmutes when it runs). */
 extern "C" void pico_audio_menu_sound(int sample_rate, int music) {
@@ -534,32 +583,32 @@ extern "C" void pico_audio_menu_sound(int sample_rate, int music) {
         g_beep_step = (uint32_t)(((uint64_t)BEEP_HZ << 32) / rate);
         g_beep_len = rate * BEEP_MS / 1000;
         g_ms = MenuSound();
+        g_menu_deep = true;
         g_menu = true;
         pico_audio_amp_on();
+        if (!g_menu_timer_on) g_menu_timer_on = add_repeating_timer_ms(-4, menu_tick, nullptr, &g_menu_timer);
     } else if (g_menu) {
+        if (g_menu_timer_on) { cancel_repeating_timer(&g_menu_timer); g_menu_timer_on = false; }
         g_menu = false;
+        g_menu_deep = false;
         pico_audio_amp_off();
     }
 }
 
-/* A move in the game list. */
+/* A move in the game list (the tone: started by the next fill). */
 extern "C" void pico_audio_menu_beep(void) {
-    if (!g_menu) return;
-    g_ms.beep_left = g_beep_len;
-    g_ms.beep_phase = 0;
+    if (g_menu) g_beep_req = true;
 }
 
-/* From the list's input polling: as many blocks as the ring takes. */
+/* From the list's input polling: the headphone jack, and the I2S feed (the
+ * timer feeds HDMI). */
 extern "C" void pico_audio_menu_poll(void) {
     if (!g_menu) return;
     pico_audio_poll();                   /* the headphone jack, as in a game */
-    uint16_t buf[64];
-    for (int chunk = 0; chunk < 16; chunk++) {
-        MenuSound m = g_ms;
-        for (int i = 0; i < 64; i++) buf[i] = (uint16_t)(menu_sample(m) + 32768);
-        if (pico_audio_push(buf, sizeof(buf)) == 0) break;   /* full: the rest next time */
-        g_ms = m;
-    }
+#ifdef A8_HDMI_AUDIO
+    if (g_hdmi) return;
+#endif
+    menu_fill();
 }
 #endif  /* A8_MENU_MUSIC */
 
