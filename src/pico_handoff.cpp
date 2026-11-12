@@ -37,7 +37,14 @@ extern "C" void handoff_flags_write(int flags) {
         HANDOFF_VOLUME_TAG | ((uint32_t)(flags & 0xFF) << 8) | pct;
 }
 
+#ifdef PICO_HDMI
+extern "C" void pico_config_flush(void);   /* pico_config.cpp: HDMI saves the settings only now */
+#endif
+
 extern "C" void handoff_relaunch_arcade(void) {
+#ifdef PICO_HDMI
+    pico_config_flush();
+#endif
     Serial.println("[handoff] relaunch arcade");
     watchdog_hw->scratch[HANDOFF_SCRATCH_ARCADE] = HANDOFF_ARCADE_MAGIC;
     delay(50);
@@ -45,6 +52,9 @@ extern "C" void handoff_relaunch_arcade(void) {
 }
 
 extern "C" void handoff_exit_to_cartreader(void) {
+#ifdef PICO_HDMI
+    pico_config_flush();
+#endif
     Serial.println("[handoff] exit to CartReader");
     watchdog_hw->scratch[HANDOFF_SCRATCH_ARCADE] = 0;
     delay(50);

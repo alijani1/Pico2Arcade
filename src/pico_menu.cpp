@@ -215,6 +215,7 @@ extern "C" int video_hdmi_width(int step);
 extern "C" int video_hdmi_height(int step);
 extern "C" bool video_hdmi_take_mode_key(void);      /* serial key m pressed (once) */
 extern "C" void pico_config_save_sound_output(int o);   /* pico_config.cpp: the Sound row */
+extern "C" void pico_config_flush(void);              /* pico_config.cpp: write the settings now */
 #include "pico_audio.h"                              /* the Sound row: pico_audio_*_sound_output */
 #endif
 /* Display (portrait/landscape) toggle: landscape builds. (On the Quad the
@@ -904,6 +905,9 @@ extern "C" void pico_menu_pick_and_load(void) {
             tft.setCursor(10, 100);
 #endif
             tft.printf("Loading %s...", games[cand].label);
+#ifdef PICO_HDMI
+            pico_config_flush();          /* the settings changed in the list: written now (pico_config.cpp) */
+#endif
             if (games[cand].loader()) g = cand;
             else show_load_error(tft, cand);
             break;

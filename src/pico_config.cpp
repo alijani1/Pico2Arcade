@@ -161,7 +161,25 @@ extern "C" void __no_inline_not_in_flash_func(pico_flash_erase_program)(uint32_t
 }
 #endif
 
+#ifdef PICO_HDMI
+/* HDMI (Fruit Jam): a flash write runs with interrupts off on core 0, which
+ * has the HDMI line interrupt - the picture dropped out and the display
+ * resynced on every Volume step. So a change is only noted here and written
+ * by pico_config_flush: when a game is picked (behind its "Loading" screen)
+ * and before any restart (exit, back to the game list, ROM drive mode) - as
+ * Pico2Atari8 saves its settings when a game starts or ends. */
+static bool s_cfg_dirty = false;
+static void pico_config_write(void);
+static void pico_config_save(void) { s_cfg_dirty = true; }
+extern "C" void pico_config_flush(void) {
+    if (!s_cfg_dirty) return;
+    s_cfg_dirty = false;
+    pico_config_write();
+}
+static void pico_config_write(void) {
+#else
 static void pico_config_save(void) {
+#endif
     s_cfg.magic = CFG_MAGIC;
     s_cfg.landscape = g_landscape_mode ? 1 : 0;
     s_cfg.show_fps = g_show_fps ? 1 : 0;
