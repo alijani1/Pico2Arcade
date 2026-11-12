@@ -382,6 +382,10 @@ static inline __attribute__((always_inline)) void hdmi_make_row(int r, uint32_t 
         o[2] = s3 | (s3 << 16);
       }
     }
+  } else if (pic_fast == 9) {
+    /* 224 = 1x (720x400's zoomed-out step): the game's own pixels, 2 a word */
+    const uint32_t *w = (const uint32_t *)s;
+    for (int x = 0; x < GAME_W / 2; x++) o[x] = hdmi_rev16(w[x]);
   } else if (pic_fast == 6) {
     /* 672 = 3x: each source pixel three times */
     const uint32_t *w = (const uint32_t *)s;
@@ -506,20 +510,22 @@ static void hdmi_axis(uint16_t *map, int out, int n, int first, int src_len, boo
  * proportion to its lines, snapped to a width with a direct path (372, 448,
  * 560, 672) when one is within 10 % and fits, else even and at most the
  * line (the column map). 720x576: 448 / 560 / 672 / 672; 640x480: 372 /
- * 448 / 560 / 560; 720x400: 310 / 372 / 448 / 560.
+ * 448 / 560 / 560; 720x400: 310 / 372 / 448 / 560 (since: 336 / 372 / 448 / 560,
+ * zoomed out 224 / 336 / 372 / 448 - all with a direct path).
  * (Since: odd steps are "zoomed out", not cropped - the user found the crop
  * (the middle 240 rows, 20 % taller) zoomed the wrong way: the whole game,
  * smaller, at an exact height - hdmi_size.) */
-static const int HDMI_FAST[5] = { 336, 372, 448, 560, 672 };   /* widths with a direct path */
+static const int HDMI_FAST[6] = { 224, 336, 372, 448, 560, 672 };   /* widths with a direct path */
 static int hdmi_snap(int px, int max) {
   int best = -1;
   if (px >= max) {                                      /* doesn't fit: the widest direct one that does */
-    for (int i = 0; i < 5; i++) if (HDMI_FAST[i] <= max) best = HDMI_FAST[i];
+    for (int i = 0; i < 6; i++) if (HDMI_FAST[i] <= max) best = HDMI_FAST[i];
     if (best > 0) return best;
     px = max;
   }
-  for (int i = 0; i < 5; i++)
-    if (HDMI_FAST[i] <= max && 10 * abs(HDMI_FAST[i] - px) <= px && (best < 0 || abs(HDMI_FAST[i] - px) < abs(best - px)))
+  for (int i = 0; i < 6; i++)
+    /* (within 15 %: was 10 - 720x400's zoomed-out 298 then had no direct path) */
+    if (HDMI_FAST[i] <= max && 20 * abs(HDMI_FAST[i] - px) <= 3 * px && (best < 0 || abs(HDMI_FAST[i] - px) < abs(best - px)))
       best = HDMI_FAST[i];
   return best > 0 ? best : (px & ~1);
 }
@@ -570,7 +576,7 @@ static void hdmi_geometry(void) {
    * 672 = 3x, 336 = 1.5x across */
   pic_fast = px == 372 ? (mode == SCALE_SMOOTH ? 3 : 1) : px == 2 * GAME_W ? 2
            : px == 560 ? (mode == SCALE_SMOOTH ? 5 : 4) : px == 672 ? 6
-           : px == 336 ? (mode == SCALE_SMOOTH ? 8 : 7) : 0;
+           : px == 336 ? (mode == SCALE_SMOOTH ? 8 : 7) : px == GAME_W ? 9 : 0;
   pic_mode = mode;
   pic_step = step;
   border_n = 0;                                         /* the sides moved */
