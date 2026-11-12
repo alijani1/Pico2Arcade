@@ -13,6 +13,9 @@
 #include "driver/i2s.h"     /* Pico2Arcade: local no-op stub, see src/driver/i2s.h */
 #include "video.h"
 #include "leds.h"
+#ifdef PICO_FRUITJAM
+#include "pico_audio.h"     /* pico_audio_poll / pico_audio_report (loop) */
+#endif
 
 #include "emulation.h"
 
@@ -1166,6 +1169,13 @@ void loop(void) {
   update_screen(); 
   pico_hiscore_service();   /* high-score saves + save-then-exit (core 0 owns flash / SD) */
   pico_input_poll();        /* core-0-only inputs, e.g. the 5200 stick (pico_input.cpp) */
+#ifdef PICO_FRUITJAM
+  pico_audio_poll();        /* the headphone jack (I2C, at most 4 times a second) */
+  {
+    static uint32_t last_report = 0;    /* the sound ring's health on the serial log */
+    if (millis() - last_report >= 5000) { last_report = millis(); pico_audio_report(); }
+  }
+#endif
 
 #ifdef LED_PIN
   leds_update();

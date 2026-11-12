@@ -49,6 +49,22 @@ void    pico_audio_amp_on(void);
 void    pico_audio_amp_off(void);
 uint8_t pico_audio_get_volume(void);
 
+#ifdef PICO_FRUITJAM
+/* I2S / TLV320DAC3100 (pico_audio.cpp, as Pico2Atari8's): */
+/* From the main loop: follows the headphone jack (auto output). */
+void    pico_audio_poll(void);
+/* Output: 0 auto (headphones when plugged in, else the speaker),
+ * 1 headphones, 2 speaker, 3 both. */
+void    pico_audio_set_output(int mode);
+/* Log the ring's health since the last call (under-runs, lowest level). */
+void    pico_audio_report(void);
+/* A key from the serial monitor: + - volume, A H S B output, I report. */
+void    pico_audio_key(int c);
+/* Output 0 - 3 as pico_audio_set_output (4 HDMI: not yet here). */
+void    pico_audio_set_sound_output(int o);
+int     pico_audio_get_sound_output(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
