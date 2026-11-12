@@ -807,13 +807,14 @@ void audio_init(void) {
 }
 
 #ifdef PICO_HDMI
-void video_hdmi_wait_vblank(void);   /* video.cpp */
-int video_hdmi_emu_frames(void);     /* video.cpp */
+int video_hdmi_wait_vblank(void);    /* video.cpp: the HDMI frames gone by */
+int video_hdmi_emu_frames(int vblanks);   /* video.cpp */
+extern "C" uint32_t __pico_notify_pending(void);   /* pico_freertos_stubs.c */
 unsigned short *video_hdmi_strip(int row);   /* video.cpp: tile row row (8 lines) of its frame buffer, or null */
 #endif
 void update_screen(void) {
 #ifdef PICO_HDMI
-  video_hdmi_wait_vblank();          /* each frame from the HDMI vertical blank (see below) */
+  const int hdmi_vblanks = video_hdmi_wait_vblank();   /* each frame from the HDMI vertical blank (see below) */
 #endif
   uint32_t t0 = micros();
   // Start of this two-frame video cycle (see the half-rate pacing below).
@@ -925,7 +926,20 @@ XEVIOUS_END
 #endif
   /* (one 60 Hz game frame per HDMI frame; in the 50 / 70 Hz modes now and
    * then two / none, so the game keeps its speed: video_hdmi_emu_frames) */
-  for (int n = video_hdmi_emu_frames(); n > 0; n--) xTaskNotifyGive(emulationtask);
+  /* Fast start: for the game's first 5 s the emulator runs as fast as core 1
+   * allows (kept 3 frames ahead), so boot / test screens go by quickly -
+   * Xevious's render-heavy test screens had it at ~48 fps for seconds; the
+   * sound is muted meanwhile (sped up, it would be noise). Then the game's
+   * 60 Hz, a frame for every HDMI frame gone by (one not drawn keeps the
+   * game's speed). */
+  static uint32_t fast_until = 0;
+  if (!fast_until) { fast_until = (millis() + 5000) | 1; pico_audio_amp_off(); }
+  if (fast_until != 2 && (int32_t)(fast_until - millis()) > 0) {
+    while (__pico_notify_pending() < 3) xTaskNotifyGive(emulationtask);
+  } else {
+    if (fast_until != 2) { fast_until = 2; pico_audio_amp_on(); }
+    for (int n = video_hdmi_emu_frames(hdmi_vblanks); n > 0; n--) xTaskNotifyGive(emulationtask);
+  }
   (void)frame_base;
 #elif defined(VIDEO_HALF_RATE)
   // render and transmit screen in two halfs as the display

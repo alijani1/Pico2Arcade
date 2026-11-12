@@ -752,7 +752,10 @@ static void hdmi_game_start(void) {
  * driver counts a frame where its vertical blank starts (and sends an event,
  * __sev, then), so the frame rendered after this is in frame_buf before the
  * beam gets to it. 50 ms at most (no output: don't hang the game). */
-void video_hdmi_wait_vblank(void) {
+/* (Since: returns the HDMI frames gone by since the last call - 1 when the
+ * render kept up, more when it didn't; video_hdmi_emu_frames gives the game
+ * that many frames, so it keeps its speed when a frame isn't drawn.) */
+int video_hdmi_wait_vblank(void) {
   static uint32_t last = 0;
   const uint32_t t0 = time_us_32();
   uint32_t f;
@@ -760,7 +763,9 @@ void video_hdmi_wait_vblank(void) {
     hdmi_audio_feed();                          /* (HDMI sound: keep its queue topped up meanwhile) */
     __wfe();
   }
+  const uint32_t gone = last ? f - last : 1;
   last = f;
+  return gone > 4 ? 4 : (int)gone;               /* (a long stall: not a burst of frames) */
 }
 
 /* galagino.cpp update_screen, once per HDMI frame: how many 60 Hz game frames
@@ -774,10 +779,13 @@ unsigned short *video_hdmi_strip(int row) {
   return (hdmi_game && row >= 0 && row < GAME_H / 8) ? &frame_buf[row * 8 * GAME_W] : nullptr;
 }
 
-int video_hdmi_emu_frames(void) {
+/* (Since: for `vblanks` HDMI frames - more than 1 when the render ran over
+ * a frame, Xevious's test screens: the game was paced by the renders and ran
+ * slow; now a frame isn't shown, the game keeps its speed.) */
+int video_hdmi_emu_frames(int vblanks) {
   static uint32_t acc = 0;
   const uint32_t hz = HDMI_MODES[hdmi_vmode].hz;
-  acc += 60;
+  acc += 60u * (uint32_t)(vblanks > 0 ? vblanks : 1);
   const int n = (int)(acc / hz);
   acc -= (uint32_t)n * hz;
   return n;

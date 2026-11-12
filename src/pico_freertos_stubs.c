@@ -92,3 +92,11 @@ void __pico_notify_give(void) {
 #include "drivers/dvhstx/audio_packet.c"
 #include "drivers/dvhstx/audio_queue.c"
 #endif
+
+#ifdef PICO_HDMI
+/* Frames the emulator may still run (vblank pulses not taken yet) - the
+ * Fruit Jam's fast start keeps it topped up (galagino.cpp update_screen). */
+uint32_t __pico_notify_pending(void) {
+  return g_vblank_pulses;
+}
+#endif
