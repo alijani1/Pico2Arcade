@@ -343,9 +343,11 @@ static inline __attribute__((always_inline)) void hdmi_make_row(int r, uint32_t 
     }
     *o = hdmi_rev16(w[0]);                              /* the last 2 of 224: s222 s223 */
   } else if (pic_fast == 2) {
-    for (int x = 0; x < GAME_W; x++) {
-      const uint32_t p = hdmi_rev16(s[x]) & 0xFFFFu;
-      o[x] = p | (p << 16);
+    const uint32_t *w = (const uint32_t *)s;            /* 2 pixels a load (rows start word-aligned) */
+    for (int x = 0; x < GAME_W; x += 2, w++, o += 2) {
+      const uint32_t a = hdmi_rev16(w[0]);              /* s0|s1 */
+      o[0] = (a & 0xFFFFu) | (a << 16);
+      o[1] = (a >> 16) | (a & 0xFFFF0000u);
     }
   } else if (pic_fast == 4 || pic_fast == 5) {
     /* 560 = 2.5x: each 2 source pixels -> 5: s0 s0 X s1 s1, X = s0 (Drop /
@@ -452,7 +454,14 @@ static inline __attribute__((always_inline)) void hdmi_line_body(uint32_t active
   uint32_t *d = dst + pad;
   if (rm & ROW_BLEND) {
     const uint32_t *b = hdmi_row(r + 1, r);
-    for (int w = 0; w < n; w++) d[w] = hdmi_mean(a[w], b[w]);
+    int w = 0;                                        /* 4 words a pass (fewer loop steps) */
+    for (; w + 4 <= n; w += 4) {
+      const uint32_t a0 = a[w], a1 = a[w + 1], a2 = a[w + 2], a3 = a[w + 3];
+      const uint32_t b0 = b[w], b1 = b[w + 1], b2 = b[w + 2], b3 = b[w + 3];
+      d[w] = hdmi_mean(a0, b0); d[w + 1] = hdmi_mean(a1, b1);
+      d[w + 2] = hdmi_mean(a2, b2); d[w + 3] = hdmi_mean(a3, b3);
+    }
+    for (; w < n; w++) d[w] = hdmi_mean(a[w], b[w]);
   } else {
     hdmi_copy(d, a, n);
   }
@@ -752,6 +761,13 @@ void video_hdmi_wait_vblank(void) {
  * to run for it - 1 at 60 Hz; at 50 Hz now and then 2, at 70 Hz now and then
  * 0 - so the game keeps its speed in every mode (a frame is shown twice, or
  * one isn't shown). */
+/* galagino.cpp update_screen: tile row row (8 lines) of frame_buf to render
+ * straight into once the game picture is up (else null: the strip buffer, and
+ * Video::write copies it) - saves 36 strip copies a frame on core 0. */
+unsigned short *video_hdmi_strip(int row) {
+  return (hdmi_game && row >= 0 && row < GAME_H / 8) ? &frame_buf[row * 8 * GAME_W] : nullptr;
+}
+
 int video_hdmi_emu_frames(void) {
   static uint32_t acc = 0;
   const uint32_t hz = HDMI_MODES[hdmi_vmode].hz;
@@ -1355,6 +1371,9 @@ void Video::write(uint16_t *colors, uint32_t len) {
   if (!hdmi_game) hdmi_game_start();                  /* the game's first strip: frame_buf is its now */
   if (cur_row == 0) hdmi_frame_start();               /* Scale / Width, the overlay box */
   hdmi_audio_feed();                                  /* HDMI sound: between the render strips too */
+#endif
+#ifdef PICO_HDMI
+  if (colors != &frame_buf[cur_row * GAME_W])        /* (rendered in place: video_hdmi_strip) */
 #endif
   memcpy(&frame_buf[cur_row * GAME_W], colors, (size_t)rows * GAME_W * 2);
 

@@ -809,6 +809,7 @@ void audio_init(void) {
 #ifdef PICO_HDMI
 void video_hdmi_wait_vblank(void);   /* video.cpp */
 int video_hdmi_emu_frames(void);     /* video.cpp */
+unsigned short *video_hdmi_strip(int row);   /* video.cpp: tile row row (8 lines) of its frame buffer, or null */
 #endif
 void update_screen(void) {
 #ifdef PICO_HDMI
@@ -904,15 +905,19 @@ XEVIOUS_END
   // the HDMI frame rate (one vblank pulse per frame).
   extern volatile uint32_t g_hdmi_render_us, g_hdmi_render_n;   /* video.cpp stats line */
   const uint32_t render_t0 = micros();
+  /* each strip drawn straight into the HDMI frame buffer once the game
+   * picture is up (video_hdmi_strip; render_line keeps ahead of the beam):
+   * no 3.5 KB copy per strip; before that, into the strip buffer as ever */
+  static unsigned short *const strip_buf = frame_buffer;
   for(int c=0;c<36;c+=6) {
-    render_line(c+0); tft.write(frame_buffer, 224*8);
-    render_line(c+1); tft.write(frame_buffer, 224*8);
-    render_line(c+2); tft.write(frame_buffer, 224*8);
-    render_line(c+3); tft.write(frame_buffer, 224*8);
-    render_line(c+4); tft.write(frame_buffer, 224*8);
-    render_line(c+5); tft.write(frame_buffer, 224*8);
+    for(int k=0;k<6;k++) {
+      unsigned short *in_place = video_hdmi_strip(c+k);
+      frame_buffer = in_place ? in_place : strip_buf;
+      render_line(c+k); tft.write(frame_buffer, 224*8);
+    }
     snd_transmit();
   }
+  frame_buffer = strip_buf;
   g_hdmi_render_us += micros() - render_t0;
   g_hdmi_render_n++;
 #ifdef PICO_USB_HOST
