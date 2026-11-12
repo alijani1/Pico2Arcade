@@ -39,8 +39,12 @@ static void flush_cache(void) {
     uint32_t ofs = s_phys + (uint32_t)s_cacheSector * FLASH_SECTOR_SIZE;
     rp2040.idleOtherCore();
     uint32_t irq = save_and_disable_interrupts();      /* no XIP code may run meanwhile */
+#ifdef PICO_FRUITJAM
+    pico_flash_erase_program(ofs, s_cache, FLASH_SECTOR_SIZE);   /* + XIP speed back (pico_config.cpp) */
+#else
     flash_range_erase(ofs, FLASH_SECTOR_SIZE);
     flash_range_program(ofs, s_cache, FLASH_SECTOR_SIZE);
+#endif
     restore_interrupts(irq);
     rp2040.resumeOtherCore();
     s_cacheDirty = false;

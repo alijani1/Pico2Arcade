@@ -5,7 +5,12 @@
 
 #include <Arduino.h>
 #ifdef PICO_FRUITJAM
-#include <I2S.h>
+/* Through a macro: PlatformIO's library finder doesn't see #ifdefs and would
+ * build the I2S library into every board — and with USE_TINYUSB every
+ * library object is linked whole, which changed the other boards' firmware.
+ * The fruitjam env lists I2S in its lib_deps instead. */
+#define PICO_I2S_HEADER <I2S.h>
+#include PICO_I2S_HEADER
 #include <hardware/clocks.h>
 #include <PicoTlv320.hpp>
 #else

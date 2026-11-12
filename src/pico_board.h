@@ -93,6 +93,19 @@ const char *board_default_ini(void);
 /* Non-empty if ARCADE.INI had problems (shown once in the menu). */
 const char *board_pins_warning(void);
 
+#ifdef PICO_FRUITJAM
+#include <stddef.h>
+/* Erase the 4 KB sector at flash offset ofs and program len bytes into it,
+ * then put the flash's read settings back (pico_config.cpp: the SDK leaves
+ * XIP in the boot ROM's slow mode on the RP2350). Interrupts off, the other
+ * core parked, as around flash_range_erase / _program. */
+void pico_flash_erase_program(uint32_t ofs, const uint8_t *data, size_t len);
+#endif
+#ifdef PICO_USB_HOST
+/* After a flash write (pico_input.cpp): power-cycle the USB ports. */
+void pico_input_flash_written(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

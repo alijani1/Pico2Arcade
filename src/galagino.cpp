@@ -904,7 +904,12 @@ XEVIOUS_END
     // overhead accumulated, so games ran at ~56 fps (screen ~28) instead
     // of 60. Sleep in 1 ms steps while far from the deadline, then spin.
     uint32_t deadline = frame_base + (half ? 33333u : 16667u);
+#ifdef PICO_USB_HOST
+    /* (the USB host's task and the pads, on this core, while we wait) */
+    while ((int32_t)(deadline - micros()) > 1500) { pico_input_poll(); delay(1); }
+#else
     while ((int32_t)(deadline - micros()) > 1500) delay(1);
+#endif
     while ((int32_t)(deadline - micros()) > 0) tight_loop_contents();
 
     // physical refresh is 30Hz. So send vblank trigger twice a frame

@@ -74,3 +74,12 @@ uint32_t ulTaskNotifyTake(int clearOnExit, TickType_t timeoutTicks) {
 void __pico_notify_give(void) {
   g_vblank_pulses++;
 }
+
+#ifdef PICO_USB_HOST
+/* Fruit Jam USB host: the C half of the shared usb_pads module
+ * (extern/usb_pads/usb_pads_glue.c — Pico-PIO-USB's sources and TinyUSB's HID
+ * mount callbacks, which must sit in a C file that doesn't include TinyUSB's
+ * headers, see there). In this existing file, not one of its own: an extra
+ * object file can reorder the other boards' linker veneers. */
+#include "usb_pads_glue.c"
+#endif

@@ -120,6 +120,27 @@ extern "C" void pico_config_load(void) {
                   g_show_fps, s_cfg.volume, f->magic == CFG_MAGIC ? "flash" : "defaults");
 }
 
+#ifdef PICO_FRUITJAM
+/* On the RP2350 the SDK's flash functions re-enter XIP in the boot ROM's slow
+ * default mode (they save / restore only the PSRAM chip select, m[1]). On the
+ * Fruit Jam the HDMI driver's start-up has set faster flash timings, and left
+ * like that everything run from flash afterwards — both cores — ran many
+ * times slower (Pico2Atari8: games at 1-5 fps; its a8_flash.cpp). So the
+ * flash's read settings (QMI m[0] timing / rcmd / rfmt) are put back right
+ * after, in RAM. Called with interrupts off and the other core parked. */
+#include <hardware/structs/qmi.h>
+extern "C" void __no_inline_not_in_flash_func(pico_flash_erase_program)(uint32_t ofs, const uint8_t *data,
+                                                                        size_t len) {
+    uint32_t timing = qmi_hw->m[0].timing, rcmd = qmi_hw->m[0].rcmd, rfmt = qmi_hw->m[0].rfmt;
+    flash_range_erase(ofs, FLASH_SECTOR_SIZE);
+    flash_range_program(ofs, data, len);
+    qmi_hw->m[0].timing = timing;
+    qmi_hw->m[0].rcmd = rcmd;
+    qmi_hw->m[0].rfmt = rfmt;
+    __compiler_memory_barrier();
+}
+#endif
+
 static void pico_config_save(void) {
     s_cfg.magic = CFG_MAGIC;
     s_cfg.landscape = g_landscape_mode ? 1 : 0;
@@ -132,11 +153,18 @@ static void pico_config_save(void) {
     rp2040.idleOtherCore();
     pico_audio_suspend();                    /* PWM audio DMA can't miss IRQs (pico_audio.cpp) */
     uint32_t irq = save_and_disable_interrupts();
+#ifdef PICO_FRUITJAM
+    pico_flash_erase_program(PICO_CONFIG_PHYS, page, FLASH_PAGE_SIZE);
+#else
     flash_range_erase(PICO_CONFIG_PHYS, FLASH_SECTOR_SIZE);
     flash_range_program(PICO_CONFIG_PHYS, page, FLASH_PAGE_SIZE);
+#endif
     restore_interrupts(irq);
     pico_audio_resume();
     rp2040.resumeOtherCore();
+#ifdef PICO_USB_HOST
+    pico_input_flash_written();
+#endif
     Serial.printf("[cfg] saved landscape=%d show_fps=%d volume=%d\n",
                   s_cfg.landscape, s_cfg.show_fps, s_cfg.volume);
 }
