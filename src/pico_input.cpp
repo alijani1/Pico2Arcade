@@ -180,6 +180,18 @@ static void rc_stick_park(void) {
 }
 
 static void rc_stick_decide(const uint32_t t[2]);
+static bool four_way_game(void);               /* below, with buttons_get */
+static const int32_t STICK_DIR_PCT    = 25;   /* % of a side's travel for a direction */
+static const int32_t STICK_REL_PCT    = 15;   /* ... and it lets go below this (no flicker at the edge) */
+static const int32_t STICK_SWITCH_PCT = 20;   /* 4-way: the other axis must lead by this to take over */
+/* 4-way rule for the 5200 stick (both on the bench, 2026-11-18):
+ *   0 = strongest axis: the axis pushed further; the other takes over only
+ *       once it leads by STICK_SWITCH_PCT;
+ *   1 = combined: as 0, and also an axis that newly comes on takes over
+ *       (moving right, push into up-right at a junction -> UP). */
+#ifndef STICK_4WAY_MODE
+#define STICK_4WAY_MODE 1
+#endif
 
 static void rc_stick_read(void) {
     if (g_pins.stick_x < 0 || g_pins.stick_y < 0) return;
@@ -234,23 +246,54 @@ static void rc_stick_decide(const uint32_t tIn[2]) {
         return;
     }
 
-    unsigned char dirs = 0;
+    /* Each axis as a percentage of the travel seen on its side of rest (until
+     * a side has moved at least a quarter of the nominal travel, of the
+     * nominal half-travel, ~667 us). A direction needs STICK_DIR_PCT (25 %:
+     * clear of noise, easy to reach). */
+    int32_t pct[2] = { 0, 0 };                  /* signed: - = left / up */
     for (int a = 0; a < 2; a++) {
         if (!t[a]) continue;                    /* timed out: no controller on this axis */
         if (rest[a] < 0) rest[a] = (int32_t)t[a];   /* first reading: the stick at rest */
         if (t[a] < lo[a]) lo[a] = t[a];
         if (t[a] > hi[a]) hi[a] = t[a];
-        /* 25 % of the travel seen on each side of rest; until a side has
-         * moved at least a quarter of the nominal travel, 25 % of the nominal
-         * half-travel (~167 us) — clear of noise, easy to reach. */
-        const int32_t minSpan = RC_NOMINAL_US / 4, nomThr = RC_NOMINAL_US / 8;
+        const int32_t minSpan = RC_NOMINAL_US / 4, nomSpan = RC_NOMINAL_US / 2;
         int32_t spanNeg = rest[a] - (int32_t)lo[a], spanPos = (int32_t)hi[a] - rest[a];
-        int32_t thrNeg = (spanNeg >= minSpan) ? spanNeg / 4 : nomThr;
-        int32_t thrPos = (spanPos >= minSpan) ? spanPos / 4 : nomThr;
+        if (spanNeg < minSpan) spanNeg = nomSpan;
+        if (spanPos < minSpan) spanPos = nomSpan;
         int32_t d = (int32_t)t[a] - rest[a];
-        if (d >  thrPos) dirs |= (a == 0) ? BUTTON_RIGHT : BUTTON_DOWN;
-        if (d < -thrNeg) dirs |= (a == 0) ? BUTTON_LEFT  : BUTTON_UP;
+        pct[a] = d > 0 ? d * 100 / spanPos : d * 100 / spanNeg;
     }
+
+    /* 4-way games: only the axis pushed further goes through, so a stick held
+     * near the diagonal sends one direction (two at once and Pac-Man doesn't
+     * take the turn). It hands over to the other axis only once that one is
+     * ahead by more than STICK_SWITCH_PCT, so the diagonal doesn't flicker
+     * between them (user's design, 2026-11-18). 8-way games keep both. */
+    static int axis = -1;                       /* 0 = X, 1 = Y, -1 = neither */
+    static bool held[2] = { false, false };     /* per axis, with hysteresis */
+    bool fresh[2];
+    for (int a = 0; a < 2; a++) {
+        bool was = held[a];
+        held[a] = abs(pct[a]) > (was ? STICK_REL_PCT : STICK_DIR_PCT);
+        fresh[a] = held[a] && !was;
+    }
+    bool on[2] = { held[0], held[1] };
+    if (g_menu_done && four_way_game()) {
+        if (on[0] && on[1]) {
+            if (axis < 0) axis = abs(pct[0]) >= abs(pct[1]) ? 0 : 1;
+#if STICK_4WAY_MODE == 1
+            else if (fresh[1 - axis]) axis = 1 - axis;
+#endif
+            else if (abs(pct[1 - axis]) > abs(pct[axis]) + STICK_SWITCH_PCT) axis = 1 - axis;
+            on[1 - axis] = false;
+        } else {
+            axis = on[0] ? 0 : on[1] ? 1 : -1;
+        }
+    }
+
+    unsigned char dirs = 0;
+    if (on[0]) dirs |= pct[0] > 0 ? BUTTON_RIGHT : BUTTON_LEFT;
+    if (on[1]) dirs |= pct[1] > 0 ? BUTTON_DOWN  : BUTTON_UP;
     s_stickDirs = dirs;
 }
 
