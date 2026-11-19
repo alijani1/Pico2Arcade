@@ -17,6 +17,9 @@
 #include "pico_handoff.h"
 #include "pico_board.h"
 #include "pico_hiscore.h"
+#include "hardware/gpio.h"
+#include "hardware/irq.h"
+#include "hardware/sync.h"
 
 #ifdef PICO_BOARD_TABLE
 /* Quad Ultimate CX / standalone Pico 2 (all active LOW, pull-up): no PCA9539 —
@@ -108,9 +111,17 @@ static int joy_center_y = 2048;
  * The 5200 pots are read the way the Duo 5200 firmware does it (GameAdapter
  * pins.cpp): each pin's capacitor rests discharged (OUTPUT LOW); released to
  * INPUT it charges through the pot, and the time until the pin reads HIGH
- * grows with the resistance — longer = right (X) / down (Y), about 0-1.3 ms
- * over the stick's travel (the host's PIO counts ~3335 at 2.5 MHz). Blocks
- * for up to 2 ms, so it runs at most every 16 ms and only on core 0.
+ * grows with the resistance — longer = right (X) / down (Y). Measured on the
+ * Duo 5200 (GameAdapterRGBPico / Pico2Atari8 bench, 2026-11-18): about
+ * 0.3 ms full left / up, ~1.8 ms at rest, up to ~7.1 ms pushed hard right /
+ * down (the host's PIO counts 0.8 us each: ~400 / ~2300 / ~8850). The old
+ * read assumed 0-1.3 ms and timed out at 2 ms, so right / down mostly timed
+ * out and didn't register.
+ * Non-blocking (no PIO: it clashed with the arcade's other users): the caps
+ * are released together and a rising-edge GPIO interrupt on core 0 stamps
+ * each axis's charge time; the next poll collects the result. Nothing waits
+ * on the charge, so a 7 ms read costs core 0 (which renders every frame) no
+ * time. One read is started at most every 16 ms, only from core 0.
  * Directions are digital: the range is learned from the min/max seen (the
  * nominal range until the stick has moved); a direction triggers at 25 %
  * of the travel, so diagonals come easily.
@@ -119,9 +130,18 @@ static int joy_center_y = 2048;
  * of it. (Assuming the nominal centre made a stick that rests at a longer
  * charge time read as DOWN at rest — the game list kept scrolling down until
  * UP widened the learned range.) Unplugged (both axes time out) = start over. */
-static const uint32_t RC_TIMEOUT_US = 2000;     /* no controller / pot beyond range */
-static const uint32_t RC_NOMINAL_US = 1334;     /* full travel, nominal */
+static const uint32_t RC_TIMEOUT_US = 8000;     /* no controller / past any stick (max seen ~7.1 ms) */
+static const uint32_t RC_NOMINAL_US = 1334;     /* nominal travel for the first thresholds (see below) */
+static const uint32_t RC_PERIOD_US  = 15000;    /* one read per frame at most (a game polls once a frame) */
+static const uint32_t RC_DRAIN_US   = 200;      /* caps parked LOW at least this long (1.5 k x 22 nF: ~33 us tau) */
 static volatile unsigned char s_stickDirs = 0;  /* BUTTON_UP/DOWN/LEFT/RIGHT from the stick */
+
+/* Read state: written by the edge interrupt (core 0) and rc_stick_read (core 0). */
+static volatile uint32_t s_rcT0 = 0;            /* when the caps were released */
+static volatile uint32_t s_rcT[2] = { 0, 0 };   /* charge time per axis (us + 1), 0 = not yet */
+static bool     s_rcRunning = false;
+static bool     s_rcIrqReady = false;
+static uint32_t s_rcLastStart = 0, s_rcParkedAt = 0;
 
 static void rc_stick_init(void) {
     const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
@@ -132,30 +152,81 @@ static void rc_stick_init(void) {
         gpio_put(p, 0);
         gpio_set_dir(p, GPIO_OUT);              /* park discharged */
     }
+    s_rcParkedAt = time_us_32();
 }
+
+/* Rising edge on a stick pin: that axis's cap has charged. */
+static void rc_stick_irq(void) {
+    const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
+    uint32_t now = time_us_32();
+    for (int a = 0; a < 2; a++) {
+        if (!(gpio_get_irq_event_mask(pins[a]) & GPIO_IRQ_EDGE_RISE)) continue;
+        gpio_acknowledge_irq(pins[a], GPIO_IRQ_EDGE_RISE);
+        gpio_set_irq_enabled(pins[a], GPIO_IRQ_EDGE_RISE, false);
+        if (!s_rcT[a]) s_rcT[a] = now - s_rcT0 + 1;
+    }
+}
+
+/* Park both caps (OUTPUT LOW) and stop the edge interrupts. */
+static void rc_stick_park(void) {
+    const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
+    for (int a = 0; a < 2; a++) {
+        gpio_set_irq_enabled(pins[a], GPIO_IRQ_EDGE_RISE, false);
+        gpio_put(pins[a], 0);
+        gpio_set_dir(pins[a], GPIO_OUT);
+    }
+    s_rcParkedAt = time_us_32();
+}
+
+static void rc_stick_decide(const uint32_t t[2]);
 
 static void rc_stick_read(void) {
     if (g_pins.stick_x < 0 || g_pins.stick_y < 0) return;
-    static uint32_t lastUs = 0;
+    const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
+    if (!s_rcIrqReady) {                        /* first call: core 0, so the interrupt is core 0's */
+        gpio_add_raw_irq_handler_masked64((1ull << pins[0]) | (1ull << pins[1]), rc_stick_irq);
+        irq_set_enabled(IO_IRQ_BANK0, true);
+        s_rcIrqReady = true;
+    }
+    uint32_t now = time_us_32();
+
+    if (s_rcRunning) {
+        bool done = s_rcT[0] && s_rcT[1];
+        if (!done && now - s_rcT0 < RC_TIMEOUT_US) return;   /* still charging */
+        rc_stick_park();
+        s_rcRunning = false;
+        uint32_t t[2] = { s_rcT[0], s_rcT[1] };
+        rc_stick_decide(t);
+        /* Start the next read now rather than on the next poll — a game polls
+         * once a frame, so waiting would read only every other frame. The
+         * short drain is all this read ever blocks for. */
+        delayMicroseconds(RC_DRAIN_US);
+        now = time_us_32();
+    }
+
+    if (s_rcLastStart != 0 && now - s_rcLastStart < RC_PERIOD_US) return;
+    if (now - s_rcParkedAt < RC_DRAIN_US) return;               /* let the caps drain */
+
+    /* Release both caps and stamp the start together: no interrupt in between. */
+    s_rcT[0] = s_rcT[1] = 0;
+    for (int a = 0; a < 2; a++) {
+        gpio_acknowledge_irq(pins[a], GPIO_IRQ_EDGE_RISE);
+        gpio_set_irq_enabled(pins[a], GPIO_IRQ_EDGE_RISE, true);
+    }
+    uint32_t irqs = save_and_disable_interrupts();
+    s_rcT0 = time_us_32();
+    gpio_set_dir(pins[0], GPIO_IN);
+    gpio_set_dir(pins[1], GPIO_IN);
+    restore_interrupts(irqs);
+    s_rcLastStart = s_rcT0;
+    s_rcRunning = true;
+}
+
+/* A finished read (t = charge time + 1 per axis, 0 = timed out) to directions. */
+static void rc_stick_decide(const uint32_t tIn[2]) {
     static uint32_t lo[2] = { 0xFFFFFFFFu, 0xFFFFFFFFu }, hi[2] = { 0, 0 };
     static int32_t  rest[2] = { -1, -1 };       /* charge time with the stick at rest */
-    uint32_t now = time_us_32();
-    if (lastUs != 0 && now - lastUs < 16000) return;
-    lastUs = now;
-
-    const int pins[2] = { g_pins.stick_x, g_pins.stick_y };
-    uint32_t t[2] = { 0, 0 };
-    uint32_t t0 = time_us_32();
-    gpio_set_dir(pins[0], GPIO_IN);             /* release both caps together */
-    gpio_set_dir(pins[1], GPIO_IN);
-    for (;;) {
-        uint32_t el = time_us_32() - t0;
-        for (int a = 0; a < 2; a++)
-            if (!t[a] && gpio_get(pins[a])) t[a] = el + 1;
-        if ((t[0] && t[1]) || el >= RC_TIMEOUT_US) break;
-    }
-    for (int a = 0; a < 2; a++) gpio_set_dir(pins[a], GPIO_OUT);   /* discharge again (pin LOW) */
-
+    uint32_t t[2] = { tIn[0], tIn[1] };
     if (!t[0] && !t[1]) {                       /* no controller: forget its calibration */
         for (int a = 0; a < 2; a++) { lo[a] = 0xFFFFFFFFu; hi[a] = 0; rest[a] = -1; }
         s_stickDirs = 0;
