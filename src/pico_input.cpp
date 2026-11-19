@@ -12,6 +12,7 @@
 
 #include <Arduino.h>
 #include "expander.h"
+#include "config.h"       /* ENABLE_<game>: the MCH_ ids in emulation.h (4-way games) */
 #include "emulation.h"    /* BUTTON_LEFT/RIGHT/UP/DOWN/FIRE/START/COIN/EXTRA */
 #include "pico_audio.h"
 #include "pico_handoff.h"
@@ -492,6 +493,62 @@ extern "C" void pico_input_init(void) {
  * stays low when nothing is happening, but every button transition
  * (press or release) forces an immediate fresh read — no short-tap
  * dropouts inside a poll window, no software debounce. */
+/* 4-way games (Pac-Man, Ms. Pac-Man, Donkey Kong / Jr., Frogger, Dig Dug) were
+ * built for a restricted stick that can't send two directions at once; given
+ * up + right together Pac-Man doesn't take the turn. An analog stick held on
+ * the diagonal sends both (the Duo 5200 controller does at full travel,
+ * 2026-11-18: "holding up-right where there's a path up, it won't go up").
+ * As MAME's 4-way joystick: of two directions held, only the most recently
+ * pressed axis goes through — sweep from right to up-right and the game sees
+ * UP (Pac-Man keeps running right until the turn opens). Other games keep
+ * their diagonals (Xevious, 1942, Time Pilot, Scramble...). */
+static bool four_way_game(void) {
+#ifndef SINGLE_MACHINE
+    switch (machine) {
+#ifdef ENABLE_PACMAN
+        case MCH_PACMAN:
+#endif
+#ifdef ENABLE_MSPACMAN
+        case MCH_MSPACMAN:
+#endif
+#ifdef ENABLE_DKONG
+        case MCH_DKONG:
+#endif
+#ifdef ENABLE_DKONGJR
+        case MCH_DKONGJR:
+#endif
+#ifdef ENABLE_FROGGER
+        case MCH_FROGGER:
+#endif
+#ifdef ENABLE_DIGDUG
+        case MCH_DIGDUG:
+#endif
+            return true;
+        default:
+            return false;
+    }
+#else
+    return false;
+#endif
+}
+
+static unsigned char four_way(unsigned char state) {
+    const unsigned char V = BUTTON_UP | BUTTON_DOWN, H = BUTTON_LEFT | BUTTON_RIGHT;
+    static unsigned char prev = 0;     /* directions held last call (before filtering) */
+    static unsigned char keep = 0;     /* V or H: the axis that goes through on a diagonal */
+    const unsigned char dirs = state & (V | H), fresh = dirs & ~prev;
+    prev = dirs;
+    if ((dirs & V) && (dirs & H)) {
+        if (fresh & V)      keep = V;  /* the axis pressed last wins */
+        else if (fresh & H) keep = H;
+        else if (!keep)     keep = V;
+        state &= (unsigned char)~(keep == V ? H : V);
+    } else {
+        keep = (dirs & V) ? V : (dirs & H) ? H : 0;
+    }
+    return state;
+}
+
 extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
     static unsigned char cached_state = 0;
     static unsigned long last_ms = 0;
@@ -690,6 +747,8 @@ extern "C" unsigned char PICO_HOT_RAM(buttons_get)(void) {
             held_since = 0;
         }
     }
+
+    if (g_menu_done && four_way_game()) state = four_way(state);
 
     cached_state = state;
 #ifdef Z80_BENCH
