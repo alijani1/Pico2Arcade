@@ -184,14 +184,11 @@ static bool four_way_game(void);               /* below, with buttons_get */
 static const int32_t STICK_DIR_PCT    = 25;   /* % of a side's travel for a direction */
 static const int32_t STICK_REL_PCT    = 15;   /* ... and it lets go below this (no flicker at the edge) */
 static const int32_t STICK_SWITCH_PCT = 20;   /* 4-way: the other axis must lead by this to take over */
-/* 4-way rule for the 5200 stick (both on the bench, 2026-11-18):
- *   0 = strongest axis: the axis pushed further; the other takes over only
- *       once it leads by STICK_SWITCH_PCT;
- *   1 = combined: as 0, and also an axis that newly comes on takes over
- *       (moving right, push into up-right at a junction -> UP). */
-#ifndef STICK_4WAY_MODE
-#define STICK_4WAY_MODE 1
-#endif
+/* 4-way rule for the 5200 stick: the axis pushed further; an axis that newly
+ * comes on takes over (moving right, push into up-right at a junction -> UP);
+ * otherwise the other axis takes over only once it leads by STICK_SWITCH_PCT.
+ * Chosen on the bench 2026-11-18 over "strongest axis only" (good, but missed
+ * junction turns) and "last pressed" (Dig Dug jittered). */
 
 static void rc_stick_read(void) {
     if (g_pins.stick_x < 0 || g_pins.stick_y < 0) return;
@@ -281,9 +278,7 @@ static void rc_stick_decide(const uint32_t tIn[2]) {
     if (g_menu_done && four_way_game()) {
         if (on[0] && on[1]) {
             if (axis < 0) axis = abs(pct[0]) >= abs(pct[1]) ? 0 : 1;
-#if STICK_4WAY_MODE == 1
             else if (fresh[1 - axis]) axis = 1 - axis;
-#endif
             else if (abs(pct[1 - axis]) > abs(pct[axis]) + STICK_SWITCH_PCT) axis = 1 - axis;
             on[1 - axis] = false;
         } else {
